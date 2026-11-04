@@ -15,6 +15,7 @@ from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
 from .models import BackupRun, Document, DocumentTag, Tag, TagOverride
+from .physical_views import copy_json
 from .ingestion import ingest_document
 from .storage import InvalidDocument
 from .tasks import backup_archive
@@ -42,6 +43,7 @@ def _document_json(document):
         "created_at": document.created_at.isoformat(),
         "document_date": document.document_date.isoformat() if document.document_date else None,
         "tags": [{"id": str(link.tag_id), "name": link.tag.name, "color": link.tag.color, "origin": link.origin} for link in document.tag_links.all()],
+        "physical_copies": [copy_json(copy) for copy in document.physical_copies.all()],
         "snippet": document.extracted_text[:240],
     }
 
@@ -105,7 +107,7 @@ def documents(request):
     if unauthorized:
         return unauthorized
     if request.method == "GET":
-        queryset = Document.objects.filter(owner=request.user).prefetch_related("tag_links__tag")
+        queryset = Document.objects.filter(owner=request.user).prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
         if query:
             if connection.vendor == "postgresql":
@@ -131,7 +133,7 @@ def document_detail(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user).prefetch_related("tag_links__tag").first()
+    document = Document.objects.filter(pk=document_id, owner=request.user).prefetch_related("tag_links__tag", "physical_copies__location").first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if request.method == "PATCH":
@@ -173,7 +175,7 @@ def document_detail(request, document_id):
                 for tag in chosen:
                     TagOverride.objects.filter(document=document, tag=tag).delete()
                     DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
-        document = Document.objects.filter(pk=document.id).prefetch_related("tag_links__tag").get()
+        document = Document.objects.filter(pk=document.id).prefetch_related("tag_links__tag", "physical_copies__location").get()
     return JsonResponse(_document_json(document))
 
 

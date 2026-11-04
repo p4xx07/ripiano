@@ -22,6 +22,23 @@ export type Rule = {
   enabled: boolean;
 };
 
+export type Location = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  path: string[];
+  description: string;
+};
+
+export type PhysicalCopy = {
+  id: string;
+  document_id: string;
+  sticker_code: string;
+  location_id: string | null;
+  location_path: string[];
+  created_at: string;
+};
+
 export type Document = {
   id: string;
   title: string;
@@ -38,6 +55,7 @@ export type Document = {
     color: string;
     origin: "manual" | "rule" | "model";
   }[];
+  physical_copies: PhysicalCopy[];
   snippet: string;
 };
 

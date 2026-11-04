@@ -20,6 +20,7 @@ import {
   ImagePlus,
   LockKeyhole,
   LogOut,
+  MapPin,
   Menu,
   Plus,
   RotateCcw,
@@ -30,6 +31,7 @@ import {
 } from "lucide-react";
 import { Document, formatDate, request, Session } from "./api";
 import DocumentPanel from "./DocumentPanel";
+import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
 
 type BackupRun = {
@@ -276,24 +278,31 @@ function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"documents" | "tags" | "backups">(
-    "documents",
-  );
+  const initialSticker =
+    new URLSearchParams(window.location.search).get("sticker") ?? "";
+  const [view, setView] = useState<
+    "documents" | "tags" | "physical" | "backups"
+  >(initialSticker ? "physical" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
   );
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const latestSearch = useRef(0);
 
   const loadDocuments = useCallback(async (search: string) => {
+    const requestNumber = ++latestSearch.current;
     try {
       const result = await request<{ documents: Document[] }>(
         `/api/documents?q=${encodeURIComponent(search)}`,
       );
-      setDocuments(result.documents);
-      setError("");
+      if (requestNumber === latestSearch.current) {
+        setDocuments(result.documents);
+        setError("");
+      }
     } catch (cause) {
+      if (requestNumber !== latestSearch.current) return;
       setError(
         cause instanceof Error ? cause.message : "Could not load documents",
       );
@@ -316,9 +325,10 @@ function App() {
   useEffect(() => {
     if (
       !session?.authenticated ||
-      !documents.some(
-        (doc) => doc.status === "pending" || doc.status === "processing",
-      )
+      (!query.trim() &&
+        !documents.some(
+          (doc) => doc.status === "pending" || doc.status === "processing",
+        ))
     )
       return;
     const timer = window.setInterval(() => loadDocuments(query), 5000);
@@ -436,6 +446,15 @@ function App() {
         >
           <TagIcon size={18} /> Tags & filing
         </button>
+        <button
+          className={`nav-link ${view === "physical" ? "active" : ""}`}
+          onClick={() => {
+            setView("physical");
+            setMenuOpen(false);
+          }}
+        >
+          <MapPin size={18} /> Paper archive
+        </button>
         {session.owner && (
           <button
             className={`nav-link ${view === "backups" ? "active" : ""}`}
@@ -484,7 +503,9 @@ function App() {
               ? "All documents"
               : view === "tags"
                 ? "Tags & filing"
-                : "Backups"}
+                : view === "physical"
+                  ? "Paper archive"
+                  : "Backups"}
           </div>
           <div className="topbar-right">
             <span className="private-dot" /> Private & yours
@@ -495,6 +516,18 @@ function App() {
             <BackupPanel />
           ) : view === "tags" ? (
             <TagPanel />
+          ) : view === "physical" ? (
+            <PhysicalPanel
+              initialSticker={initialSticker}
+              onOpenDocument={(id) => {
+                void request<Document>(`/api/documents/${id}`)
+                  .then((doc) => {
+                    setSelectedDocument(doc);
+                    setView("documents");
+                  })
+                  .catch((cause) => setError(cause.message));
+              }}
+            />
           ) : (
             <>
               <div className="page-heading">
@@ -653,6 +686,15 @@ function App() {
                                 {tag.name}
                               </span>
                             ))}
+                          </div>
+                        )}
+                        {doc.physical_copies.length > 0 && (
+                          <div className="document-physical">
+                            <MapPin size={13} />{" "}
+                            {doc.physical_copies[0].location_path.join(" / ") ||
+                              "Paper copy awaiting a location"}
+                            {doc.physical_copies.length > 1 &&
+                              ` +${doc.physical_copies.length - 1}`}
                           </div>
                         )}
                         {doc.status === "failed" && (
@@ -817,6 +859,10 @@ function App() {
           onOpenTags={() => {
             setSelectedDocument(null);
             setView("tags");
+          }}
+          onOpenLocations={() => {
+            setSelectedDocument(null);
+            setView("physical");
           }}
         />
       )}

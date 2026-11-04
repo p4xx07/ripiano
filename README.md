@@ -14,7 +14,7 @@ Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability
 
 ## First implementation slice
 
-The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, and local phrase-based automatic filing. Camera, gallery, and file selection are available through the browser. Failed OCR can be retried, and the searchable PDF can be opened directly. This is the beginning of the staged implementation, not the complete Paperless feature set. Native Android scanning, pretrained classification, physical stickers, scoped agents, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
+The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, local phrase-based automatic filing, and a physical archive. Camera, gallery, and file selection are available through the browser. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. Failed OCR can be retried, and the searchable PDF can be opened directly. This is the beginning of the staged implementation, not the complete Paperless feature set. Native Android scanning, pretrained classification, scoped agents, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
 
 ### Run locally
 
@@ -28,6 +28,7 @@ For a NAS deployment, set `RIPIANO_DEBUG=0`, an HTTPS `RIPIANO_PUBLIC_ORIGIN`, t
 
 - API: `cd services/api && uv sync && RIPIANO_DEBUG=1 uv run pytest -q`
 - Web: `cd apps/web && npm ci && npm run build`
+- Browser journey (running local stack and a disposable owner account): `cd apps/web && RIPIANO_E2E_ORIGIN=http://localhost:8080 RIPIANO_E2E_USERNAME=... RIPIANO_E2E_PASSWORD=... npm run test:e2e`. This creates test documents, tags, and locations in that account.
 
 The document originals are stored under the mounted media path. OCR output is derived and can be rebuilt. The current search is text-only and lists 50 results at a time; richer filters and pagination are scheduled for the next slices.
 

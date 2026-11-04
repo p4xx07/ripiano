@@ -1,0 +1,6 @@
+Invocation:
+RIPIANO_DEBUG=1 uv run pytest -q archive/test_watch_folder.py
+
+Result:
+.                                                                        [100%]
+1 passed in 0.52s

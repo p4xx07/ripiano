@@ -14,6 +14,7 @@ from PIL import Image
 from pypdf import PdfReader
 
 from .backup import create_snapshot
+from .classification import apply_rules
 from .models import BackupRun, Document
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,11 @@ def process_document(document_id):
         diagnostic = (exc.stderr or "").strip() if isinstance(exc, subprocess.CalledProcessError) else ""
         document.error = (diagnostic.splitlines()[-1] if diagnostic else str(exc))[:500]
         document.save(update_fields=["status", "error"])
+        return
+    try:
+        apply_rules(document)
+    except Exception:
+        logger.exception("Automatic filing failed for document %s", document.id)
 
 
 @shared_task(name="archive.tasks.reconcile_pending_documents")
@@ -105,3 +111,12 @@ def backup_archive(run_id=None):
         run.completed_at = timezone.now()
         run.error = str(exc)[:500]
     run.save(update_fields=["status", "snapshot_name", "completed_at", "error"])
+
+
+@shared_task(name="archive.tasks.reclassify_owner")
+def reclassify_owner(owner_id):
+    for document in Document.objects.filter(owner_id=owner_id, status=Document.Status.READY).iterator():
+        try:
+            apply_rules(document)
+        except Exception:
+            logger.exception("Automatic filing failed for document %s", document.id)

@@ -14,7 +14,7 @@ Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability
 
 ## First implementation slice
 
-The first runnable slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, and scheduled or manual checksum-verified backups. Camera, gallery, and file selection are available through the browser. This is the beginning of the staged implementation, not the complete Paperless feature set. Native Android scanning, tags and automatic classification, physical stickers, scoped agents, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
+The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, and local phrase-based automatic filing. Camera, gallery, and file selection are available through the browser. Failed OCR can be retried, and the searchable PDF can be opened directly. This is the beginning of the staged implementation, not the complete Paperless feature set. Native Android scanning, pretrained classification, physical stickers, scoped agents, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
 
 ### Run locally
 

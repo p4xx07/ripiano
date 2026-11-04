@@ -1,25 +1,31 @@
 import json
+import logging
 import secrets
+from datetime import date
 from pathlib import Path
+from uuid import UUID
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import Q
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
-from .models import BackupRun, Document
+from .models import BackupRun, Document, DocumentTag, Tag, TagOverride
 from .ingestion import ingest_document
 from .storage import InvalidDocument
 from .tasks import backup_archive
 
+logger = logging.getLogger(__name__)
+
 
 def _payload(request):
     try:
-        return json.loads(request.body)
+        value = json.loads(request.body)
+        return value if isinstance(value, dict) else None
     except (json.JSONDecodeError, UnicodeDecodeError):
         return None
 
@@ -31,8 +37,11 @@ def _document_json(document):
         "original_name": document.original_name,
         "source": document.source,
         "status": document.status,
+        "archive_available": bool(document.archive_path) and document.status == Document.Status.READY,
         "error": document.error,
         "created_at": document.created_at.isoformat(),
+        "document_date": document.document_date.isoformat() if document.document_date else None,
+        "tags": [{"id": str(link.tag_id), "name": link.tag.name, "color": link.tag.color, "origin": link.origin} for link in document.tag_links.all()],
         "snippet": document.extracted_text[:240],
     }
 
@@ -96,7 +105,7 @@ def documents(request):
     if unauthorized:
         return unauthorized
     if request.method == "GET":
-        queryset = Document.objects.filter(owner=request.user)
+        queryset = Document.objects.filter(owner=request.user).prefetch_related("tag_links__tag")
         query = request.GET.get("q", "").strip()[:200]
         if query:
             if connection.vendor == "postgresql":
@@ -117,14 +126,54 @@ def documents(request):
     return JsonResponse(_document_json(document), status=202)
 
 
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "PATCH"])
 def document_detail(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user).first()
+    document = Document.objects.filter(pk=document_id, owner=request.user).prefetch_related("tag_links__tag").first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
+    if request.method == "PATCH":
+        body = _payload(request)
+        if body is None:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+        changes = []
+        if "title" in body:
+            if not isinstance(body["title"], str) or not body["title"].strip() or len(body["title"].strip()) > 300:
+                return JsonResponse({"error": "Title must be 1–300 characters"}, status=400)
+            document.title = body["title"].strip()
+            changes.append("title")
+        if "document_date" in body:
+            try:
+                document.document_date = date.fromisoformat(body["document_date"]) if body["document_date"] else None
+            except (TypeError, ValueError):
+                return JsonResponse({"error": "Use an ISO date (YYYY-MM-DD)"}, status=400)
+            changes.append("document_date")
+        chosen = None
+        if "tags" in body:
+            if not isinstance(body["tags"], list) or len(body["tags"]) > 100:
+                return JsonResponse({"error": "Tags must be a list of up to 100 IDs"}, status=400)
+            try:
+                chosen_ids = {UUID(str(value)) for value in body["tags"]}
+            except ValueError:
+                return JsonResponse({"error": "Invalid tag ID"}, status=400)
+            chosen = list(Tag.objects.filter(owner=request.user, pk__in=chosen_ids))
+            if len(chosen) != len(chosen_ids):
+                return JsonResponse({"error": "Tag not found"}, status=400)
+        with transaction.atomic():
+            if changes:
+                document.save(update_fields=changes)
+            if chosen is not None:
+                selected = {tag.id for tag in chosen}
+                existing = set(DocumentTag.objects.filter(document=document).values_list("tag_id", flat=True))
+                for tag_id in existing - selected:
+                    DocumentTag.objects.filter(document=document, tag_id=tag_id).delete()
+                    TagOverride.objects.get_or_create(document=document, tag_id=tag_id)
+                for tag in chosen:
+                    TagOverride.objects.filter(document=document, tag=tag).delete()
+                    DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
+        document = Document.objects.filter(pk=document.id).prefetch_related("tag_links__tag").get()
     return JsonResponse(_document_json(document))
 
 
@@ -142,6 +191,46 @@ def download_original(request, document_id):
         as_attachment=True,
         filename=Path(document.original_name).name,
     )
+
+
+@require_http_methods(["GET"])
+def download_archive(request, document_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    document = Document.objects.filter(pk=document_id, owner=request.user).first()
+    if document is None:
+        return JsonResponse({"error": "Document not found"}, status=404)
+    if document.status != Document.Status.READY or not document.archive_path:
+        return JsonResponse({"error": "Archive PDF is not ready"}, status=409)
+    try:
+        source = (Path(settings.MEDIA_ROOT) / document.archive_path).open("rb")
+    except FileNotFoundError:
+        return JsonResponse({"error": "Archive PDF is missing"}, status=503)
+    return FileResponse(source, content_type="application/pdf", filename=f"{document.title}.pdf")
+
+
+@require_http_methods(["POST"])
+def retry_document(request, document_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    document = Document.objects.filter(pk=document_id, owner=request.user).first()
+    if document is None:
+        return JsonResponse({"error": "Document not found"}, status=404)
+    if document.status != Document.Status.FAILED:
+        return JsonResponse({"error": "Only failed documents can be retried"}, status=409)
+    document.status = Document.Status.PENDING
+    document.error = ""
+    document.processing_started_at = None
+    document.save(update_fields=["status", "error", "processing_started_at"])
+    try:
+        from .tasks import process_document
+
+        process_document.delay(str(document.id))
+    except Exception:
+        logger.exception("Retry queue unavailable; pending document will be reconciled")
+    return JsonResponse(_document_json(document), status=202)
 
 
 @require_http_methods(["GET", "POST"])

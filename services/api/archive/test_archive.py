@@ -85,3 +85,35 @@ def test_reconciler_recovers_stale_processing(tmp_path):
     document.refresh_from_db()
     assert document.status == Document.Status.PENDING
     enqueue.assert_called_once_with(str(document.id))
+
+
+@pytest.mark.django_db
+def test_failed_document_can_retry_and_archive_is_owner_only(tmp_path):
+    user = get_user_model().objects.create_user("alice", password="secure-password-1")
+    other = get_user_model().objects.create_user("bob", password="secure-password-2")
+    document = Document.objects.create(
+        owner=user, title="Example", original_name="example.pdf", original_path="originals/example.pdf",
+        original_mime="application/pdf", original_sha256="a" * 64, original_size=10,
+        status=Document.Status.FAILED, error="OCR failed",
+    )
+    with override_settings(MEDIA_ROOT=tmp_path):
+        client = Client()
+        client.force_login(other)
+        assert client.post(f"/api/documents/{document.id}/retry").status_code == 404
+        assert client.get(f"/api/documents/{document.id}/archive").status_code == 404
+        client.force_login(user)
+        assert client.get(f"/api/documents/{document.id}/archive").status_code == 409
+        with patch("archive.tasks.process_document.delay") as enqueue:
+            response = client.post(f"/api/documents/{document.id}/retry")
+        assert response.status_code == 202
+        enqueue.assert_called_once_with(str(document.id))
+        document.refresh_from_db()
+        assert document.status == Document.Status.PENDING and not document.error
+
+        archive = tmp_path / "archive/example.pdf"
+        archive.parent.mkdir()
+        archive.write_bytes(b"%PDF-1.4 test")
+        document.archive_path = "archive/example.pdf"
+        document.status = Document.Status.READY
+        document.save(update_fields=["archive_path", "status"])
+        assert b"".join(client.get(f"/api/documents/{document.id}/archive").streaming_content).startswith(b"%PDF-")

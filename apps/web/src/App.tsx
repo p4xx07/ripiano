@@ -14,6 +14,7 @@ import {
   Check,
   Clock3,
   DatabaseBackup,
+  Eye,
   FileText,
   FolderOpen,
   ImagePlus,
@@ -21,17 +22,16 @@ import {
   LogOut,
   Menu,
   Plus,
+  RotateCcw,
   Search,
+  Tag as TagIcon,
   UploadCloud,
   X,
 } from "lucide-react";
+import { Document, formatDate, request, Session } from "./api";
+import DocumentPanel from "./DocumentPanel";
+import TagPanel from "./TagPanel";
 
-type Session = {
-  authenticated: boolean;
-  username: string | null;
-  setup_required: boolean;
-  owner: boolean;
-};
 type BackupRun = {
   id: string;
   status: "pending" | "running" | "complete" | "failed";
@@ -40,53 +40,6 @@ type BackupRun = {
   error: string;
   created_at: string;
 };
-type Document = {
-  id: string;
-  title: string;
-  original_name: string;
-  source: "web" | "telegram";
-  status: "pending" | "processing" | "ready" | "failed";
-  error: string;
-  created_at: string;
-  snippet: string;
-};
-
-function csrfToken() {
-  return decodeURIComponent(
-    document.cookie
-      .split("; ")
-      .find((value) => value.startsWith("csrftoken="))
-      ?.split("=")[1] ?? "",
-  );
-}
-
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    ...options,
-    credentials: "same-origin",
-    headers: {
-      ...(options.body instanceof FormData
-        ? {}
-        : { "Content-Type": "application/json" }),
-      ...(options.method && options.method !== "GET"
-        ? { "X-CSRFToken": csrfToken() }
-        : {}),
-      ...options.headers,
-    },
-  });
-  const result = await response.json();
-  if (!response.ok)
-    throw new Error(result.error ?? `Request failed (${response.status})`);
-  return result as T;
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
-}
 
 function AuthScreen({
   setup,
@@ -323,7 +276,12 @@ function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"documents" | "backups">("documents");
+  const [view, setView] = useState<"documents" | "tags" | "backups">(
+    "documents",
+  );
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(
+    null,
+  );
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -350,10 +308,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!session?.authenticated) return;
+    if (!session?.authenticated || view !== "documents") return;
     const timer = window.setTimeout(() => loadDocuments(query), 200);
     return () => window.clearTimeout(timer);
-  }, [session?.authenticated, query, loadDocuments]);
+  }, [session?.authenticated, query, view, loadDocuments]);
 
   useEffect(() => {
     if (
@@ -408,6 +366,17 @@ function App() {
     }
   }
 
+  async function retryDocument(id: string) {
+    try {
+      await request(`/api/documents/${id}/retry`, { method: "POST" });
+      await loadDocuments(query);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not retry document",
+      );
+    }
+  }
+
   if (loading) return <div className="loading-screen">Opening Ripiano…</div>;
   if (!session)
     return (
@@ -458,6 +427,15 @@ function App() {
         >
           <FolderOpen size={18} /> All documents
         </button>
+        <button
+          className={`nav-link ${view === "tags" ? "active" : ""}`}
+          onClick={() => {
+            setView("tags");
+            setMenuOpen(false);
+          }}
+        >
+          <TagIcon size={18} /> Tags & filing
+        </button>
         {session.owner && (
           <button
             className={`nav-link ${view === "backups" ? "active" : ""}`}
@@ -502,7 +480,11 @@ function App() {
           </button>
           <div className="topbar-crumb">
             Your archive <span>/</span>{" "}
-            {view === "documents" ? "All documents" : "Backups"}
+            {view === "documents"
+              ? "All documents"
+              : view === "tags"
+                ? "Tags & filing"
+                : "Backups"}
           </div>
           <div className="topbar-right">
             <span className="private-dot" /> Private & yours
@@ -511,6 +493,8 @@ function App() {
         <section className="page-content">
           {view === "backups" ? (
             <BackupPanel />
+          ) : view === "tags" ? (
+            <TagPanel />
           ) : (
             <>
               <div className="page-heading">
@@ -642,7 +626,14 @@ function App() {
                         <FileText size={21} />
                       </div>
                       <div className="document-info">
-                        <h3>{doc.title}</h3>
+                        <h3>
+                          <button
+                            className="document-title-button"
+                            onClick={() => setSelectedDocument(doc)}
+                          >
+                            {doc.title}
+                          </button>
+                        </h3>
                         <div className="document-meta">
                           {formatDate(doc.created_at)} <span>·</span>{" "}
                           {doc.original_name}
@@ -654,6 +645,16 @@ function App() {
                           )}
                         </div>
                         {doc.snippet && <p>{doc.snippet}</p>}
+                        {doc.tags.length > 0 && (
+                          <div className="document-tags">
+                            {doc.tags.map((tag) => (
+                              <span key={tag.id}>
+                                <i style={{ background: tag.color }} />
+                                {tag.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         {doc.status === "failed" && (
                           <p className="doc-error">
                             Processing failed: {doc.error}
@@ -667,6 +668,28 @@ function App() {
                             ? "Needs attention"
                             : "Processing"}
                       </span>
+                      {doc.status === "failed" && (
+                        <button
+                          className="download-link"
+                          onClick={() => void retryDocument(doc.id)}
+                          aria-label={`Retry ${doc.original_name}`}
+                          title="Retry processing"
+                        >
+                          <RotateCcw size={18} />
+                        </button>
+                      )}
+                      {doc.archive_available && (
+                        <a
+                          className="download-link"
+                          href={`/api/documents/${doc.id}/archive`}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`View searchable PDF for ${doc.original_name}`}
+                          title="View searchable PDF"
+                        >
+                          <Eye size={18} />
+                        </a>
+                      )}
                       <a
                         className="download-link"
                         href={`/api/documents/${doc.id}/original`}
@@ -785,6 +808,17 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+      {selectedDocument && (
+        <DocumentPanel
+          initial={selectedDocument}
+          onClose={() => setSelectedDocument(null)}
+          onSaved={() => void loadDocuments(query)}
+          onOpenTags={() => {
+            setSelectedDocument(null);
+            setView("tags");
+          }}
+        />
       )}
     </div>
   );

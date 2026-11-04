@@ -33,6 +33,8 @@ class Document(models.Model):
     error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
+    document_date = models.DateField(null=True, blank=True)
+    tags = models.ManyToManyField("Tag", through="DocumentTag", related_name="documents")
 
     class Meta:
         ordering = ["-created_at"]
@@ -62,3 +64,61 @@ class BackupRun(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class Tag(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="tags")
+    name = models.CharField(max_length=100)
+    color = models.CharField(max_length=7, default="#5d8b66")
+    description = models.CharField(max_length=500, blank=True)
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="children")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["owner", "name"], name="unique_tag_name_per_owner")]
+
+
+class DocumentTag(models.Model):
+    class Origin(models.TextChoices):
+        MANUAL = "manual", "Manual"
+        RULE = "rule", "Rule"
+        MODEL = "model", "Model"
+
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="tag_links")
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name="document_links")
+    origin = models.CharField(max_length=20, choices=Origin.choices, default=Origin.MANUAL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["document", "tag"], name="unique_document_tag")]
+
+
+class ClassificationRule(models.Model):
+    class Field(models.TextChoices):
+        TITLE = "title", "Title"
+        TEXT = "text", "Document text"
+        EITHER = "either", "Title or text"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="classification_rules")
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name="rules")
+    pattern = models.CharField(max_length=200)
+    field = models.CharField(max_length=10, choices=Field.choices, default=Field.EITHER)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [models.UniqueConstraint(fields=["owner", "tag", "pattern", "field"], name="unique_tag_rule")]
+
+
+class TagOverride(models.Model):
+    """A user rejected this tag for this document; rules must respect that correction."""
+
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="tag_overrides")
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name="overrides")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["document", "tag"], name="unique_tag_override")]

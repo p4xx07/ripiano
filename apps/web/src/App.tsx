@@ -14,6 +14,7 @@ import {
   Camera,
   Check,
   Clock3,
+  Copy,
   DatabaseBackup,
   Eye,
   FileText,
@@ -705,6 +706,12 @@ function App() {
                             ))}
                           </div>
                         )}
+                        {doc.duplicate_of && (
+                          <span className="duplicate-chip">
+                            <Copy size={12} /> Exact copy of{" "}
+                            {doc.duplicate_of.title}
+                          </span>
+                        )}
                         {doc.physical_copies.length > 0 && (
                           <div className="document-physical">
                             <MapPin size={13} />{" "}
@@ -870,6 +877,7 @@ function App() {
       )}
       {selectedDocument && (
         <DocumentPanel
+          key={selectedDocument.id}
           initial={selectedDocument}
           onClose={() => setSelectedDocument(null)}
           onSaved={() => void loadDocuments(query)}
@@ -880,6 +888,11 @@ function App() {
           onOpenLocations={() => {
             setSelectedDocument(null);
             setView("physical");
+          }}
+          onOpenDuplicate={(id) => {
+            void request<Document>(`/api/documents/${id}`)
+              .then(setSelectedDocument)
+              .catch((cause) => setError(cause.message));
           }}
         />
       )}

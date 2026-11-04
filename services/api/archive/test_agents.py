@@ -57,5 +57,9 @@ def test_agent_document_filter_and_tag_changes_are_isolated():
     assert changed["added"] == [str(secret.id)]
     assert DocumentTag.objects.filter(document=in_scope, tag=secret, origin=DocumentTag.Origin.MODEL).exists()
     assert DocumentTag.objects.filter(document=in_scope, tag=bills).exists()
+    _execute(grant, "change_document_tags", {"document_id": str(in_scope.id), "remove": [str(secret.id)]})
+    _, correction = _execute(grant, "change_document_tags", {"document_id": str(in_scope.id), "add": [str(secret.id)]})
+    assert correction["suppressed"] == [str(secret.id)]
+    assert not DocumentTag.objects.filter(document=in_scope, tag=secret).exists()
     grant.scopes = ["documents:search"]
     assert _execute(grant, "search_documents", {"query": "electricity"})[1]["documents"] == []

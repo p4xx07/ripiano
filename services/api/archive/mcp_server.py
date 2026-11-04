@@ -26,6 +26,7 @@ TOOLS = {
             "type": "object", "properties": {
                 "query": {"type": "string"},
                 "status": {"type": "string", "enum": ["pending", "processing", "ready", "failed"]},
+                "offset": {"type": "integer", "minimum": 0},
             }, "additionalProperties": False,
         }),
     ),
@@ -118,8 +119,9 @@ def _execute(grant, name, args):
     if name == "search_documents":
         query = args.get("query", "")
         status = args.get("status")
-        if not isinstance(query, str) or len(query) > 200 or status not in (None, *Document.Status.values):
-            return None, {"error": "Invalid query or status"}
+        offset = args.get("offset", 0)
+        if not isinstance(query, str) or len(query) > 200 or status not in (None, *Document.Status.values) or not isinstance(offset, int) or isinstance(offset, bool) or not 0 <= offset <= 1_000_000:
+            return None, {"error": "Invalid query, status, or offset"}
         docs = _documents(grant).prefetch_related("tag_links__tag")
         if query:
             if "documents:text" in grant.scopes:
@@ -128,14 +130,15 @@ def _execute(grant, name, args):
                 docs = docs.filter(title__icontains=query)
         if status:
             docs = docs.filter(status=status)
+        page = list(docs[offset:offset + 20])
         return None, {"documents": [{
             "id": str(doc.id), "title": doc.title, "status": doc.status,
             "document_date": doc.document_date.isoformat() if doc.document_date else None,
             "tags": [{"id": str(link.tag_id), "name": link.tag.name} for link in doc.tag_links.all()],
-        } for doc in docs[:20]]}
+        } for doc in page], "next_offset": offset + 20 if len(page) == 20 else None}
 
     if name == "list_tags":
-        return None, {"tags": [{"id": str(tag.id), "name": tag.name} for tag in Tag.objects.filter(owner=grant.owner)[:200]]}
+        return None, {"tags": [{"id": str(tag.id), "name": tag.name, "description": tag.description} for tag in Tag.objects.filter(owner=grant.owner)[:200]]}
 
     document_id = _uuid(args.get("document_id"))
     if document_id is None:
@@ -173,10 +176,10 @@ def _execute(grant, name, args):
             for tag_id in remove:
                 DocumentTag.objects.filter(document=document, tag_id=tag_id).delete()
                 TagOverride.objects.get_or_create(document=document, tag_id=tag_id)
-            for tag_id in add:
-                TagOverride.objects.filter(document=document, tag_id=tag_id).delete()
-                DocumentTag.objects.update_or_create(document=document, tag_id=tag_id, defaults={"origin": DocumentTag.Origin.MODEL})
-        return document, {"document_id": str(document.id), "added": [str(x) for x in add], "removed": [str(x) for x in remove]}
+            suppressed = set(TagOverride.objects.filter(document=document, tag_id__in=add).values_list("tag_id", flat=True))
+            for tag_id in add - suppressed:
+                DocumentTag.objects.get_or_create(document=document, tag_id=tag_id, defaults={"origin": DocumentTag.Origin.MODEL})
+        return document, {"document_id": str(document.id), "added": [str(x) for x in add - suppressed], "suppressed": [str(x) for x in suppressed], "removed": [str(x) for x in remove]}
 
     return None, {"error": "Unknown tool"}
 

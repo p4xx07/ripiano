@@ -11,12 +11,14 @@ Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability
 - [Architecture](docs/ARCHITECTURE.md): services, data model, classification, agents, security, deployment, and backup.
 - [Backup and restore](docs/BACKUP_RESTORE.md): mounted volume layout, schedule, and clean-stack recovery.
 - [Agent access](docs/AGENT_ACCESS.md): named MCP grants, permissions, and privacy boundaries.
+- [Optional local Mac classifier](agents/local_classifier/README.md): Ollama through MCP, 10:00 LaunchAgent, and missed-run catch-up.
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md): build order and verification gates.
 - [Quality judges](docs/QUALITY_JUDGES.md): the 9.5 target, independent review rubric, and release blockers.
+- [Portainer deployment](deploy/README.md): digest-pinned images, NAS volumes, HTTPS, and backup mount.
 
 ## First implementation slice
 
-The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, local phrase-based automatic filing, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, and tag-changing permissions, with optional tag filtering, expiry, revocation, and an activity log. Failed OCR can be retried, and the searchable PDF can be opened directly. This is the beginning of the staged implementation, not the complete Paperless feature set. Native Android scanning, pretrained classification, automatic OAuth agent sign-in, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
+The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, and tag-changing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags through that grant. Failed OCR can be retried, and the searchable PDF can be opened directly. This is the beginning of the staged implementation, not the complete Paperless feature set. Native Android scanning, calibrated pretrained classification, automatic OAuth agent sign-in, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
 
 ### Run locally
 
@@ -24,7 +26,7 @@ The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved or
 2. Run `docker compose up --build -d` from this directory.
 3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account.
 
-For a NAS deployment, set `RIPIANO_DEBUG=0`, an HTTPS `RIPIANO_PUBLIC_ORIGIN`, the reverse proxy host in `RIPIANO_ALLOWED_HOSTS`, and bind `RIPIANO_MEDIA_PATH`, `RIPIANO_DB_PATH`, and `RIPIANO_BACKUP_PATH` to persistent NAS folders. Give UID 10001 write access to the media and backup folders. The Compose stack exposes only the web service. Place HTTPS in front of it with Synology's reverse proxy. These current `build:` definitions require a Portainer environment that can build from the checked-out repository; a pinned GHCR release stack follows in a later milestone. A local clean-stack restore passed, but NAS-specific permissions and restore still need verification before storing real documents.
+For a NAS deployment, use [the Portainer stack](deploy/README.md) with released GHCR image digests. Set `RIPIANO_DEBUG=0`, an HTTPS `RIPIANO_PUBLIC_ORIGIN`, the reverse proxy host in `RIPIANO_ALLOWED_HOSTS`, and bind `RIPIANO_MEDIA_PATH`, `RIPIANO_DB_PATH`, and `RIPIANO_BACKUP_PATH` to persistent NAS folders. Give UID 10001 write access to the media and backup folders. The Compose stack exposes only the web service. Place HTTPS in front of it with Synology's reverse proxy. A local clean-stack restore passed with documents, locations, duplicate links, and revoked agent grants, but NAS-specific permissions and restore still need verification before storing real documents. No release images have been published from this draft PR yet.
 
 ### Work on the services
 

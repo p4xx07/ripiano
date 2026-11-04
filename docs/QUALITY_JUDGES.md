@@ -26,4 +26,4 @@ The weighted mean of the three reviewers must be at least 9.5, every reviewer mu
 
 ## Current development evidence
 
-The current implementation has a local clean-stack restore drill, 15 API tests, production PWA build, and desktop/mobile browser journeys for upload/OCR/search/tag/physical copy and agent grant/revocation. The browser journeys use emulation and are not real-device results. The Paperless parity matrix, Android client, richer local classification, and other release gates are still incomplete, so **no 9.5 score or release claim is assigned**.
+The current implementation has a local clean-stack restore drill, 16 API tests, 3 local-classifier tests, a production PWA build, and desktop/mobile browser journeys for upload/OCR/search/tag/physical copy and agent grant/revocation. The browser journeys use emulation and are not real-device results. The Paperless parity matrix, Android client, calibrated local classification, and other release gates are still incomplete, so **no 9.5 score or release claim is assigned**.

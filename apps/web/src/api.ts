@@ -43,6 +43,7 @@ export type Document = {
   id: string;
   title: string;
   original_name: string;
+  duplicate_of: { id: string; title: string } | null;
   source: "web" | "telegram";
   status: "pending" | "processing" | "ready" | "failed";
   archive_available: boolean;

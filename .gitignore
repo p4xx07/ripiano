@@ -12,3 +12,4 @@
 **/playwright-report/
 runtime/
 .DS_Store
+agents/local_classifier/*.log

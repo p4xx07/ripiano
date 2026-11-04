@@ -1,4 +1,5 @@
 FROM python:3.13-slim-trixie
+LABEL org.opencontainers.image.source="https://github.com/p4xx07/ripiano"
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_NO_DEV=1 UV_FROZEN=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ghostscript qpdf tesseract-ocr tesseract-ocr-eng tesseract-ocr-ita pngquant unpaper postgresql-client \

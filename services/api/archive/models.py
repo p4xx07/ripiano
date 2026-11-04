@@ -26,6 +26,7 @@ class Document(models.Model):
     original_mime = models.CharField(max_length=100)
     original_sha256 = models.CharField(max_length=64)
     original_size = models.PositiveBigIntegerField()
+    duplicate_of = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="exact_copies")
     archive_path = models.CharField(max_length=500, blank=True)
     extracted_text = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
@@ -39,6 +40,7 @@ class Document(models.Model):
     class Meta:
         ordering = ["-created_at"]
         constraints = [models.UniqueConstraint(fields=["source", "source_ref"], condition=~Q(source_ref=""), name="unique_document_source_ref")]
+        indexes = [models.Index(fields=["owner", "original_sha256"], name="document_owner_sha_idx")]
 
 
 class InputCursor(models.Model):

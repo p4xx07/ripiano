@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   ArrowDownToLine,
+  Copy,
   Eye,
   FileText,
   History,
@@ -19,12 +20,14 @@ export default function DocumentPanel({
   onSaved,
   onOpenTags,
   onOpenLocations,
+  onOpenDuplicate,
 }: {
   initial: Document;
   onClose: () => void;
   onSaved: (document: Document) => void;
   onOpenTags: () => void;
   onOpenLocations: () => void;
+  onOpenDuplicate: (id: string) => void;
 }) {
   const [current, setCurrent] = useState(initial);
   const [title, setTitle] = useState(initial.title);
@@ -176,6 +179,15 @@ export default function DocumentPanel({
           The original is safe. Add details only when they help you find it
           later.
         </p>
+        {current.duplicate_of && (
+          <button
+            className="duplicate-note"
+            onClick={() => onOpenDuplicate(current.duplicate_of!.id)}
+          >
+            <Copy size={16} /> Exact copy of “{current.duplicate_of.title}” ·
+            Open earlier copy
+          </button>
+        )}
         {error && (
           <div className="inline-error" role="alert">
             {error}
@@ -217,7 +229,9 @@ export default function DocumentPanel({
                   />
                   {tag.name}
                   {current.tags.find((item) => item.id === tag.id)?.origin ===
-                    "rule" && <small>Automatic</small>}
+                    "rule" && <small>Rule</small>}
+                  {current.tags.find((item) => item.id === tag.id)?.origin ===
+                    "model" && <small>Agent</small>}
                 </label>
               ))}
             </div>

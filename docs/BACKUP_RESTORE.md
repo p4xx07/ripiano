@@ -28,7 +28,7 @@ The `.env` or Portainer secrets are deliberately outside the snapshot. Keep a se
 3. From the Compose project directory, run:
 
    ```sh
-   docker compose stop web worker scheduler api
+   docker compose stop web worker scheduler mcp api
    docker compose run --rm --no-deps api .venv/bin/python manage.py restore_snapshot <snapshot-name> --yes
    docker compose up -d
    ```

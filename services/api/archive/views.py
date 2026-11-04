@@ -36,6 +36,7 @@ def _document_json(document):
         "id": str(document.id),
         "title": document.title,
         "original_name": document.original_name,
+        "duplicate_of": {"id": str(document.duplicate_of_id), "title": document.duplicate_of.title} if document.duplicate_of_id else None,
         "source": document.source,
         "status": document.status,
         "archive_available": bool(document.archive_path) and document.status == Document.Status.READY,
@@ -107,7 +108,7 @@ def documents(request):
     if unauthorized:
         return unauthorized
     if request.method == "GET":
-        queryset = Document.objects.filter(owner=request.user).prefetch_related("tag_links__tag", "physical_copies__location")
+        queryset = Document.objects.filter(owner=request.user).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
         if query:
             if connection.vendor == "postgresql":
@@ -133,7 +134,7 @@ def document_detail(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user).prefetch_related("tag_links__tag", "physical_copies__location").first()
+    document = Document.objects.filter(pk=document_id, owner=request.user).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location").first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if request.method == "PATCH":
@@ -175,7 +176,7 @@ def document_detail(request, document_id):
                 for tag in chosen:
                     TagOverride.objects.filter(document=document, tag=tag).delete()
                     DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
-        document = Document.objects.filter(pk=document.id).prefetch_related("tag_links__tag", "physical_copies__location").get()
+        document = Document.objects.filter(pk=document.id).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location").get()
     return JsonResponse(_document_json(document))
 
 

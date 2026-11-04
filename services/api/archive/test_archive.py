@@ -72,6 +72,26 @@ def test_invalid_upload_does_not_leave_original(tmp_path):
 
 
 @pytest.mark.django_db
+def test_exact_duplicate_is_flagged_without_discarding_either_original(tmp_path):
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    with override_settings(MEDIA_ROOT=tmp_path):
+        client = Client()
+        client.force_login(owner)
+        with patch("archive.ingestion.process_document.delay"):
+            first = client.post("/api/documents", {"document": image_upload("first.png")}).json()
+            second = client.post("/api/documents", {"document": image_upload("again.png")}).json()
+            client.force_login(other)
+            foreign = client.post("/api/documents", {"document": image_upload("other.png")}).json()
+        assert first["duplicate_of"] is None
+        assert second["duplicate_of"] == {"id": first["id"], "title": first["title"]}
+        assert foreign["duplicate_of"] is None
+        assert Document.objects.count() == 3
+        assert len({document.original_path for document in Document.objects.all()}) == 3
+        assert all((tmp_path / document.original_path).exists() for document in Document.objects.all())
+
+
+@pytest.mark.django_db
 def test_reconciler_recovers_stale_processing(tmp_path):
     user = get_user_model().objects.create_user("alice", password="secure-password-1")
     document = Document.objects.create(

@@ -10,6 +10,7 @@ import {
 import {
   ArrowDownToLine,
   ArrowRight,
+  Bot,
   Camera,
   Check,
   Clock3,
@@ -31,6 +32,7 @@ import {
 } from "lucide-react";
 import { Document, formatDate, request, Session } from "./api";
 import DocumentPanel from "./DocumentPanel";
+import AgentPanel from "./AgentPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
 
@@ -281,7 +283,7 @@ function App() {
   const initialSticker =
     new URLSearchParams(window.location.search).get("sticker") ?? "";
   const [view, setView] = useState<
-    "documents" | "tags" | "physical" | "backups"
+    "documents" | "tags" | "physical" | "backups" | "agents"
   >(initialSticker ? "physical" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
@@ -457,6 +459,17 @@ function App() {
         </button>
         {session.owner && (
           <button
+            className={`nav-link ${view === "agents" ? "active" : ""}`}
+            onClick={() => {
+              setView("agents");
+              setMenuOpen(false);
+            }}
+          >
+            <Bot size={18} /> Agents
+          </button>
+        )}
+        {session.owner && (
+          <button
             className={`nav-link ${view === "backups" ? "active" : ""}`}
             onClick={() => {
               setView("backups");
@@ -505,7 +518,9 @@ function App() {
                 ? "Tags & filing"
                 : view === "physical"
                   ? "Paper archive"
-                  : "Backups"}
+                  : view === "agents"
+                    ? "Agents"
+                    : "Backups"}
           </div>
           <div className="topbar-right">
             <span className="private-dot" /> Private & yours
@@ -514,6 +529,8 @@ function App() {
         <section className="page-content">
           {view === "backups" ? (
             <BackupPanel />
+          ) : view === "agents" ? (
+            <AgentPanel />
           ) : view === "tags" ? (
             <TagPanel />
           ) : view === "physical" ? (

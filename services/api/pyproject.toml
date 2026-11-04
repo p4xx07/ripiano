@@ -8,6 +8,7 @@ dependencies = [
   "djangorestframework>=3.16,<3.17",
   "gunicorn>=23,<24",
   "httpx>=0.28,<0.29",
+  "mcp==2.3.0",
   "ocrmypdf>=17.12,<18",
   "pillow>=11,<13",
   "psycopg[binary]>=3.3,<3.4",

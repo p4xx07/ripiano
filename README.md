@@ -10,11 +10,13 @@ Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability
 - [Feature parity](docs/FEATURE_PARITY.md): Paperless capabilities and Ripiano delivery gates.
 - [Architecture](docs/ARCHITECTURE.md): services, data model, classification, agents, security, deployment, and backup.
 - [Backup and restore](docs/BACKUP_RESTORE.md): mounted volume layout, schedule, and clean-stack recovery.
+- [Agent access](docs/AGENT_ACCESS.md): named MCP grants, permissions, and privacy boundaries.
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md): build order and verification gates.
+- [Quality judges](docs/QUALITY_JUDGES.md): the 9.5 target, independent review rubric, and release blockers.
 
 ## First implementation slice
 
-The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, local phrase-based automatic filing, and a physical archive. Camera, gallery, and file selection are available through the browser. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. Failed OCR can be retried, and the searchable PDF can be opened directly. This is the beginning of the staged implementation, not the complete Paperless feature set. Native Android scanning, pretrained classification, scoped agents, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
+The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, local phrase-based automatic filing, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, and tag-changing permissions, with optional tag filtering, expiry, revocation, and an activity log. Failed OCR can be retried, and the searchable PDF can be opened directly. This is the beginning of the staged implementation, not the complete Paperless feature set. Native Android scanning, pretrained classification, automatic OAuth agent sign-in, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
 
 ### Run locally
 

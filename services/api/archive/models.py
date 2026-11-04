@@ -157,3 +157,32 @@ class Movement(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class AgentGrant(models.Model):
+    """A named, revocable bearer grant; only the hash is persisted."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="agent_grants")
+    name = models.CharField(max_length=100)
+    token_hash = models.CharField(max_length=64, unique=True)
+    scopes = models.JSONField(default=list)
+    filter_tag = models.ForeignKey(Tag, null=True, blank=True, on_delete=models.PROTECT, related_name="agent_grants")
+    expires_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class AgentAudit(models.Model):
+    grant = models.ForeignKey(AgentGrant, on_delete=models.CASCADE, related_name="audit_events")
+    action = models.CharField(max_length=60)
+    document = models.ForeignKey(Document, null=True, blank=True, on_delete=models.SET_NULL)
+    outcome = models.CharField(max_length=20)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

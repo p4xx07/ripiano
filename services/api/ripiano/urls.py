@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path
 
-from archive import metadata_views, physical_views, views
+from archive import agent_views, metadata_views, physical_views, views
 
 urlpatterns = [
     path("healthz", views.health),
@@ -24,5 +24,8 @@ urlpatterns = [
     path("api/copies/<uuid:copy_id>/history", physical_views.copy_history),
     path("api/copies/<uuid:copy_id>/label", physical_views.printable_label),
     path("api/stickers/<str:sticker_code>", physical_views.sticker_lookup),
+    path("api/agents", agent_views.grants),
+    path("api/agents/<uuid:grant_id>", agent_views.grant_detail),
+    path("api/agents/events", agent_views.events),
     path("admin/", admin.site.urls),
 ]

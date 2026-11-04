@@ -1,0 +1,98 @@
+name: ripiano
+
+x-api-env: &api-env
+  RIPIANO_DEBUG: ${RIPIANO_DEBUG:-0}
+  RIPIANO_SECRET_KEY: ${RIPIANO_SECRET_KEY:?Set RIPIANO_SECRET_KEY}
+  RIPIANO_SETUP_KEY: ${RIPIANO_SETUP_KEY:?Set RIPIANO_SETUP_KEY}
+  RIPIANO_PUBLIC_ORIGIN: ${RIPIANO_PUBLIC_ORIGIN:?Set RIPIANO_PUBLIC_ORIGIN}
+  RIPIANO_ALLOWED_HOSTS: ${RIPIANO_ALLOWED_HOSTS:?Set RIPIANO_ALLOWED_HOSTS}
+  RIPIANO_DB_HOST: db
+  RIPIANO_DB_NAME: ripiano
+  RIPIANO_DB_USER: ripiano
+  RIPIANO_DB_PASSWORD: ${RIPIANO_DB_PASSWORD:?Set RIPIANO_DB_PASSWORD}
+  RIPIANO_BROKER_URL: redis://broker:6379/0
+  RIPIANO_MEDIA_ROOT: /data
+
+x-api-base: &api-base
+  build: ./services/api
+  environment: *api-env
+  volumes:
+    - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+  depends_on:
+    db:
+      condition: service_healthy
+    broker:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:17.6-bookworm
+    environment:
+      POSTGRES_DB: ripiano
+      POSTGRES_USER: ripiano
+      POSTGRES_PASSWORD: ${RIPIANO_DB_PASSWORD:?Set RIPIANO_DB_PASSWORD}
+    volumes:
+      - ${RIPIANO_DB_PATH:-ripiano_postgres}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ripiano -d ripiano"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  broker:
+    image: valkey/valkey:8.1.3-alpine
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - broker_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  api:
+    <<: *api-base
+    command: ["sh", "-c", ".venv/bin/python manage.py migrate --noinput && exec .venv/bin/gunicorn ripiano.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 60"]
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+  worker:
+    <<: *api-base
+    command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1"]
+    depends_on:
+      api:
+        condition: service_healthy
+  scheduler:
+    <<: *api-base
+    command: [".venv/bin/celery", "-A", "ripiano", "beat", "--loglevel=INFO"]
+    depends_on:
+      api:
+        condition: service_healthy
+  telegram:
+    <<: *api-base
+    profiles: ["telegram"]
+    command: [".venv/bin/python", "manage.py", "telegram_input"]
+    environment:
+      <<: *api-env
+      RIPIANO_TELEGRAM_BOT_TOKEN: ${RIPIANO_TELEGRAM_BOT_TOKEN:-}
+      RIPIANO_TELEGRAM_OWNER_USERNAME: ${RIPIANO_TELEGRAM_OWNER_USERNAME:-}
+      RIPIANO_TELEGRAM_ALLOWED_CHAT_IDS: ${RIPIANO_TELEGRAM_ALLOWED_CHAT_IDS:-}
+    depends_on:
+      api:
+        condition: service_healthy
+  web:
+    build: ./apps/web
+    ports:
+      - "${RIPIANO_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  broker_data:
+  ripiano_media:
+  ripiano_postgres:

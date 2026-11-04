@@ -8,9 +8,11 @@ Status: proposed implementation baseline, 2026-11-04. Exact component versions a
 flowchart LR
   PWA[React PWA: iOS, Android, desktop] --> API[Same-origin Ripiano API]
   AND[Android client: shared UI + native scanner] --> API
-  API --> PG[(PostgreSQL)]
-  API --> MEDIA[(NAS managed media volume)]
-  API --> BROKER[(Valkey task broker)]
+  API --> INGEST[Shared ingestion service]
+  TG[Optional Telegram poller] --> INGEST
+  INGEST --> PG[(PostgreSQL)]
+  INGEST --> MEDIA[(NAS managed media volume)]
+  INGEST --> BROKER[(Valkey task broker)]
   BROKER --> WORKER[Processing worker]
   WORKER --> MEDIA
   WORKER --> PG
@@ -21,6 +23,8 @@ flowchart LR
 ```
 
 The web/PWA and API are served on one HTTPS origin through the Synology reverse proxy, as in Condivisa. The Portainer stack contains an API/web service, processing worker, scheduler, PostgreSQL, Valkey, and optional conversion services. The public entry point is the reverse proxy; database, broker, converter, and MCP internals are not separately exposed to the internet. The Android client can use the same origin over LAN or Tailscale.
+
+External inputs use a shared ingestion service. Each adapter supplies an owner, original bytes, filename, source, and stable source reference. The service validates and durably stores the original, creates the document record, then queues the common OCR/classification pipeline. Source references prevent repeats after adapter restarts. The first adapter is an optional Telegram long poller with a persisted update cursor. It accepts files only from configured private chat IDs, so no inbound webhook port is needed. Standard Telegram Bot API downloads are limited to 20 MB and updates expire after 24 hours. Telegram handles the document before Ripiano receives it, so this input is explicitly less private than direct upload. Future S3, Google Drive, and watched-folder adapters should use the same contract and their own least-privilege credentials and cursors.
 
 ### Initial technology choices
 

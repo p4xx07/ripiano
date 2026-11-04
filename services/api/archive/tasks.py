@@ -1,0 +1,86 @@
+import logging
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from datetime import timedelta
+
+from celery import shared_task
+from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
+from PIL import Image
+from pypdf import PdfReader
+
+from .models import Document
+
+logger = logging.getLogger(__name__)
+
+
+@shared_task(name="archive.tasks.process_document")
+def process_document(document_id):
+    with transaction.atomic():
+        document = Document.objects.select_for_update().get(pk=document_id)
+        if document.status != Document.Status.PENDING:
+            return
+        document.status = Document.Status.PROCESSING
+        document.processing_started_at = timezone.now()
+        document.error = ""
+        document.save(update_fields=["status", "processing_started_at", "error"])
+
+    media_root = Path(settings.MEDIA_ROOT)
+    original = media_root / document.original_path
+    archive_dir = media_root / "archive" / str(document.id)[:2]
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archive = archive_dir / f"{document.id}.pdf"
+
+    try:
+        with tempfile.TemporaryDirectory(dir=media_root) as work_dir:
+            work_dir = Path(work_dir)
+            input_file = original
+            if document.original_mime.startswith("image/"):
+                input_file = work_dir / "input.pdf"
+                with Image.open(original) as image:
+                    image.convert("RGB").save(input_file, "PDF", resolution=300)
+            output_file = work_dir / "archive.pdf"
+            subprocess.run(
+                [
+                    str(Path(sys.executable).parent / "ocrmypdf"), "--skip-text", "--output-type", "pdfa",
+                    "--language", settings.RIPIANO_OCR_LANGUAGES,
+                    "--skip-big", "50", str(input_file), str(output_file),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=3300,
+            )
+            text = "\n".join(page.extract_text() or "" for page in PdfReader(output_file).pages)
+            with output_file.open("rb") as source:
+                os.fsync(source.fileno())
+            os.replace(output_file, archive)
+        document.archive_path = str(archive.relative_to(media_root))
+        document.extracted_text = text
+        document.status = Document.Status.READY
+        document.error = ""
+        document.processed_at = timezone.now()
+        document.save(update_fields=["archive_path", "extracted_text", "status", "error", "processed_at"])
+    except Exception as exc:
+        logger.exception("Document processing failed: %s", document.id)
+        if isinstance(exc, subprocess.CalledProcessError):
+            logger.error("OCR diagnostic: %s", (exc.stderr or "")[-2000:])
+        document.status = Document.Status.FAILED
+        diagnostic = (exc.stderr or "").strip() if isinstance(exc, subprocess.CalledProcessError) else ""
+        document.error = (diagnostic.splitlines()[-1] if diagnostic else str(exc))[:500]
+        document.save(update_fields=["status", "error"])
+
+
+@shared_task(name="archive.tasks.reconcile_pending_documents")
+def reconcile_pending_documents():
+    stale_before = timezone.now() - timedelta(hours=1)
+    Document.objects.filter(
+        status=Document.Status.PROCESSING,
+        processing_started_at__lt=stale_before,
+    ).update(status=Document.Status.PENDING, processing_started_at=None)
+    for document_id in Document.objects.filter(status=Document.Status.PENDING).values_list("id", flat=True)[:100]:
+        process_document.delay(str(document_id))

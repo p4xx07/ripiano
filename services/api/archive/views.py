@@ -11,9 +11,10 @@ from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
-from .models import Document
+from .models import BackupRun, Document
 from .ingestion import ingest_document
 from .storage import InvalidDocument
+from .tasks import backup_archive
 
 
 def _payload(request):
@@ -73,6 +74,7 @@ def session(request):
         return JsonResponse({
             "authenticated": request.user.is_authenticated,
             "username": request.user.get_username() if request.user.is_authenticated else None,
+            "owner": request.user.is_superuser if request.user.is_authenticated else False,
             "setup_required": not get_user_model().objects.exists(),
         })
     if request.method == "DELETE":
@@ -140,3 +142,27 @@ def download_original(request, document_id):
         as_attachment=True,
         filename=Path(document.original_name).name,
     )
+
+
+@require_http_methods(["GET", "POST"])
+def backups(request):
+    if not request.user.is_authenticated or not request.user.is_superuser:
+        return JsonResponse({"error": "Owner access required"}, status=403)
+    if request.method == "GET":
+        return JsonResponse({
+            "schedule": f"{settings.RIPIANO_BACKUP_HOUR:02d}:{settings.RIPIANO_BACKUP_MINUTE:02d} Europe/Rome",
+            "runs": [{
+                "id": str(run.id), "status": run.status, "trigger": run.trigger,
+                "snapshot_name": run.snapshot_name, "error": run.error,
+                "created_at": run.created_at.isoformat(),
+            } for run in BackupRun.objects.all()[:20]],
+        })
+    run = BackupRun.objects.create(trigger="manual")
+    try:
+        backup_archive.delay(str(run.id))
+    except Exception:
+        run.status = BackupRun.Status.FAILED
+        run.error = "Backup queue unavailable"
+        run.save(update_fields=["status", "error"])
+        return JsonResponse({"error": run.error}, status=503)
+    return JsonResponse({"id": str(run.id), "status": run.status}, status=202)

@@ -95,6 +95,14 @@ CELERY_BROKER_URL = os.environ.get("RIPIANO_BROKER_URL", "redis://localhost:6379
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 3600
+CELERY_TIMEZONE = "Europe/Rome"
+
+RIPIANO_BACKUP_ROOT = Path(os.environ.get("RIPIANO_BACKUP_ROOT", "/backup"))
+RIPIANO_BACKUP_HOUR = int(os.environ.get("RIPIANO_BACKUP_HOUR", "2"))
+RIPIANO_BACKUP_MINUTE = int(os.environ.get("RIPIANO_BACKUP_MINUTE", "0"))
+RIPIANO_BACKUP_RETENTION = max(1, int(os.environ.get("RIPIANO_BACKUP_RETENTION", "7")))
+if not 0 <= RIPIANO_BACKUP_HOUR <= 23 or not 0 <= RIPIANO_BACKUP_MINUTE <= 59:
+    raise RuntimeError("Backup hour and minute must be valid local times")
 
 RIPIANO_MAX_UPLOAD_BYTES = int(os.environ.get("RIPIANO_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 RIPIANO_OCR_LANGUAGES = os.environ.get("RIPIANO_OCR_LANGUAGES", "eng+ita")

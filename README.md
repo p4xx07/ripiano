@@ -9,11 +9,12 @@ Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
 - [Feature parity](docs/FEATURE_PARITY.md): Paperless capabilities and Ripiano delivery gates.
 - [Architecture](docs/ARCHITECTURE.md): services, data model, classification, agents, security, deployment, and backup.
+- [Backup and restore](docs/BACKUP_RESTORE.md): mounted volume layout, schedule, and clean-stack recovery.
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md): build order and verification gates.
 
 ## First implementation slice
 
-The first runnable slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, and a responsive installable PWA. Camera, gallery, and file selection are available through the browser. This is the beginning of the staged implementation, not the complete Paperless feature set. Native Android scanning, tags and automatic classification, physical stickers, scoped agents, scheduled backups, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
+The first runnable slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, and scheduled or manual checksum-verified backups. Camera, gallery, and file selection are available through the browser. This is the beginning of the staged implementation, not the complete Paperless feature set. Native Android scanning, tags and automatic classification, physical stickers, scoped agents, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
 
 ### Run locally
 
@@ -21,7 +22,7 @@ The first runnable slice has owner setup and sign-in, PDF/JPEG/PNG upload, prese
 2. Run `docker compose up --build -d` from this directory.
 3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account.
 
-For a NAS deployment, set `RIPIANO_DEBUG=0`, an HTTPS `RIPIANO_PUBLIC_ORIGIN`, the reverse proxy host in `RIPIANO_ALLOWED_HOSTS`, and bind `RIPIANO_MEDIA_PATH` and `RIPIANO_DB_PATH` to persistent NAS folders. Give UID 10001 write access to the media folder. The Compose stack exposes only the web service. Place HTTPS in front of it with Synology's reverse proxy. These current `build:` definitions require a Portainer environment that can build from the checked-out repository; a pinned GHCR release stack follows in a later milestone. Do not put real documents into an archive until the backup/restore milestone has passed.
+For a NAS deployment, set `RIPIANO_DEBUG=0`, an HTTPS `RIPIANO_PUBLIC_ORIGIN`, the reverse proxy host in `RIPIANO_ALLOWED_HOSTS`, and bind `RIPIANO_MEDIA_PATH`, `RIPIANO_DB_PATH`, and `RIPIANO_BACKUP_PATH` to persistent NAS folders. Give UID 10001 write access to the media and backup folders. The Compose stack exposes only the web service. Place HTTPS in front of it with Synology's reverse proxy. These current `build:` definitions require a Portainer environment that can build from the checked-out repository; a pinned GHCR release stack follows in a later milestone. A local clean-stack restore passed, but NAS-specific permissions and restore still need verification before storing real documents.
 
 ### Work on the services
 

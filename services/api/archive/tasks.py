@@ -13,7 +13,8 @@ from django.utils import timezone
 from PIL import Image
 from pypdf import PdfReader
 
-from .models import Document
+from .backup import create_snapshot
+from .models import BackupRun, Document
 
 logger = logging.getLogger(__name__)
 
@@ -84,3 +85,23 @@ def reconcile_pending_documents():
     ).update(status=Document.Status.PENDING, processing_started_at=None)
     for document_id in Document.objects.filter(status=Document.Status.PENDING).values_list("id", flat=True)[:100]:
         process_document.delay(str(document_id))
+
+
+@shared_task(name="archive.tasks.backup_archive", time_limit=6 * 3600)
+def backup_archive(run_id=None):
+    run = BackupRun.objects.get(pk=run_id) if run_id else BackupRun.objects.create(trigger="schedule")
+    run.status = BackupRun.Status.RUNNING
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at"])
+    try:
+        snapshot = create_snapshot()
+        run.status = BackupRun.Status.COMPLETE
+        run.snapshot_name = snapshot.name
+        run.completed_at = timezone.now()
+        run.error = ""
+    except Exception as exc:
+        logger.exception("Backup failed: %s", run.id)
+        run.status = BackupRun.Status.FAILED
+        run.completed_at = timezone.now()
+        run.error = str(exc)[:500]
+    run.save(update_fields=["status", "snapshot_name", "completed_at", "error"])

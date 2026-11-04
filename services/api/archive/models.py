@@ -42,3 +42,23 @@ class Document(models.Model):
 class InputCursor(models.Model):
     source = models.CharField(max_length=30, unique=True)
     next_offset = models.BigIntegerField(default=0)
+
+
+class BackupRun(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        RUNNING = "running", "Running"
+        COMPLETE = "complete", "Complete"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    trigger = models.CharField(max_length=20, default="schedule")
+    snapshot_name = models.CharField(max_length=100, blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]

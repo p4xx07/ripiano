@@ -13,6 +13,7 @@ import {
   Camera,
   Check,
   Clock3,
+  DatabaseBackup,
   FileText,
   FolderOpen,
   ImagePlus,
@@ -29,6 +30,15 @@ type Session = {
   authenticated: boolean;
   username: string | null;
   setup_required: boolean;
+  owner: boolean;
+};
+type BackupRun = {
+  id: string;
+  status: "pending" | "running" | "complete" | "failed";
+  trigger: string;
+  snapshot_name: string;
+  error: string;
+  created_at: string;
 };
 type Document = {
   id: string;
@@ -180,6 +190,129 @@ function AuthScreen({
   );
 }
 
+function BackupPanel() {
+  const [runs, setRuns] = useState<BackupRun[]>([]);
+  const [schedule, setSchedule] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => {
+    try {
+      const result = await request<{ schedule: string; runs: BackupRun[] }>(
+        "/api/backups",
+      );
+      setRuns(result.runs);
+      setSchedule(result.schedule);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not load backups",
+      );
+    }
+  }, []);
+  useEffect(() => {
+    void load();
+    const timer = window.setInterval(load, 10000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  async function start() {
+    setBusy(true);
+    setError("");
+    try {
+      await request("/api/backups", { method: "POST" });
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not start backup",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">
+            <span className="eyebrow-line" /> ARCHIVE SAFETY
+          </div>
+          <h1>
+            Backups<span className="heading-period">.</span>
+          </h1>
+          <p>Verified snapshots of your database and original documents.</p>
+        </div>
+        <button
+          className="button button-primary"
+          onClick={start}
+          disabled={busy}
+        >
+          <DatabaseBackup size={18} /> {busy ? "Starting…" : "Back up now"}
+        </button>
+      </div>
+      <div className="backup-summary">
+        <div>
+          <strong>Automatic schedule</strong>
+          <span>Every day at {schedule || "…"}</span>
+        </div>
+        <div>
+          <strong>Backup output</strong>
+          <span>Mounted backup volume · complete folder</span>
+        </div>
+      </div>
+      {error && (
+        <div className="inline-error" role="alert">
+          {error}
+        </div>
+      )}
+      <div className="section-heading">
+        <div>
+          <h2>Recent snapshots</h2>
+          <p>A snapshot appears here after its checksums pass.</p>
+        </div>
+      </div>
+      {runs.length ? (
+        <div className="document-list backup-list">
+          {runs.map((run) => (
+            <div className="document-row" key={run.id}>
+              <div className="document-icon">
+                <DatabaseBackup size={20} />
+              </div>
+              <div className="document-info">
+                <h3>
+                  {run.snapshot_name ||
+                    (run.trigger === "manual"
+                      ? "Manual backup"
+                      : "Scheduled backup")}
+                </h3>
+                <div className="document-meta">
+                  {formatDate(run.created_at)} <span>·</span> {run.trigger}
+                </div>
+                {run.error && <p className="doc-error">{run.error}</p>}
+              </div>
+              <span
+                className={`status status-${run.status === "complete" ? "ready" : run.status === "failed" ? "failed" : "pending"}`}
+              >
+                {run.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <div className="empty-icon">
+            <DatabaseBackup size={32} />
+          </div>
+          <h3>No snapshots yet</h3>
+          <p>
+            Run the first backup to verify the mounted volume and create a
+            restorable snapshot.
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -190,6 +323,7 @@ function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"documents" | "backups">("documents");
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -315,14 +449,26 @@ function App() {
         </div>
         <div className="sidebar-label">YOUR SPACE</div>
         <button
-          className="nav-link active"
+          className={`nav-link ${view === "documents" ? "active" : ""}`}
           onClick={() => {
+            setView("documents");
             setQuery("");
             setMenuOpen(false);
           }}
         >
           <FolderOpen size={18} /> All documents
         </button>
+        {session.owner && (
+          <button
+            className={`nav-link ${view === "backups" ? "active" : ""}`}
+            onClick={() => {
+              setView("backups");
+              setMenuOpen(false);
+            }}
+          >
+            <DatabaseBackup size={18} /> Backups
+          </button>
+        )}
         <div className="sidebar-spacer" />
         <div className="sidebar-note">
           <div className="sidebar-note-icon">
@@ -355,168 +501,184 @@ function App() {
             <Menu size={21} />
           </button>
           <div className="topbar-crumb">
-            Your archive <span>/</span> All documents
+            Your archive <span>/</span>{" "}
+            {view === "documents" ? "All documents" : "Backups"}
           </div>
           <div className="topbar-right">
             <span className="private-dot" /> Private & yours
           </div>
         </header>
         <section className="page-content">
-          <div className="page-heading">
-            <div>
-              <div className="eyebrow">
-                <span className="eyebrow-line" /> YOUR DOCUMENT HOME
-              </div>
-              <h1>
-                Everything in its place<span className="heading-period">.</span>
-              </h1>
-              <p>One calm place for the documents you want to keep.</p>
-            </div>
-            <button
-              className="button button-primary desktop-add"
-              onClick={() => setShowAdd(true)}
-            >
-              <Plus size={19} /> Add document
-            </button>
-          </div>
-
-          <div className="summary-row">
-            <div className="summary-card">
-              <span className="summary-icon">
-                <FileText size={20} />
-              </span>
-              <div>
-                <strong>{documents.length}</strong>
-                <span>{query ? "Matching documents" : "Documents"}</span>
-              </div>
-            </div>
-            <div className="summary-card">
-              <span className="summary-icon green">
-                <Check size={20} />
-              </span>
-              <div>
-                <strong>{ready}</strong>
-                <span>Ready to find</span>
-              </div>
-            </div>
-            <div className="summary-card">
-              <span className="summary-icon amber">
-                <Clock3 size={20} />
-              </span>
-              <div>
-                <strong>{waiting}</strong>
-                <span>Being processed</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="section-heading">
-            <div>
-              <h2>Your documents</h2>
-              <p>Find a file in seconds, whenever you need it.</p>
-            </div>
-          </div>
-          <div className="toolbar">
-            <div className="search-box">
-              <Search size={19} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search titles or document text…"
-                aria-label="Search documents"
-              />
-              {query && (
-                <button onClick={() => setQuery("")} aria-label="Clear search">
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-            <button
-              className="button button-secondary mobile-add"
-              onClick={() => setShowAdd(true)}
-            >
-              <Plus size={18} /> Add
-            </button>
-          </div>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-              <button onClick={() => setError("")} aria-label="Dismiss error">
-                <X size={16} />
-              </button>
-            </div>
-          )}
-          {uploading && (
-            <div className="upload-progress">
-              <UploadCloud size={19} /> Adding your document…
-            </div>
-          )}
-
-          {isEmpty ? (
-            <div className="empty-state">
-              <div className="empty-icon">
-                <FileText size={33} strokeWidth={1.5} />
-              </div>
-              <h3>
-                {query ? "Nothing found yet" : "A fresh shelf, ready for you."}
-              </h3>
-              <p>
-                {query
-                  ? "Try another word from the title or the document."
-                  : "Add a document and Ripiano will make its text searchable."}
-              </p>
-              {!query && (
+          {view === "backups" ? (
+            <BackupPanel />
+          ) : (
+            <>
+              <div className="page-heading">
+                <div>
+                  <div className="eyebrow">
+                    <span className="eyebrow-line" /> YOUR DOCUMENT HOME
+                  </div>
+                  <h1>
+                    Everything in its place
+                    <span className="heading-period">.</span>
+                  </h1>
+                  <p>One calm place for the documents you want to keep.</p>
+                </div>
                 <button
-                  className="button button-primary"
+                  className="button button-primary desktop-add"
                   onClick={() => setShowAdd(true)}
                 >
-                  <Plus size={18} /> Add your first document
+                  <Plus size={19} /> Add document
                 </button>
-              )}
-            </div>
-          ) : (
-            <div className="document-list">
-              {documents.map((doc) => (
-                <article className="document-row" key={doc.id}>
-                  <div className="document-icon">
-                    <FileText size={21} />
-                  </div>
-                  <div className="document-info">
-                    <h3>{doc.title}</h3>
-                    <div className="document-meta">
-                      {formatDate(doc.created_at)} <span>·</span>{" "}
-                      {doc.original_name}
-                      {doc.source === "telegram" && (
-                        <>
-                          {" "}
-                          <span>·</span> via Telegram
-                        </>
-                      )}
-                    </div>
-                    {doc.snippet && <p>{doc.snippet}</p>}
-                    {doc.status === "failed" && (
-                      <p className="doc-error">
-                        Processing failed: {doc.error}
-                      </p>
-                    )}
-                  </div>
-                  <span className={`status status-${doc.status}`}>
-                    {doc.status === "ready"
-                      ? "Ready"
-                      : doc.status === "failed"
-                        ? "Needs attention"
-                        : "Processing"}
+              </div>
+
+              <div className="summary-row">
+                <div className="summary-card">
+                  <span className="summary-icon">
+                    <FileText size={20} />
                   </span>
-                  <a
-                    className="download-link"
-                    href={`/api/documents/${doc.id}/original`}
-                    aria-label={`Download ${doc.original_name}`}
+                  <div>
+                    <strong>{documents.length}</strong>
+                    <span>{query ? "Matching documents" : "Documents"}</span>
+                  </div>
+                </div>
+                <div className="summary-card">
+                  <span className="summary-icon green">
+                    <Check size={20} />
+                  </span>
+                  <div>
+                    <strong>{ready}</strong>
+                    <span>Ready to find</span>
+                  </div>
+                </div>
+                <div className="summary-card">
+                  <span className="summary-icon amber">
+                    <Clock3 size={20} />
+                  </span>
+                  <div>
+                    <strong>{waiting}</strong>
+                    <span>Being processed</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="section-heading">
+                <div>
+                  <h2>Your documents</h2>
+                  <p>Find a file in seconds, whenever you need it.</p>
+                </div>
+              </div>
+              <div className="toolbar">
+                <div className="search-box">
+                  <Search size={19} />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search titles or document text…"
+                    aria-label="Search documents"
+                  />
+                  {query && (
+                    <button
+                      onClick={() => setQuery("")}
+                      aria-label="Clear search"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+                <button
+                  className="button button-secondary mobile-add"
+                  onClick={() => setShowAdd(true)}
+                >
+                  <Plus size={18} /> Add
+                </button>
+              </div>
+              {error && (
+                <div className="inline-error" role="alert">
+                  {error}
+                  <button
+                    onClick={() => setError("")}
+                    aria-label="Dismiss error"
                   >
-                    <ArrowDownToLine size={18} />
-                  </a>
-                </article>
-              ))}
-            </div>
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+              {uploading && (
+                <div className="upload-progress">
+                  <UploadCloud size={19} /> Adding your document…
+                </div>
+              )}
+
+              {isEmpty ? (
+                <div className="empty-state">
+                  <div className="empty-icon">
+                    <FileText size={33} strokeWidth={1.5} />
+                  </div>
+                  <h3>
+                    {query
+                      ? "Nothing found yet"
+                      : "A fresh shelf, ready for you."}
+                  </h3>
+                  <p>
+                    {query
+                      ? "Try another word from the title or the document."
+                      : "Add a document and Ripiano will make its text searchable."}
+                  </p>
+                  {!query && (
+                    <button
+                      className="button button-primary"
+                      onClick={() => setShowAdd(true)}
+                    >
+                      <Plus size={18} /> Add your first document
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="document-list">
+                  {documents.map((doc) => (
+                    <article className="document-row" key={doc.id}>
+                      <div className="document-icon">
+                        <FileText size={21} />
+                      </div>
+                      <div className="document-info">
+                        <h3>{doc.title}</h3>
+                        <div className="document-meta">
+                          {formatDate(doc.created_at)} <span>·</span>{" "}
+                          {doc.original_name}
+                          {doc.source === "telegram" && (
+                            <>
+                              {" "}
+                              <span>·</span> via Telegram
+                            </>
+                          )}
+                        </div>
+                        {doc.snippet && <p>{doc.snippet}</p>}
+                        {doc.status === "failed" && (
+                          <p className="doc-error">
+                            Processing failed: {doc.error}
+                          </p>
+                        )}
+                      </div>
+                      <span className={`status status-${doc.status}`}>
+                        {doc.status === "ready"
+                          ? "Ready"
+                          : doc.status === "failed"
+                            ? "Needs attention"
+                            : "Processing"}
+                      </span>
+                      <a
+                        className="download-link"
+                        href={`/api/documents/${doc.id}/original`}
+                        aria-label={`Download ${doc.original_name}`}
+                      >
+                        <ArrowDownToLine size={18} />
+                      </a>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </>
           )}
           <div className="page-footer">
             <span>Ripiano · Documents at home</span>

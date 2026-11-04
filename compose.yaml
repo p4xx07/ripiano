@@ -12,6 +12,10 @@ x-api-env: &api-env
   RIPIANO_DB_PASSWORD: ${RIPIANO_DB_PASSWORD:?Set RIPIANO_DB_PASSWORD}
   RIPIANO_BROKER_URL: redis://broker:6379/0
   RIPIANO_MEDIA_ROOT: /data
+  RIPIANO_BACKUP_ROOT: /backup
+  RIPIANO_BACKUP_HOUR: ${RIPIANO_BACKUP_HOUR:-2}
+  RIPIANO_BACKUP_MINUTE: ${RIPIANO_BACKUP_MINUTE:-0}
+  RIPIANO_BACKUP_RETENTION: ${RIPIANO_BACKUP_RETENTION:-7}
 
 x-api-base: &api-base
   build: ./services/api
@@ -53,6 +57,9 @@ services:
     restart: unless-stopped
   api:
     <<: *api-base
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+      - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup:ro
     command: ["sh", "-c", ".venv/bin/python manage.py migrate --noinput && exec .venv/bin/gunicorn ripiano.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 60"]
     healthcheck:
       test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
@@ -61,6 +68,9 @@ services:
       retries: 15
   worker:
     <<: *api-base
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+      - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup
     command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1"]
     depends_on:
       api:
@@ -96,3 +106,4 @@ volumes:
   broker_data:
   ripiano_media:
   ripiano_postgres:
+  ripiano_backup:

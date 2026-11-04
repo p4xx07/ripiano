@@ -25,6 +25,7 @@ class FolderWatcher:
         self.root = root.resolve(strict=True)
         self.owner = owner
         self.observed = {}
+        self.rejected = {}
 
     def scan(self):
         """Only import files whose size and timestamp match the previous pass."""
@@ -41,13 +42,22 @@ class FolderWatcher:
                 continue
             fingerprint = (stat.st_size, stat.st_mtime_ns)
             current[path] = fingerprint
-            if self.observed.get(path) != fingerprint or stat.st_size > settings.RIPIANO_MAX_UPLOAD_BYTES:
+            if stat.st_size > settings.RIPIANO_MAX_UPLOAD_BYTES:
+                if self.rejected.get(path) != fingerprint:
+                    logger.warning("Watched file exceeds the upload limit: %s", path)
+                    self.rejected[path] = fingerprint
+                continue
+            if self.observed.get(path) != fingerprint or self.rejected.get(path) == fingerprint:
                 continue
             try:
                 added += self.import_file(path, fingerprint)
-            except (OSError, InvalidDocument) as error:
+            except InvalidDocument as error:
                 logger.warning("Watched file skipped: %s (%s)", path, error)
+                self.rejected[path] = fingerprint
+            except OSError as error:
+                logger.warning("Watched file could not be read: %s (%s)", path, error)
         self.observed = current
+        self.rejected = {path: fingerprint for path, fingerprint in self.rejected.items() if current.get(path) == fingerprint}
         return added
 
     def import_file(self, path: Path, fingerprint):

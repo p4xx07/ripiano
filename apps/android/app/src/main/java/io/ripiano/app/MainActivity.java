@@ -46,7 +46,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -103,8 +102,11 @@ public final class MainActivity extends ComponentActivity {
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (savedInstanceState != null) scanOrigin = savedInstanceState.getString("scan_origin");
-        String saved = getPreferences(MODE_PRIVATE).getString("server_origin", "");
-        if (saved.isEmpty()) askForServer(); else openServer(saved);
+        String saved = Origin.serverOrigin(getPreferences(MODE_PRIVATE).getString("server_origin", ""));
+        if (saved == null) askForServer(); else {
+            getPreferences(MODE_PRIVATE).edit().putString("server_origin", saved).apply();
+            openServer(saved);
+        }
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -132,7 +134,7 @@ public final class MainActivity extends ComponentActivity {
                 .setView(holder)
                 .setCancelable(false)
                 .setPositiveButton("Connect", (dialog, which) -> {
-                    String address = normalizeOrigin(input.getText().toString());
+                    String address = Origin.serverOrigin(input.getText().toString());
                     if (address == null) {
                         Toast.makeText(this, "Enter an HTTPS origin without a path", Toast.LENGTH_LONG).show();
                         askForServer();
@@ -141,16 +143,6 @@ public final class MainActivity extends ComponentActivity {
                         openServer(address);
                     }
                 }).show();
-    }
-
-    private static String normalizeOrigin(String value) {
-        try {
-            URI uri = new URI(value.trim());
-            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
-                    || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null
-                    || (uri.getPath() != null && !uri.getPath().isEmpty() && !"/".equals(uri.getPath()))) return null;
-            return new URI("https", null, uri.getHost().toLowerCase(), uri.getPort(), null, null, null).toString();
-        } catch (Exception ignored) { return null; }
     }
 
     private void openServer(String address) {
@@ -198,7 +190,7 @@ public final class MainActivity extends ComponentActivity {
         webView.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri target = request.getUrl();
-                if (origin.equals(target.getScheme() + "://" + target.getEncodedAuthority())) return false;
+                if (origin.equals(Origin.originOfUrl(target.toString()))) return false;
                 if ("https".equals(target.getScheme())) startActivity(new Intent(Intent.ACTION_VIEW, target));
                 return true;
             }
@@ -214,7 +206,7 @@ public final class MainActivity extends ComponentActivity {
         });
         webView.setDownloadListener((url, userAgent, disposition, mime, size) -> {
             Uri target = Uri.parse(url);
-            if (!origin.equals(target.getScheme() + "://" + target.getEncodedAuthority())) return;
+            if (!origin.equals(Origin.originOfUrl(target.toString()))) return;
             DownloadManager.Request request = new DownloadManager.Request(target);
             String cookie = CookieManager.getInstance().getCookie(origin);
             if (cookie != null) request.addRequestHeader("Cookie", cookie);
@@ -228,7 +220,7 @@ public final class MainActivity extends ComponentActivity {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.addWebMessageListener(webView, "RipianoAndroid", Collections.singleton(origin),
                     (view, message, sourceOrigin, isMainFrame, replyProxy) -> {
-                        if (isMainFrame && origin.equals(sourceOrigin.toString())) {
+                        if (isMainFrame && origin.equals(Origin.originOfUrl(sourceOrigin.toString()))) {
                             if ("scan".equals(message.getData())) startScan();
                             if ("retry".equals(message.getData())) retryPending();
                         }
@@ -269,7 +261,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void retryPending() {
-        if (webView == null || webView.getUrl() == null || !webView.getUrl().startsWith(origin + "/")) return;
+        if (webView == null || !origin.equals(Origin.originOfUrl(webView.getUrl()))) return;
         if (!retryQueued.compareAndSet(false, true)) return;
         String destination = origin;
         File directory = pendingDirectory(destination);
@@ -348,7 +340,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void notifyWeb(String status, String message) {
         runOnUiThread(() -> {
-            if (webView == null || webView.getUrl() == null || !webView.getUrl().startsWith(origin + "/")) return;
+            if (webView == null || !origin.equals(Origin.originOfUrl(webView.getUrl()))) return;
             String payload = "{\"status\":" + JSONObject.quote(status) + ",\"message\":" + JSONObject.quote(message) + "}";
             webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('ripiano-native-upload',{detail:" + payload + "}))", null);
         });

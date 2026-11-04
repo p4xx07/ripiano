@@ -39,3 +39,23 @@ def test_watched_folder_waits_for_stability_and_imports_each_revision_once(tmp_p
     assert Document.objects.filter(owner=owner, source=Document.Source.FOLDER).count() == 2
     assert original.read_bytes() == png("black")
     assert outside.read_bytes() == png("green")
+
+
+@pytest.mark.django_db
+def test_invalid_watched_file_is_not_retried_until_it_changes(tmp_path, caplog):
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    incoming = tmp_path / "incoming"
+    incoming.mkdir()
+    candidate = incoming / "broken.png"
+    candidate.write_bytes(b"not an image")
+    watcher = FolderWatcher(incoming, owner)
+    with override_settings(MEDIA_ROOT=tmp_path / "media"):
+        with patch("archive.ingestion.process_document.delay"):
+            assert watcher.scan() == 0
+            assert watcher.scan() == 0
+            assert watcher.scan() == 0
+            assert caplog.text.count("Watched file skipped") == 1
+            candidate.write_bytes(png("white"))
+            assert watcher.scan() == 0
+            assert watcher.scan() == 1
+    assert Document.objects.filter(source=Document.Source.FOLDER).count() == 1

@@ -59,7 +59,7 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: "platform-tools platforms;android-36 build-tools;36.0.0"
-      - run: ./gradlew :app:assembleDebug --no-daemon
+      - run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon
         working-directory: apps/android
       - uses: actions/upload-artifact@v4
         with:

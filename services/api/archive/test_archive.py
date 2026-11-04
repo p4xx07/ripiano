@@ -1,5 +1,6 @@
 from datetime import timedelta
 from io import BytesIO
+from uuid import uuid4
 from unittest.mock import patch
 
 import pytest
@@ -89,6 +90,27 @@ def test_exact_duplicate_is_flagged_without_discarding_either_original(tmp_path)
         assert Document.objects.count() == 3
         assert len({document.original_path for document in Document.objects.all()}) == 3
         assert all((tmp_path / document.original_path).exists() for document in Document.objects.all())
+
+
+@pytest.mark.django_db
+def test_android_scan_retry_is_idempotent_and_owner_scoped(tmp_path):
+    first_owner = get_user_model().objects.create_user("first", password="secure-password-1")
+    second_owner = get_user_model().objects.create_user("second", password="secure-password-2")
+    scan_id = str(uuid4())
+    with override_settings(MEDIA_ROOT=tmp_path):
+        client = Client()
+        client.force_login(first_owner)
+        with patch("archive.ingestion.process_document.delay"):
+            first = client.post("/api/documents", {"document": image_upload()}, HTTP_X_RIPIANO_SCAN_ID=scan_id)
+            again = client.post("/api/documents", {"document": image_upload()}, HTTP_X_RIPIANO_SCAN_ID=scan_id)
+            client.force_login(second_owner)
+            second = client.post("/api/documents", {"document": image_upload()}, HTTP_X_RIPIANO_SCAN_ID=scan_id)
+        assert first.status_code == 202
+        assert again.status_code == 200 and again.json()["id"] == first.json()["id"]
+        assert second.status_code == 202 and second.json()["id"] != first.json()["id"]
+        assert Document.objects.count() == 2
+        assert Document.objects.filter(source=Document.Source.ANDROID).count() == 2
+        assert client.post("/api/documents", {"document": image_upload()}, HTTP_X_RIPIANO_SCAN_ID="bad").status_code == 400
 
 
 @pytest.mark.django_db

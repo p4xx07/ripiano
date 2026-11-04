@@ -46,6 +46,12 @@ type BackupRun = {
   created_at: string;
 };
 
+declare global {
+  interface Window {
+    RipianoAndroid?: { postMessage(message: string): void };
+  }
+}
+
 function AuthScreen({
   setup,
   onAuthenticated,
@@ -277,6 +283,7 @@ function App() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [nativeScanner] = useState(() => Boolean(window.RipianoAndroid));
   const [dropActive, setDropActive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -320,10 +327,27 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (session?.authenticated) window.RipianoAndroid?.postMessage("retry");
+  }, [session?.authenticated]);
+
+  useEffect(() => {
     if (!session?.authenticated || view !== "documents") return;
     const timer = window.setTimeout(() => loadDocuments(query), 200);
     return () => window.clearTimeout(timer);
   }, [session?.authenticated, query, view, loadDocuments]);
+
+  useEffect(() => {
+    function onNativeUpload(event: Event) {
+      const detail = (event as CustomEvent<{ status: string; message?: string }>).detail;
+      if (detail.status === "saved") void loadDocuments(query);
+      if (detail.status === "failed") {
+        setError(detail.message || "Scan upload failed. It is saved on this device and will be retried.");
+      }
+      if (detail.status !== "uploading") setUploading(false);
+    }
+    window.addEventListener("ripiano-native-upload", onNativeUpload);
+    return () => window.removeEventListener("ripiano-native-upload", onNativeUpload);
+  }, [query, loadDocuments]);
 
   useEffect(() => {
     if (
@@ -367,6 +391,17 @@ function App() {
     event.preventDefault();
     setDropActive(false);
     void upload(event.dataTransfer.files);
+  }
+
+  function scan() {
+    if (!window.RipianoAndroid) {
+      cameraRef.current?.click();
+      return;
+    }
+    setShowAdd(false);
+    setUploading(true);
+    setError("");
+    window.RipianoAndroid.postMessage("scan");
   }
 
   async function signOut() {
@@ -694,6 +729,18 @@ function App() {
                               <span>·</span> via Telegram
                             </>
                           )}
+                          {doc.source === "android" && (
+                            <>
+                              {" "}
+                              <span>·</span> scanned on Android
+                            </>
+                          )}
+                          {doc.source === "folder" && (
+                            <>
+                              {" "}
+                              <span>·</span> from NAS folder
+                            </>
+                          )}
                         </div>
                         {doc.snippet && <p>{doc.snippet}</p>}
                         {doc.tags.length > 0 && (
@@ -837,13 +884,13 @@ function App() {
               make its text searchable.
             </p>
             <div className="add-options">
-              <button onClick={() => cameraRef.current?.click()}>
+              <button onClick={scan}>
                 <span className="add-option-icon">
                   <Camera size={23} />
                 </span>
                 <span>
-                  <strong>Take a photo</strong>
-                  <small>Open your device camera</small>
+                  <strong>{nativeScanner ? "Scan pages" : "Take a photo"}</strong>
+                  <small>{nativeScanner ? "Capture, crop and combine pages" : "Open your device camera"}</small>
                 </span>
                 <ArrowRight size={18} />
               </button>
@@ -869,8 +916,9 @@ function App() {
               </button>
             </div>
             <div className="modal-foot">
-              Camera behavior depends on your browser. A native Android scanner
-              is planned for multi-page capture.
+              {nativeScanner
+                ? "Scans stay on this device until Ripiano confirms the upload."
+                : "Camera behavior depends on your browser. Use the Android app for multi-page scanning."}
             </div>
           </div>
         </div>

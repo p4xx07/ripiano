@@ -9,6 +9,8 @@ class Document(models.Model):
     class Source(models.TextChoices):
         WEB = "web", "Web"
         TELEGRAM = "telegram", "Telegram"
+        ANDROID = "android", "Android scanner"
+        FOLDER = "folder", "Watched folder"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -39,7 +41,7 @@ class Document(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-        constraints = [models.UniqueConstraint(fields=["source", "source_ref"], condition=~Q(source_ref=""), name="unique_document_source_ref")]
+        constraints = [models.UniqueConstraint(fields=["owner", "source", "source_ref"], condition=~Q(source_ref=""), name="unique_document_source_ref")]
         indexes = [models.Index(fields=["owner", "original_sha256"], name="document_owner_sha_idx")]
 
 

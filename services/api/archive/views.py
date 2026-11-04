@@ -8,7 +8,7 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
-from django.db import connection, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import Q
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
@@ -122,8 +122,23 @@ def documents(request):
     upload = request.FILES.get("document")
     if upload is None:
         return JsonResponse({"error": "Missing document file"}, status=400)
+    scan_id = request.headers.get("X-Ripiano-Scan-ID", "")
+    if scan_id:
+        try:
+            scan_id = str(UUID(scan_id))
+        except ValueError:
+            return JsonResponse({"error": "Invalid scan ID"}, status=400)
+        existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location").first()
+        if existing:
+            return JsonResponse(_document_json(existing), status=200)
     try:
-        document = ingest_document(request.user, upload)
+        document = ingest_document(request.user, upload, source=Document.Source.ANDROID if scan_id else Document.Source.WEB, source_ref=scan_id)
+    except IntegrityError:
+        if scan_id:
+            existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location").first()
+            if existing:
+                return JsonResponse(_document_json(existing), status=200)
+        raise
     except InvalidDocument as exc:
         return JsonResponse({"error": str(exc)}, status=400)
     return JsonResponse(_document_json(document), status=202)

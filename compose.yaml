@@ -101,6 +101,21 @@ services:
     depends_on:
       api:
         condition: service_healthy
+  watched_folder:
+    <<: *api-base
+    profiles: ["watch"]
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+      - ${RIPIANO_WATCH_PATH:-./incoming}:/watch:ro
+    command: [".venv/bin/python", "manage.py", "watch_folder"]
+    environment:
+      <<: *api-env
+      RIPIANO_WATCH_PATH: /watch
+      RIPIANO_WATCH_OWNER_USERNAME: ${RIPIANO_WATCH_OWNER_USERNAME:-}
+      RIPIANO_WATCH_POLL_SECONDS: ${RIPIANO_WATCH_POLL_SECONDS:-5}
+    depends_on:
+      api:
+        condition: service_healthy
   web:
     build: ./apps/web
     ports:

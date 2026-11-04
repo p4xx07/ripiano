@@ -24,3 +24,5 @@ Set `RIPIANO_DEBUG=0`. `RIPIANO_PORT` defaults to 8080 and is the **host** port 
 `RIPIANO_BACKUP_HOUR`, `RIPIANO_BACKUP_MINUTE`, and `RIPIANO_BACKUP_RETENTION` are optional. The schedule is in Europe/Rome. Point Synology Hyper Backup at `<RIPIANO_BACKUP_PATH>/complete`. The Backblaze B2 configuration stays entirely in Synology; Ripiano has no B2 credentials. See [backup and restore](../docs/BACKUP_RESTORE.md) before an upgrade.
 
 The optional Telegram service uses the `telegram` profile and three additional environment variables described in the [root README](../README.md). It must be enabled deliberately because Telegram handles forwarded files before Ripiano receives them.
+
+The optional `watch` profile adds a read-only bind mount from `RIPIANO_WATCH_PATH` to `/watch`. Set `RIPIANO_WATCH_OWNER_USERNAME` to the account that owns imported files. The watcher waits for a stable file, keeps the source file in place, and uses a path/content key to avoid duplicate imports after restarts. Create and grant read access to the NAS folder before enabling the profile.

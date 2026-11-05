@@ -710,7 +710,7 @@ function App() {
               <div className="section-heading">
                 <div>
                   <h2>Your documents</h2>
-                  <p>Find a file in seconds, whenever you need it.</p>
+                  <p>Search document text, sender, type, tag, or sticker.</p>
                 </div>
                 <Button type="button" variant="secondary" aria-label="Refresh" title="Refresh documents" onClick={() => void loadDocuments(query)}>
                   <RotateCcw size={16} /> <span className="refresh-label">Refresh</span>
@@ -722,8 +722,8 @@ function App() {
                   <input
                     value={query}
                     onChange={(event) => { setQuery(event.target.value); setNextCursor(null); }}
-                    placeholder="Search titles or document text…"
-                    aria-label="Search documents"
+                    placeholder="Search text, sender, type, tag…"
+                    aria-label="Search documents by text, sender, type, tag, or sticker"
                   />
                   {query && (
                     <button
@@ -822,8 +822,8 @@ function App() {
                         <div className="document-meta">
                           {formatDate(doc.created_at)} <span>·</span>{" "}
                           {doc.original_name}
-                          {doc.correspondent && <>{" "}<span>·</span> {doc.correspondent.name}</>}
-                          {doc.document_type && <>{" "}<span>·</span> {doc.document_type.name}</>}
+                          {doc.correspondent && <>{" "}<span>·</span> From: {doc.correspondent.name}</>}
+                          {doc.document_type && <>{" "}<span>·</span> Type: {doc.document_type.name}</>}
                           {doc.source === "telegram" && (
                             <>
                               {" "}

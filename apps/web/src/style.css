@@ -1097,7 +1097,8 @@ button:disabled {
   gap: var(--space-2);
 }
 .filing-vocabulary-form input,
-.filing-vocabulary-list input {
+.filing-vocabulary-list input,
+.filing-filter {
   flex: 1 1 160px;
   min-width: 0;
   padding: var(--space-compact);
@@ -1105,10 +1106,24 @@ button:disabled {
   border-radius: var(--radius-soft);
   font-size: var(--type-body);
 }
+.filing-filter {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-4);
+}
+.filing-filter:focus-visible,
+.filing-vocabulary-form input:focus-visible,
+.filing-vocabulary-list input:focus-visible {
+  outline: 3px solid var(--color-focus-halo);
+  border-color: var(--color-focus);
+}
 .filing-vocabulary-list {
   list-style: none;
   padding: 0;
   margin: var(--space-4) 0 0;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .filing-vocabulary-list li {
   min-width: 0;

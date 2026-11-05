@@ -31,15 +31,44 @@ test("sender and document type can be managed, assigned, and found", async ({ pa
   await senders.getByRole("textbox", { name: "New sender name" }).fill(senderName);
   await senders.getByRole("button", { name: "Add", exact: true }).click();
   await expect(senders.getByText(senderName, { exact: true })).toBeVisible();
-  await senders.getByRole("button", { name: `Rename ${senderName}` }).click();
-  await senders.getByRole("textbox", { name: `Rename ${senderName}` }).fill(renamedSender);
-  await senders.getByRole("button", { name: "Save" }).click();
+  await senders.getByRole("button", { name: `Rename ${senderName}` }).focus();
+  await page.keyboard.press("Enter");
+  const renameInput = senders.getByRole("textbox", { name: `Rename ${senderName}` });
+  await expect(renameInput).toBeFocused();
+  await renameInput.fill(renamedSender);
+  await page.keyboard.press("Enter");
   await expect(senders.getByText(renamedSender, { exact: true })).toBeVisible();
+  await expect(senders.getByRole("button", { name: `Rename ${renamedSender}` })).toBeFocused();
+  await expect(senders.getByRole("status")).toContainText("renamed");
+  await senders.getByRole("button", { name: `Rename ${renamedSender}` }).click();
+  await expect(senders.getByRole("textbox", { name: `Rename ${renamedSender}` })).toBeFocused();
+  await senders.getByRole("button", { name: "Cancel rename" }).click();
+  await expect(senders.getByRole("button", { name: `Rename ${renamedSender}` })).toBeFocused();
+  await expect(senders.getByRole("status")).toContainText("cancelled");
+  const senderFilter = senders.getByRole("textbox", { name: "Filter senders & organizations" });
+  await senderFilter.fill(`missing-${suffix}`);
+  await expect(senders.getByText("No matches. Try another name.")).toBeVisible();
+  await senderFilter.fill(renamedSender);
+  await expect(senders.getByText(renamedSender, { exact: true })).toBeVisible();
+  await senderFilter.clear();
+
+  const disposableSender = `Discard ${suffix}`;
+  await senders.getByRole("textbox", { name: "New sender name" }).fill(disposableSender);
+  await senders.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(senders.getByText(disposableSender, { exact: true })).toBeVisible();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await senders.getByRole("button", { name: `Delete ${disposableSender}` }).focus();
+  await page.keyboard.press("Enter");
+  await expect(senders.getByText(disposableSender, { exact: true })).toBeHidden();
+  await expect(senderFilter).toBeFocused();
+  await expect(senders.getByRole("status")).toContainText("deleted");
 
   const types = page.locator(".filing-card").filter({ has: page.getByRole("heading", { name: "Document types" }) });
   await types.getByRole("textbox", { name: "New type name" }).fill(typeName);
   await types.getByRole("button", { name: "Add", exact: true }).click();
   await expect(types.getByText(typeName, { exact: true })).toBeVisible();
+  await types.getByRole("textbox", { name: "Filter document types" }).fill(typeName);
+  await expect(types.locator(".filing-vocabulary-list li")).toHaveCount(1);
   await page.screenshot({ path: testInfo.outputPath("filing-vocabularies.png") });
 
   await navigate(page, "All documents");

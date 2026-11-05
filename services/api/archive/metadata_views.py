@@ -3,13 +3,14 @@ import logging
 import re
 from uuid import UUID
 
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from .models import ClassificationRule, Correspondent, DocumentType, FilingRule, Tag
-from .tasks import reclassify_owner
+from .tasks import reclassify_filing_candidates, reclassify_owner
 
 logger = logging.getLogger(__name__)
 COLOR = re.compile(r"#[0-9a-fA-F]{6}\Z")
@@ -34,6 +35,13 @@ def _queue_reclassification(owner_id):
         reclassify_owner.delay(owner_id)
     except Exception:
         logger.exception("Could not queue rule reclassification for owner %s", owner_id)
+
+
+def _queue_filing_candidates(owner_id, kind, target_id, pattern, field, deleted=False):
+    try:
+        reclassify_filing_candidates.delay(owner_id, kind, str(target_id), pattern, field, deleted)
+    except Exception:
+        logger.exception("Could not queue filing recheck for owner %s", owner_id)
 
 
 def _tag_json(tag):
@@ -155,6 +163,9 @@ def filing_rules(request):
         return JsonResponse({"error": "Choose an owned target, phrase, and field"}, status=400)
     try:
         with transaction.atomic():
+            get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+            if FilingRule.objects.filter(owner=request.user, kind=kind, pattern__iexact=pattern.strip()).exists():
+                return JsonResponse({"error": "This phrase already files another name"}, status=409)
             rule = FilingRule.objects.create(
                 owner=request.user, kind=kind, pattern=pattern.strip(), field=field,
                 correspondent=target if kind == FilingRule.Kind.CORRESPONDENT else None,
@@ -162,7 +173,7 @@ def filing_rules(request):
             )
     except IntegrityError:
         return JsonResponse({"error": "This matching phrase already exists"}, status=409)
-    _queue_reclassification(request.user.id)
+    _queue_filing_candidates(request.user.id, kind, target.id, rule.pattern, rule.field)
     return JsonResponse(_filing_rule_json(rule), status=201)
 
 
@@ -171,11 +182,17 @@ def filing_rule_detail(request, rule_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    rule = FilingRule.objects.filter(pk=rule_id, owner=request.user).first()
-    if rule is None:
-        return JsonResponse({"error": "Filing rule not found"}, status=404)
-    rule.delete()
-    _queue_reclassification(request.user.id)
+    with transaction.atomic():
+        get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+        rule = FilingRule.objects.filter(pk=rule_id, owner=request.user).first()
+        if rule is None:
+            return JsonResponse({"error": "Filing rule not found"}, status=404)
+        kind = rule.kind
+        target_id = rule.correspondent_id if kind == FilingRule.Kind.CORRESPONDENT else rule.document_type_id
+        pattern = rule.pattern
+        field = rule.field
+        rule.delete()
+    _queue_filing_candidates(request.user.id, kind, target_id, pattern, field, deleted=True)
     return JsonResponse({"deleted": True})
 
 

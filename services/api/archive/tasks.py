@@ -15,7 +15,7 @@ from pypdf import PdfReader
 
 from .backup import create_snapshot
 from .classification import apply_rules
-from .models import BackupRun, Document
+from .models import BackupRun, Document, FilingRule
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,25 @@ def backup_archive(run_id=None):
 @shared_task(name="archive.tasks.reclassify_owner")
 def reclassify_owner(owner_id):
     for document in Document.objects.filter(owner_id=owner_id, status=Document.Status.READY).iterator():
+        try:
+            apply_rules(document)
+        except Exception:
+            logger.exception("Automatic filing failed for document %s", document.id)
+
+
+@shared_task(name="archive.tasks.reclassify_filing_candidates")
+def reclassify_filing_candidates(owner_id, kind, target_id, pattern, field="either", deleted=False):
+    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY)
+    if deleted:
+        field = "correspondent" if kind == FilingRule.Kind.CORRESPONDENT else "document_type"
+        documents = documents.filter(**{f"{field}_id": target_id, f"{field}_origin": Document.FilingOrigin.RULE})
+    needle = pattern.casefold()
+    for document in documents.iterator():
+        if not deleted and not (
+            (field in (FilingRule.Field.TITLE, FilingRule.Field.EITHER) and needle in document.title.casefold())
+            or (field in (FilingRule.Field.TEXT, FilingRule.Field.EITHER) and needle in document.extracted_text.casefold())
+        ):
+            continue
         try:
             apply_rules(document)
         except Exception:

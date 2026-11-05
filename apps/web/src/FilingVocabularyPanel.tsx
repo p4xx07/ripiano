@@ -22,6 +22,8 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
   const filterRef = useRef<HTMLInputElement>(null);
   const renameButtons = useRef(new Map<string, HTMLButtonElement>());
   const focusAfterEdit = useRef<string | null>(null);
+  const addPhraseButtons = useRef(new Map<string, HTMLButtonElement>());
+  const focusAfterPhrase = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +46,12 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
     if (target === "filter") filterRef.current?.focus();
     else (renameButtons.current.get(target) ?? filterRef.current)?.focus();
   }, [editing, items]);
+  useEffect(() => {
+    if (newRuleTarget || !focusAfterPhrase.current) return;
+    const target = focusAfterPhrase.current;
+    focusAfterPhrase.current = null;
+    (addPhraseButtons.current.get(target) ?? filterRef.current)?.focus();
+  }, [newRuleTarget, rules]);
 
   const visibleItems = items.filter((item) => item.name.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()));
 
@@ -109,6 +117,7 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
         kind: isSender ? "correspondent" : "document_type",
         target_id: newRuleTarget, pattern: newRuleText, field: "either",
       }) });
+      focusAfterPhrase.current = newRuleTarget;
       setNewRuleTarget(null);
       setNewRuleText("");
       setNotice("Matching phrase added. Existing documents will be checked in the background.");
@@ -125,6 +134,8 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
     setError("");
     try {
       await request(`/api/filing-rules/${rule.id}`, { method: "DELETE" });
+      focusAfterPhrase.current = rule.target_id;
+      setRules((current) => current.filter((item) => item.id !== rule.id));
       setNotice("Matching phrase removed. Existing documents will be checked in the background.");
       await load();
     } catch (cause) {
@@ -162,8 +173,8 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
           {newRuleTarget === item.id ? <form className="filing-rule-form" onSubmit={addRule}>
             <input autoFocus aria-label={`Matching phrase for ${item.name}`} value={newRuleText} onChange={(event) => setNewRuleText(event.target.value)} maxLength={200} placeholder="Phrase in title or text" required />
             <Button disabled={busy}>Add</Button>
-            <button type="button" aria-label="Cancel phrase" onClick={() => setNewRuleTarget(null)}><X size={16} /></button>
-          </form> : <button type="button" className="text-action" onClick={() => { setNewRuleTarget(item.id); setNewRuleText(""); }}><Plus size={14} /> Add matching phrase</button>}
+            <button type="button" aria-label="Cancel phrase" onClick={() => { focusAfterPhrase.current = item.id; setNewRuleTarget(null); }}><X size={16} /></button>
+          </form> : <button ref={(node) => { if (node) addPhraseButtons.current.set(item.id, node); else addPhraseButtons.current.delete(item.id); }} type="button" className="text-action" onClick={() => { setNewRuleTarget(item.id); setNewRuleText(""); }}><Plus size={14} /> Add matching phrase</button>}
         </div>
       </li>)}
     </ul>}

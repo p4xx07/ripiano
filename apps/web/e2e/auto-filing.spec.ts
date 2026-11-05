@@ -37,10 +37,30 @@ test("matching phrases file a new document without an Inbox step", async ({ page
     const row = card.locator(".filing-vocabulary-list li").filter({ has: page.getByText(label, { exact: true }) });
     await expect(row).toBeVisible();
     await row.getByRole("button", { name: "Add matching phrase" }).click();
-    await row.getByRole("textbox", { name: `Matching phrase for ${label}` }).fill(documentName);
+    const phraseInput = row.getByRole("textbox", { name: `Matching phrase for ${label}` });
+    await expect(phraseInput).toBeFocused();
+    await phraseInput.fill(documentName);
     await row.getByRole("button", { name: "Add", exact: true }).click();
     await expect(row.getByText(documentName, { exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: "Add matching phrase" })).toBeFocused();
   }
+  const senders = page.locator(".filing-card").filter({ has: page.getByRole("heading", { name: "Senders & organizations" }) });
+  const senderRow = senders.locator(".filing-vocabulary-list li").filter({ has: page.getByText(senderName, { exact: true }) });
+  const addPhrase = senderRow.getByRole("button", { name: "Add matching phrase" });
+  await addPhrase.focus();
+  await page.keyboard.press("Enter");
+  await expect(senderRow.getByRole("textbox", { name: `Matching phrase for ${senderName}` })).toBeFocused();
+  await senderRow.getByRole("button", { name: "Cancel phrase" }).click();
+  await expect(addPhrase).toBeFocused();
+  await page.keyboard.press("Enter");
+  await senderRow.getByRole("textbox", { name: `Matching phrase for ${senderName}` }).fill(`throwaway-${suffix}`);
+  await senderRow.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(addPhrase).toBeFocused();
+  const removePhrase = senderRow.getByRole("button", { name: `Remove phrase throwaway-${suffix} from ${senderName}` });
+  await removePhrase.focus();
+  await page.keyboard.press("Enter");
+  await expect(removePhrase).toBeHidden();
+  await expect(addPhrase).toBeFocused();
   await page.screenshot({ path: testInfo.outputPath("matching-phrases.png") });
 
   await navigate(page, "All documents");

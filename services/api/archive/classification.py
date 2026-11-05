@@ -1,5 +1,6 @@
 """Local, explainable rules that never delay document availability."""
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from .models import ClassificationRule, Document, DocumentTag, FilingRule, TagOverride
@@ -15,28 +16,27 @@ def _matches(rule, title, text):
 
 
 def apply_rules(document):
-    title = document.title.casefold()
-    text = document.extracted_text.casefold()
-    rules = ClassificationRule.objects.filter(owner=document.owner, enabled=True).select_related("tag")
-    matching = []
-    for rule in rules:
-        if _matches(rule, title, text):
-            matching.append(rule.tag)
-    filing_matches = {}
-    for rule in FilingRule.objects.filter(owner=document.owner, enabled=True):
-        if not _matches(rule, title, text):
-            continue
-        current = filing_matches.get(rule.kind)
-        if current is None or (-len(rule.pattern), rule.created_at, str(rule.id)) < (-len(current.pattern), current.created_at, str(current.id)):
-            filing_matches[rule.kind] = rule
-    suppressed = set(TagOverride.objects.filter(document=document).values_list("tag_id", flat=True))
     with transaction.atomic():
-        DocumentTag.objects.filter(document=document, origin=DocumentTag.Origin.RULE).delete()
+        # Rule mutations take the same owner lock, so a queued classifier cannot
+        # commit a rule snapshot after that rule has been deleted.
+        get_user_model().objects.select_for_update(no_key=True).get(pk=document.owner_id)
+        locked = Document.objects.select_for_update().get(pk=document.pk)
+        title = locked.title.casefold()
+        text = locked.extracted_text.casefold()
+        matching = [rule.tag for rule in ClassificationRule.objects.filter(owner_id=document.owner_id, enabled=True).select_related("tag") if _matches(rule, title, text)]
+        filing_matches = {}
+        for rule in FilingRule.objects.filter(owner_id=document.owner_id, enabled=True):
+            if not _matches(rule, title, text):
+                continue
+            current = filing_matches.get(rule.kind)
+            if current is None or (-len(rule.pattern), rule.created_at, str(rule.id)) < (-len(current.pattern), current.created_at, str(current.id)):
+                filing_matches[rule.kind] = rule
+        suppressed = set(TagOverride.objects.filter(document=locked).values_list("tag_id", flat=True))
+        DocumentTag.objects.filter(document=locked, origin=DocumentTag.Origin.RULE).delete()
         for tag in matching:
             if tag.id in suppressed:
                 continue
-            DocumentTag.objects.get_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.RULE})
-        locked = Document.objects.select_for_update().get(pk=document.pk)
+            DocumentTag.objects.get_or_create(document=locked, tag=tag, defaults={"origin": DocumentTag.Origin.RULE})
         changes = []
         for kind, field in ((FilingRule.Kind.CORRESPONDENT, "correspondent"), (FilingRule.Kind.DOCUMENT_TYPE, "document_type")):
             origin_field = f"{field}_origin"

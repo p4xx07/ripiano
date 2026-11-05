@@ -7,7 +7,7 @@ from django.test import Client
 
 from archive.classification import apply_rules
 from archive.models import ClassificationRule, Correspondent, Document, DocumentTag, DocumentType, FilingRule, Tag
-from archive.tasks import reclassify_owner
+from archive.tasks import reclassify_filing_candidates, reclassify_owner
 
 
 def ready_document(owner, text="Invoice for electricity"):
@@ -83,10 +83,12 @@ def test_filing_phrases_choose_specific_match_and_preserve_manual_corrections():
             "kind": kind, "target_id": str(target.id), "pattern": pattern, "field": field,
         }), content_type="application/json")
 
-    with patch("archive.metadata_views.reclassify_owner.delay"):
+    with patch("archive.metadata_views.reclassify_filing_candidates.delay"):
         assert create("correspondent", generic, "City").status_code == 201
         specific_rule = create("correspondent", specific, "City of Milan")
         assert specific_rule.status_code == 201
+        conflicting = create("correspondent", generic, "city of milan", "title")
+        assert conflicting.status_code == 409
         assert create("document_type", notice, "Permit notice", "text").status_code == 201
         assert create("correspondent", specific, "City of Milan").status_code == 409
         assert create("correspondent", foreign, "secret").status_code == 400
@@ -109,7 +111,7 @@ def test_filing_phrases_choose_specific_match_and_preserve_manual_corrections():
     assert document.correspondent is None
     assert document.document_type == corrected_type
 
-    with patch("archive.metadata_views.reclassify_owner.delay"):
+    with patch("archive.metadata_views.reclassify_filing_candidates.delay"):
         assert client.delete(f"/api/filing-rules/{specific_rule.json()['id']}").status_code == 200
         for rule in client.get("/api/filing-rules?kind=document_type").json()["rules"]:
             assert client.delete(f"/api/filing-rules/{rule['id']}").status_code == 200
@@ -126,3 +128,47 @@ def test_filing_phrases_choose_specific_match_and_preserve_manual_corrections():
     assert client.get("/api/filing-rules").json()["rules"] == []
     assert client.delete(f"/api/filing-rules/{specific_rule.json()['id']}").status_code == 404
     assert FilingRule.objects.filter(owner=owner).count() == 1
+
+
+@pytest.mark.django_db
+def test_phrase_edit_only_rechecks_affected_documents():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    matching = ready_document(owner, text="A permit from Milan")
+    unrelated = ready_document(owner, text="An electricity invoice")
+    sender = Correspondent.objects.create(owner=owner, name="City of Milan")
+    rule = FilingRule.objects.create(owner=owner, kind=FilingRule.Kind.CORRESPONDENT, correspondent=sender, pattern="Milan")
+
+    with patch("archive.tasks.apply_rules", wraps=apply_rules) as classify:
+        reclassify_filing_candidates(owner.id, rule.kind, sender.id, rule.pattern)
+        assert classify.call_count == 1
+    matching.refresh_from_db()
+    assert matching.correspondent == sender
+
+    rule.delete()
+    with patch("archive.tasks.apply_rules", wraps=apply_rules) as classify:
+        reclassify_filing_candidates(owner.id, FilingRule.Kind.CORRESPONDENT, sender.id, "Milan", deleted=True)
+        assert classify.call_count == 1
+    matching.refresh_from_db()
+    unrelated.refresh_from_db()
+    assert matching.correspondent is None
+    assert unrelated.correspondent is None
+
+    title_only = ready_document(owner, text="No city is named here")
+    title_only.title = "Milan permit"
+    title_only.save(update_fields=["title"])
+    title_rule = FilingRule.objects.create(owner=owner, kind=FilingRule.Kind.CORRESPONDENT, correspondent=sender, pattern="Milan", field=FilingRule.Field.TITLE)
+    with patch("archive.tasks.apply_rules", wraps=apply_rules) as classify:
+        reclassify_filing_candidates(owner.id, title_rule.kind, sender.id, title_rule.pattern, title_rule.field)
+        assert classify.call_count == 1
+    title_only.refresh_from_db()
+    matching.refresh_from_db()
+    assert title_only.correspondent == sender
+    assert matching.correspondent is None
+
+    title_rule.delete()
+    text_rule = FilingRule.objects.create(owner=owner, kind=FilingRule.Kind.CORRESPONDENT, correspondent=sender, pattern="Milan", field=FilingRule.Field.TEXT)
+    with patch("archive.tasks.apply_rules", wraps=apply_rules) as classify:
+        reclassify_filing_candidates(owner.id, text_rule.kind, sender.id, text_rule.pattern, text_rule.field)
+        assert classify.call_count == 1
+    matching.refresh_from_db()
+    assert matching.correspondent == sender

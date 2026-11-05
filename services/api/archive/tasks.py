@@ -15,7 +15,7 @@ from pypdf import PdfReader
 
 from .backup import create_snapshot
 from .classification import apply_rules
-from .models import BackupRun, Document, FilingRule
+from .models import BackupRun, Document, DocumentTag, FilingRule
 
 logger = logging.getLogger(__name__)
 
@@ -139,3 +139,25 @@ def reclassify_filing_candidates(owner_id, kind, target_id, pattern, field="eith
             apply_rules(document)
         except Exception:
             logger.exception("Automatic filing failed for document %s", document.id)
+
+
+@shared_task(name="archive.tasks.reclassify_tag_candidates")
+def reclassify_tag_candidates(owner_id, tag_id, phrases, deleted=False):
+    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY)
+    if deleted:
+        documents = documents.filter(tag_links__tag_id=tag_id, tag_links__origin=DocumentTag.Origin.RULE)
+    compiled = [(entry["pattern"].casefold(), entry["field"]) for entry in phrases]
+    for document in documents.iterator():
+        if not deleted:
+            title = document.title.casefold()
+            text = document.extracted_text.casefold()
+            if not any(
+                (field in ("title", "either") and pattern in title)
+                or (field in ("text", "either") and pattern in text)
+                for pattern, field in compiled
+            ):
+                continue
+        try:
+            apply_rules(document)
+        except Exception:
+            logger.exception("Automatic tagging failed for document %s", document.id)

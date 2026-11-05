@@ -7,7 +7,7 @@ from django.test import Client
 
 from archive.classification import apply_rules
 from archive.models import ClassificationRule, Correspondent, Document, DocumentTag, DocumentType, FilingRule, Tag
-from archive.tasks import reclassify_filing_candidates, reclassify_owner
+from archive.tasks import reclassify_filing_candidates, reclassify_owner, reclassify_tag_candidates
 
 
 def ready_document(owner, text="Invoice for electricity"):
@@ -24,7 +24,7 @@ def test_tag_keywords_file_existing_documents_and_correction_sticks():
     document = ready_document(owner)
     client = Client()
     client.force_login(owner)
-    with patch("archive.metadata_views.reclassify_owner.delay"):
+    with patch("archive.metadata_views.reclassify_tag_candidates.delay"):
         response = client.post("/api/tags", json.dumps({"name": "Bills", "keywords": ["electricity"]}), content_type="application/json")
     assert response.status_code == 201
     tag_id = response.json()["id"]
@@ -45,6 +45,31 @@ def test_tag_keywords_file_existing_documents_and_correction_sticks():
     assert response.json()["document_date"] == "2026-04-01"
     apply_rules(document)
     assert DocumentTag.objects.get(document=document).origin == DocumentTag.Origin.MANUAL
+
+
+@pytest.mark.django_db
+def test_tag_phrase_rechecks_only_matching_field_and_rule_origin():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    text_match = ready_document(owner, text="Annual tax notice")
+    title_only = ready_document(owner, text="No notice here")
+    title_only.title = "Tax notice"
+    title_only.save(update_fields=["title"])
+    tag = Tag.objects.create(owner=owner, name="Tax")
+    rule = ClassificationRule.objects.create(owner=owner, tag=tag, pattern="tax", field=ClassificationRule.Field.TEXT)
+    DocumentTag.objects.create(document=title_only, tag=tag, origin=DocumentTag.Origin.MANUAL)
+
+    with patch("archive.tasks.apply_rules", wraps=apply_rules) as classify:
+        reclassify_tag_candidates(owner.id, tag.id, [{"pattern": rule.pattern, "field": rule.field}])
+        assert classify.call_count == 1
+    assert DocumentTag.objects.get(document=text_match, tag=tag).origin == DocumentTag.Origin.RULE
+    assert DocumentTag.objects.get(document=title_only, tag=tag).origin == DocumentTag.Origin.MANUAL
+
+    rule.delete()
+    with patch("archive.tasks.apply_rules", wraps=apply_rules) as classify:
+        reclassify_tag_candidates(owner.id, tag.id, [], deleted=True)
+        assert classify.call_count == 1
+    assert not DocumentTag.objects.filter(document=text_match, tag=tag).exists()
+    assert DocumentTag.objects.get(document=title_only, tag=tag).origin == DocumentTag.Origin.MANUAL
 
 
 @pytest.mark.django_db

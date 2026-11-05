@@ -10,7 +10,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from .models import ClassificationRule, Correspondent, DocumentType, FilingRule, Tag
-from .tasks import reclassify_filing_candidates, reclassify_owner
+from .tasks import reclassify_filing_candidates, reclassify_tag_candidates
 
 logger = logging.getLogger(__name__)
 COLOR = re.compile(r"#[0-9a-fA-F]{6}\Z")
@@ -30,11 +30,11 @@ def _unauthorized(request):
     return None
 
 
-def _queue_reclassification(owner_id):
+def _queue_tag_candidates(owner_id, tag_id, phrases, deleted=False):
     try:
-        reclassify_owner.delay(owner_id)
+        reclassify_tag_candidates.delay(owner_id, str(tag_id), phrases, deleted)
     except Exception:
-        logger.exception("Could not queue rule reclassification for owner %s", owner_id)
+        logger.exception("Could not queue tag recheck for owner %s", owner_id)
 
 
 def _queue_filing_candidates(owner_id, kind, target_id, pattern, field, deleted=False):
@@ -226,13 +226,14 @@ def tags(request):
         return JsonResponse({"error": "A tag with that name already exists"}, status=409)
     try:
         with transaction.atomic():
+            get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
             tag = Tag.objects.create(owner=request.user, name=name, color=color, description=description, parent=parent)
             for keyword in dict.fromkeys(value.strip() for value in keywords):
                 ClassificationRule.objects.create(owner=request.user, tag=tag, pattern=keyword)
     except IntegrityError:
         return JsonResponse({"error": "A tag with that name already exists"}, status=409)
     if keywords:
-        _queue_reclassification(request.user.id)
+        _queue_tag_candidates(request.user.id, tag.id, [{"pattern": keyword, "field": "either"} for keyword in keywords])
     return JsonResponse(_tag_json(tag), status=201)
 
 
@@ -246,10 +247,11 @@ def tag_detail(request, tag_id):
         return JsonResponse({"error": "Tag not found"}, status=404)
     if request.method == "DELETE":
         try:
-            tag.delete()
+            with transaction.atomic():
+                get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+                tag.delete()
         except ProtectedError:
             return JsonResponse({"error": "Move or delete child tags first"}, status=409)
-        _queue_reclassification(request.user.id)
         return JsonResponse({"deleted": True})
     body = _body(request)
     if body is None:
@@ -301,10 +303,12 @@ def rules(request):
     if tag is None or not isinstance(pattern, str) or not pattern.strip() or len(pattern.strip()) > 200 or field not in ClassificationRule.Field.values:
         return JsonResponse({"error": "Choose a tag, phrase, and valid field"}, status=400)
     try:
-        rule = ClassificationRule.objects.create(owner=request.user, tag=tag, pattern=pattern.strip(), field=field)
+        with transaction.atomic():
+            get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+            rule = ClassificationRule.objects.create(owner=request.user, tag=tag, pattern=pattern.strip(), field=field)
     except IntegrityError:
         return JsonResponse({"error": "This rule already exists"}, status=409)
-    _queue_reclassification(request.user.id)
+    _queue_tag_candidates(request.user.id, tag.id, [{"pattern": rule.pattern, "field": rule.field}])
     return JsonResponse({"id": str(rule.id), "tag_id": str(tag.id), "tag_name": tag.name, "pattern": rule.pattern, "field": rule.field, "enabled": True}, status=201)
 
 
@@ -313,9 +317,12 @@ def rule_detail(request, rule_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    rule = ClassificationRule.objects.filter(pk=rule_id, owner=request.user).first()
-    if rule is None:
-        return JsonResponse({"error": "Rule not found"}, status=404)
-    rule.delete()
-    _queue_reclassification(request.user.id)
+    with transaction.atomic():
+        get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+        rule = ClassificationRule.objects.filter(pk=rule_id, owner=request.user).first()
+        if rule is None:
+            return JsonResponse({"error": "Rule not found"}, status=404)
+        tag_id = rule.tag_id
+        rule.delete()
+    _queue_tag_candidates(request.user.id, tag_id, [], deleted=True)
     return JsonResponse({"deleted": True})

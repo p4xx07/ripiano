@@ -4,6 +4,18 @@ Ripiano is a self-hosted document archive for a NAS. It combines quick mobile ca
 
 Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability baseline, not a backend dependency or a workflow template. The product target is feature parity with that release plus a better day-to-day filing process.
 
+## Screenshots
+
+These show the running development stack with synthetic test documents. The mobile capture menu is from the PWA; the Android client adds a native multi-page scanner.
+
+| Searchable Library on desktop | Quick capture in the mobile PWA |
+| --- | --- |
+| ![Desktop Library with search, document status, and document cards](qa-artifacts/65d544b/visual/desktop/library.png) | ![Mobile add-document menu with camera, gallery, and file choices](qa-artifacts/65d544b/visual/mobile/add-dialog.png) |
+
+| Paper archive on mobile | Exception-only Inbox on mobile |
+| --- | --- |
+| ![Mobile paper archive with sticker lookup and locations](qa-artifacts/65d544b/visual/mobile/paper-archive.png) | ![Mobile Inbox showing a failed OCR document and retry action](qa-artifacts/5252d3e/inbox/mobile/failed-ocr.png) |
+
 ## Planning documents
 
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
@@ -31,7 +43,27 @@ The **Inbox** shows exceptions only: failed OCR and exact copies that have not b
 2. Run `docker compose up --build -d` from this directory.
 3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account.
 
-For a NAS deployment, use [the Portainer stack](deploy/README.md) with released GHCR image digests. Set `RIPIANO_DEBUG=0`, an HTTPS `RIPIANO_PUBLIC_ORIGIN`, the reverse proxy host in `RIPIANO_ALLOWED_HOSTS`, and bind `RIPIANO_MEDIA_PATH`, `RIPIANO_DB_PATH`, and `RIPIANO_BACKUP_PATH` to persistent NAS folders. Give UID 10001 write access to the media and backup folders. The Compose stack exposes only the web service. Place HTTPS in front of it with Synology's reverse proxy. A local clean-stack restore passed with documents, locations, duplicate links, and revoked agent grants, but NAS-specific permissions and restore still need verification before storing real documents. No release images have been published from this draft PR yet.
+For a NAS deployment, use the [complete Portainer Compose example](deploy/compose.portainer.yaml) and the [example environment values](deploy/portainer.env.example). The example maps the database, media, and backup folders to persistent Synology paths and publishes only the web port; the API, worker, scheduler, broker, and MCP stay inside the stack. Portainer should receive the complete Compose file and the environment variables, with real secrets and released image digests. A short excerpt shows the important mounts:
+
+```yaml
+services:
+  db:
+    volumes:
+      - ${RIPIANO_DB_PATH}:/var/lib/postgresql/data
+  api:
+    volumes:
+      - ${RIPIANO_MEDIA_PATH}:/data
+      - ${RIPIANO_BACKUP_PATH}:/backup:ro
+  worker:
+    volumes:
+      - ${RIPIANO_MEDIA_PATH}:/data
+      - ${RIPIANO_BACKUP_PATH}:/backup
+  web:
+    ports:
+      - "${RIPIANO_PORT:-8080}:8080"
+```
+
+This excerpt illustrates storage and exposure; use the linked full stack for deployment. Set an HTTPS `RIPIANO_PUBLIC_ORIGIN`, the reverse proxy hostname in `RIPIANO_ALLOWED_HOSTS`, and give container UID 10001 write access to the media and backup folders. Point Synology's HTTPS reverse proxy at the web port and Hyper Backup at the backup folder's `complete/` subfolder. [Deployment details](deploy/README.md) include image pinning and NAS permissions; [backup/restore instructions](docs/BACKUP_RESTORE.md) cover recovery. Backblaze B2 configuration stays in Synology. A local clean-stack restore passed with documents, locations, duplicate links, and revoked agent grants, but NAS-specific permissions and restore still need verification before storing real documents. No release images have been published from this draft PR yet.
 
 ### Work on the services
 

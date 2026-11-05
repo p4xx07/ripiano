@@ -6,6 +6,8 @@ The images are built and published to GHCR by `.github/workflows/verify-and-publ
 
 Required Portainer environment variables:
 
+The checked-in [environment example](portainer.env.example) collects the values in one place. Enter its variables in Portainer with your own secrets, paths, and published image digests; the file's image tags are placeholders and cannot deploy the current draft PR.
+
 | Variable | Example | Purpose |
 | --- | --- | --- |
 | `RIPIANO_API_IMAGE` | `ghcr.io/p4xx07/ripiano-api@sha256:...` | API, OCR worker, scheduler, MCP image |

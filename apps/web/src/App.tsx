@@ -311,6 +311,7 @@ function App() {
   const [listError, setListError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
+  const [uploadReport, setUploadReport] = useState<{ total: number; failures: string[] } | null>(null);
   const [nativeScanner] = useState(() => Boolean(window.RipianoAndroid));
   const [dropActive, setDropActive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -416,6 +417,7 @@ function App() {
     setView("documents");
     setQuery("");
     setError("");
+    setUploadReport(null);
     try {
       const failures: string[] = [];
       for (const [index, file] of chosen.entries()) {
@@ -432,11 +434,7 @@ function App() {
         }
       }
       await loadDocuments("");
-      if (failures.length) {
-        const details = failures.slice(0, 3).join("; ");
-        const remaining = failures.length > 3 ? `; and ${failures.length - 3} more` : "";
-        setError(`${failures.length} of ${chosen.length} files could not be added. ${details}${remaining}`);
-      }
+      if (failures.length) setUploadReport({ total: chosen.length, failures });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Upload failed");
     } finally {
@@ -755,6 +753,20 @@ function App() {
                   </button>
                 </div>
               )}
+              {uploadReport && (
+                <div className="inline-error upload-report" role="alert">
+                  <strong>{uploadReport.failures.length} of {uploadReport.total} files could not be added.</strong>
+                  {uploadReport.failures.length > 3 ? (
+                    <details>
+                      <summary>Review rejected files</summary>
+                      <ul>{uploadReport.failures.map((failure, index) => <li key={`${failure}-${index}`}>{failure}</li>)}</ul>
+                    </details>
+                  ) : (
+                    <ul>{uploadReport.failures.map((failure, index) => <li key={`${failure}-${index}`}>{failure}</li>)}</ul>
+                  )}
+                  <button onClick={() => setUploadReport(null)} aria-label="Dismiss upload report"><X size={16} /></button>
+                </div>
+              )}
               {listError && (
                 <div className="inline-error" role="alert">
                   {listError}
@@ -762,7 +774,7 @@ function App() {
                 </div>
               )}
               {uploading && (
-                <div className="upload-progress">
+                <div className="upload-progress" role="status" aria-live="polite" aria-atomic="true">
                   <UploadCloud size={19} /> {uploadProgress || "Adding your document…"}
                 </div>
               )}

@@ -596,6 +596,26 @@ button:disabled {
 .inline-error button {
   margin-left: auto;
 }
+.upload-report {
+  display: block;
+  position: relative;
+  padding-right: var(--space-9);
+}
+.upload-report button {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+.upload-report ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+  overflow-wrap: anywhere;
+}
+.upload-report summary {
+  cursor: pointer;
+  margin-top: var(--space-2);
+  text-decoration: underline;
+}
 .upload-progress {
   background: var(--color-surface-tint);
   color: var(--color-accent-strong);

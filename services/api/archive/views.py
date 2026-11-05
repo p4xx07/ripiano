@@ -27,10 +27,10 @@ logger = logging.getLogger(__name__)
 CURSOR_SALT = "ripiano-document-page-v1"
 
 
-def _read_page_cursor(raw, owner, query, view):
+def _read_page_cursor(raw, owner, query, view, filters):
     try:
         value = signing.loads(raw, salt=CURSOR_SALT, max_age=86400)
-        if not isinstance(value, dict) or value.get("owner") != str(owner.pk) or value.get("query") != query or value.get("view") != view:
+        if not isinstance(value, dict) or value.get("owner") != str(owner.pk) or value.get("query") != query or value.get("view") != view or value.get("filters", {}) != filters:
             raise ValueError
         created_at = datetime.fromisoformat(value["created_at"])
         if timezone.is_naive(created_at):
@@ -48,9 +48,9 @@ def _read_page_cursor(raw, owner, query, view):
         raise ValueError("Invalid page cursor") from exc
 
 
-def _next_page_cursor(document, owner, query, view, counts):
+def _next_page_cursor(document, owner, query, view, filters, counts):
     return signing.dumps({
-        "owner": str(owner.pk), "query": query, "view": view,
+        "owner": str(owner.pk), "query": query, "view": view, "filters": filters,
         "created_at": document.created_at.isoformat(), "id": str(document.id),
         "due_date": document.action_due_date.isoformat() if document.action_due_date else None,
         "score": int(getattr(document, "search_score", 0)) if view == "search" else None,
@@ -156,6 +156,33 @@ def documents(request):
             return JsonResponse({"error": "Use a page cursor"}, status=400)
         queryset = Document.objects.filter(owner=request.user).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
+        filters = {}
+        for key in ("tag_id", "correspondent_id", "document_type_id"):
+            raw = request.GET.get(key, "")
+            if raw:
+                try:
+                    filters[key] = str(UUID(raw))
+                except (TypeError, ValueError, AttributeError):
+                    return JsonResponse({"error": f"Invalid {key.replace('_', ' ')}"}, status=400)
+        for key in ("date_from", "date_to"):
+            raw = request.GET.get(key, "")
+            if raw:
+                try:
+                    filters[key] = date.fromisoformat(raw).isoformat()
+                except (TypeError, ValueError):
+                    return JsonResponse({"error": f"Invalid {key.replace('_', ' ')}"}, status=400)
+        if filters.get("date_from") and filters.get("date_to") and filters["date_from"] > filters["date_to"]:
+            return JsonResponse({"error": "Start date must be before end date"}, status=400)
+        if "tag_id" in filters:
+            queryset = queryset.filter(tag_links__tag_id=filters["tag_id"])
+        if "correspondent_id" in filters:
+            queryset = queryset.filter(correspondent_id=filters["correspondent_id"])
+        if "document_type_id" in filters:
+            queryset = queryset.filter(document_type_id=filters["document_type_id"])
+        if "date_from" in filters:
+            queryset = queryset.filter(document_date__gte=filters["date_from"])
+        if "date_to" in filters:
+            queryset = queryset.filter(document_date__lte=filters["date_to"])
         requested_view = request.GET.get("view")
         view = "actions" if requested_view == "actions" else "exceptions" if requested_view == "exceptions" else "search" if query else "documents"
         if view == "actions":
@@ -183,7 +210,7 @@ def documents(request):
         cursor_raw = request.GET.get("cursor")
         if cursor_raw:
             try:
-                created_at, document_id, due_date, score, counts = _read_page_cursor(cursor_raw, request.user, query, view)
+                created_at, document_id, due_date, score, counts = _read_page_cursor(cursor_raw, request.user, query, view, filters)
             except ValueError:
                 return JsonResponse({"error": "Invalid page cursor"}, status=400)
             older = Q(created_at__lt=created_at) | Q(created_at=created_at, id__lt=document_id)
@@ -206,7 +233,7 @@ def documents(request):
         visible = page[:50]
         return JsonResponse({
             "documents": [_document_json(doc) for doc in visible],
-            "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, counts) if len(page) > 50 else None,
+            "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, counts) if len(page) > 50 else None,
             "counts": counts,
         })
 

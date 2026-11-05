@@ -29,11 +29,12 @@ import {
   Plus,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   Tag as TagIcon,
   UploadCloud,
   X,
 } from "lucide-react";
-import { Document, formatDate, request, Session } from "./api";
+import { Document, FilingItem, formatDate, request, Session, Tag } from "./api";
 import DocumentPanel from "./DocumentPanel";
 import ActionPanel from "./ActionPanel";
 import InboxPanel from "./InboxPanel";
@@ -49,6 +50,18 @@ type BackupRun = {
   snapshot_name: string;
   error: string;
   created_at: string;
+};
+
+type LibraryFilters = {
+  tag_id: string;
+  correspondent_id: string;
+  document_type_id: string;
+  date_from: string;
+  date_to: string;
+};
+
+const emptyLibraryFilters: LibraryFilters = {
+  tag_id: "", correspondent_id: "", document_type_id: "", date_from: "", date_to: "",
 };
 
 function TagSummary({ tags }: { tags: Document["tags"] }) {
@@ -307,6 +320,9 @@ function App() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<LibraryFilters>({ ...emptyLibraryFilters });
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterOptions, setFilterOptions] = useState<{ tags: Tag[]; correspondents: FilingItem[]; document_types: FilingItem[] }>({ tags: [], correspondents: [], document_types: [] });
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -333,6 +349,24 @@ function App() {
   const latestSearch = useRef(0);
   const loadingMoreRef = useRef(false);
 
+  const loadFilterOptions = useCallback(async () => {
+    try {
+      const [tags, correspondents, documentTypes] = await Promise.all([
+        request<{ tags: Tag[] }>("/api/tags"),
+        request<{ correspondents: FilingItem[] }>("/api/correspondents"),
+        request<{ document_types: FilingItem[] }>("/api/document-types"),
+      ]);
+      setFilterOptions({ tags: tags.tags, correspondents: correspondents.correspondents, document_types: documentTypes.document_types });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load filter choices");
+    }
+  }, []);
+
+  function updateFilter(key: keyof LibraryFilters, value: string) {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setNextCursor(null);
+  }
+
   const loadDocuments = useCallback(async (search: string, cursor: string | null = null) => {
     if (cursor && loadingMoreRef.current) return;
     if (cursor) {
@@ -341,8 +375,11 @@ function App() {
     }
     const requestNumber = ++latestSearch.current;
     try {
+      const params = new URLSearchParams({ q: search });
+      for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
+      if (cursor) params.set("cursor", cursor);
       const result = await request<{ documents: Document[]; counts: typeof counts; next_cursor: string | null }>(
-        `/api/documents?q=${encodeURIComponent(search)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+        `/api/documents?${params}`,
       );
       if (requestNumber === latestSearch.current) {
         setDocuments((current) => cursor ? [...current, ...result.documents] : result.documents);
@@ -364,7 +401,7 @@ function App() {
       if (cursor) loadingMoreRef.current = false;
       if (requestNumber === latestSearch.current) setLoadingMore(false);
     }
-  }, []);
+  }, [filters]);
 
   useEffect(() => {
     request<Session>("/api/session")
@@ -382,6 +419,10 @@ function App() {
     const timer = window.setTimeout(() => loadDocuments(query), 200);
     return () => window.clearTimeout(timer);
   }, [session?.authenticated, query, view, loadDocuments]);
+
+  useEffect(() => {
+    if (session?.authenticated && view === "documents") void loadFilterOptions();
+  }, [session?.authenticated, view, loadFilterOptions]);
 
   useEffect(() => {
     function onNativeUpload(event: Event) {
@@ -416,6 +457,7 @@ function App() {
     setShowAdd(false);
     setView("documents");
     setQuery("");
+    setFilters({ ...emptyLibraryFilters });
     setError("");
     setUploadReport(null);
     try {
@@ -498,6 +540,7 @@ function App() {
     );
 
   const isEmpty = counts.total === 0;
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   return (
     <div
@@ -531,6 +574,7 @@ function App() {
           onClick={() => {
             setView("documents");
             setQuery("");
+            setFilters({ ...emptyLibraryFilters });
             setMenuOpen(false);
           }}
         >
@@ -684,7 +728,7 @@ function App() {
                   </span>
                   <div>
                     <strong>{counts.total}</strong>
-                    <span>{query ? "Matching documents" : "Documents"}</span>
+                    <span>{query || activeFilterCount ? "Matching documents" : "Documents"}</span>
                   </div>
                 </div>
                 <div className="summary-card">
@@ -734,6 +778,9 @@ function App() {
                     </button>
                   )}
                 </div>
+                <Button type="button" variant="secondary" className="filter-toggle" aria-expanded={showFilters} aria-controls="library-filters" onClick={() => setShowFilters((current) => !current)}>
+                  <SlidersHorizontal size={17} /> Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
+                </Button>
                 <Button
                   variant="secondary"
                   className="mobile-add"
@@ -742,6 +789,14 @@ function App() {
                   <Plus size={18} /> Add
                 </Button>
               </div>
+              {showFilters && <div className="library-filters" id="library-filters">
+                <Field label="Tag" className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">Any tag</option>{filterOptions.tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></Field>
+                <Field label="From" className="detail-label"><select value={filters.correspondent_id} onChange={(event) => updateFilter("correspondent_id", event.target.value)}><option value="">Any sender</option>{filterOptions.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+                <Field label="Document type" className="detail-label"><select value={filters.document_type_id} onChange={(event) => updateFilter("document_type_id", event.target.value)}><option value="">Any type</option>{filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+                <Field label="Date from" className="detail-label"><input type="date" value={filters.date_from} max={filters.date_to || undefined} onChange={(event) => updateFilter("date_from", event.target.value)} /></Field>
+                <Field label="Date to" className="detail-label"><input type="date" value={filters.date_to} min={filters.date_from || undefined} onChange={(event) => updateFilter("date_to", event.target.value)} /></Field>
+                {activeFilterCount > 0 && <button type="button" className="text-action filter-clear" onClick={() => { setFilters({ ...emptyLibraryFilters }); setNextCursor(null); }}>Clear filters</button>}
+              </div>}
               {error && (
                 <div className="inline-error" role="alert">
                   {error}
@@ -785,16 +840,16 @@ function App() {
                     <FileText size={33} strokeWidth={1.5} />
                   </div>
                   <h3>
-                    {query
+                    {query || activeFilterCount
                       ? "Nothing found yet"
                       : "A fresh shelf, ready for you."}
                   </h3>
                   <p>
-                    {query
-                      ? "Try another word from the title or the document."
+                    {query || activeFilterCount
+                      ? "Try another search or clear your filters."
                       : "Add a document and Ripiano will make its text searchable."}
                   </p>
-                  {!query && (
+                  {!query && !activeFilterCount && (
                     <Button
                       onClick={() => setShowAdd(true)}
                     >
@@ -1015,7 +1070,7 @@ function App() {
           key={selectedDocument.id}
           initial={selectedDocument}
           onClose={() => setSelectedDocument(null)}
-          onSaved={() => { void loadDocuments(query); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }}
+          onSaved={() => { void loadDocuments(query); void loadFilterOptions(); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }}
           onOpenTags={() => {
             setSelectedDocument(null);
             setView("tags");

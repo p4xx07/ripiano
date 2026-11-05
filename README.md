@@ -76,7 +76,7 @@ This excerpt illustrates storage and exposure; use the linked full stack for dep
 - Android debug build: `cd apps/android && ./gradlew :app:assembleDebug` with JDK 17 and Android SDK 36. See [Android setup](apps/android/README.md).
 - Browser journey (running local stack and a disposable owner account): `cd apps/web && RIPIANO_E2E_ORIGIN=http://localhost:8080 RIPIANO_E2E_USERNAME=... RIPIANO_E2E_PASSWORD=... npm run test:e2e`. This creates test documents, tags, and locations in that account.
 
-The document originals are stored under the mounted media path. OCR output is derived and can be rebuilt. Simple search finds titles, OCR text, tag names, correspondent names, document types, action notes, and sticker codes. The Library and Needs action lists load additional results in cursor-based pages of 50; Refresh shows new arrivals. Richer filters are scheduled for later slices.
+The document originals are stored under the mounted media path. OCR output is derived and can be rebuilt. Simple search finds titles, OCR text, tag names, correspondent names, document types, action notes, and sticker codes. The Library can narrow results by a specific tag, sender, document type, and document-date range; these filters combine with text search. The Library and Needs action lists load additional results in cursor-based pages of 50; Refresh shows new arrivals. Saved views and advanced query syntax are scheduled for later slices.
 
 ### Optional Telegram input
 

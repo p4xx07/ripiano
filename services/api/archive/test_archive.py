@@ -280,6 +280,52 @@ def test_document_and_action_lists_page_without_hiding_older_items():
 
 
 @pytest.mark.django_db
+def test_library_filters_bind_cursor_and_keep_owner_scope():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    tag = Tag.objects.create(owner=owner, name="Tax")
+    sender = Correspondent.objects.create(owner=owner, name="City")
+    kind = DocumentType.objects.create(owner=owner, name="Notice")
+    for index in range(51):
+        document = Document.objects.create(
+            owner=owner, title=f"Receipt {index:02d}", original_name=f"receipt-{index}.pdf",
+            original_path=f"originals/receipt-{index}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10, document_date=date(2026, 4, 15),
+            correspondent=sender, document_type=kind,
+        )
+        DocumentTag.objects.create(document=document, tag=tag)
+    Document.objects.create(
+        owner=owner, title="Excluded receipt", original_name="excluded.pdf",
+        original_path="originals/excluded.pdf", original_mime="application/pdf",
+        original_sha256="b" * 64, original_size=10, document_date=date(2026, 5, 1),
+    )
+    Document.objects.create(
+        owner=other, title="Foreign receipt", original_name="foreign.pdf",
+        original_path="originals/foreign.pdf", original_mime="application/pdf",
+        original_sha256="c" * 64, original_size=10, document_date=date(2026, 4, 15),
+    )
+    client = Client()
+    client.force_login(owner)
+    filters = {
+        "tag_id": str(tag.id), "correspondent_id": str(sender.id),
+        "document_type_id": str(kind.id), "date_from": "2026-04-15", "date_to": "2026-04-15",
+    }
+    first = client.get("/api/documents", filters).json()
+    assert first["counts"]["total"] == 51
+    assert len(first["documents"]) == 50 and first["next_cursor"]
+    second = client.get("/api/documents", {**filters, "cursor": first["next_cursor"]}).json()
+    assert len(second["documents"]) == 1 and second["next_cursor"] is None
+    assert len({item["id"] for item in first["documents"] + second["documents"]}) == 51
+    for key in filters:
+        changed = {**filters, key: str(uuid4()) if key.endswith("_id") else "2026-04-16"}
+        assert client.get("/api/documents", {**changed, "cursor": first["next_cursor"]}).status_code == 400
+    assert client.get("/api/documents", {"tag_id": str(uuid4())}).json()["counts"]["total"] == 0
+    assert client.get("/api/documents", {"tag_id": "not-a-uuid"}).status_code == 400
+    assert client.get("/api/documents", {"date_from": "yesterday"}).status_code == 400
+    assert client.get("/api/documents", {"date_from": "2026-05-01", "date_to": "2026-04-01"}).status_code == 400
+
+
+@pytest.mark.django_db
 def test_page_cursor_survives_new_ingest_and_completed_follow_up():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     client = Client()

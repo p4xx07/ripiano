@@ -301,6 +301,9 @@ function BackupPanel() {
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [counts, setCounts] = useState({ total: 0, ready: 0, waiting: 0 });
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
@@ -323,24 +326,39 @@ function App() {
   const galleryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const latestSearch = useRef(0);
+  const loadingMoreRef = useRef(false);
 
-  const loadDocuments = useCallback(async (search: string) => {
+  const loadDocuments = useCallback(async (search: string, offset = 0) => {
+    if (offset && loadingMoreRef.current) return;
+    if (offset) {
+      loadingMoreRef.current = true;
+      setLoadingMore(true);
+    }
     const requestNumber = ++latestSearch.current;
     try {
-      const result = await request<{ documents: Document[] }>(
-        `/api/documents?q=${encodeURIComponent(search)}`,
+      const result = await request<{ documents: Document[]; counts: typeof counts; next_offset: number | null }>(
+        `/api/documents?q=${encodeURIComponent(search)}&offset=${offset}`,
       );
       if (requestNumber === latestSearch.current) {
-        setDocuments(result.documents);
+        setDocuments((current) => offset ? [...current, ...result.documents] : result.documents);
+        setCounts(result.counts);
+        setNextOffset(result.next_offset);
         setListError("");
         setError("");
       }
     } catch (cause) {
       if (requestNumber !== latestSearch.current) return;
-      setDocuments([]);
-      setListError(
-        cause instanceof Error ? cause.message : "Could not load documents",
-      );
+      const message = cause instanceof Error ? cause.message : "Could not load documents";
+      if (offset) setError(message);
+      else {
+        setDocuments([]);
+        setCounts({ total: 0, ready: 0, waiting: 0 });
+        setNextOffset(null);
+        setListError(message);
+      }
+    } finally {
+      if (offset) loadingMoreRef.current = false;
+      if (requestNumber === latestSearch.current) setLoadingMore(false);
     }
   }, []);
 
@@ -376,7 +394,7 @@ function App() {
 
   useEffect(() => {
     if (
-      !session?.authenticated ||
+      !session?.authenticated || documents.length > 50 ||
       (!query.trim() &&
         !documents.some(
           (doc) => doc.status === "pending" || doc.status === "processing",
@@ -463,11 +481,7 @@ function App() {
       <AuthScreen setup={session.setup_required} onAuthenticated={setSession} />
     );
 
-  const ready = documents.filter((doc) => doc.status === "ready").length;
-  const waiting = documents.filter(
-    (doc) => doc.status === "pending" || doc.status === "processing",
-  ).length;
-  const isEmpty = documents.length === 0;
+  const isEmpty = counts.total === 0;
 
   return (
     <div
@@ -643,7 +657,7 @@ function App() {
                     <FileText size={20} />
                   </span>
                   <div>
-                    <strong>{documents.length}</strong>
+                    <strong>{counts.total}</strong>
                     <span>{query ? "Matching documents" : "Documents"}</span>
                   </div>
                 </div>
@@ -652,7 +666,7 @@ function App() {
                     <Check size={20} />
                   </span>
                   <div>
-                    <strong>{ready}</strong>
+                    <strong>{counts.ready}</strong>
                     <span>Ready to find</span>
                   </div>
                 </div>
@@ -661,7 +675,7 @@ function App() {
                     <Clock3 size={20} />
                   </span>
                   <div>
-                    <strong>{waiting}</strong>
+                    <strong>{counts.waiting}</strong>
                     <span>Being processed</span>
                   </div>
                 </div>
@@ -678,7 +692,7 @@ function App() {
                   <Search size={19} />
                   <input
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => { setQuery(event.target.value); setNextOffset(null); }}
                     placeholder="Search titles or document text…"
                     aria-label="Search documents"
                   />
@@ -746,6 +760,7 @@ function App() {
                   )}
                 </div>
               ) : (
+                <>
                 <div className="document-list">
                   {documents.map((doc) => (
                     <article className="document-row" key={doc.id}>
@@ -845,6 +860,12 @@ function App() {
                     </article>
                   ))}
                 </div>
+                {nextOffset !== null && (
+                  <Button variant="secondary" className="load-more" disabled={loadingMore} onClick={() => void loadDocuments(query, nextOffset)}>
+                    {loadingMore ? "Loading…" : "Show more documents"}
+                  </Button>
+                )}
+                </>
               )}
             </>
           )}

@@ -38,7 +38,7 @@ For a NAS deployment, use [the Portainer stack](deploy/README.md) with released 
 - Android debug build: `cd apps/android && ./gradlew :app:assembleDebug` with JDK 17 and Android SDK 36. See [Android setup](apps/android/README.md).
 - Browser journey (running local stack and a disposable owner account): `cd apps/web && RIPIANO_E2E_ORIGIN=http://localhost:8080 RIPIANO_E2E_USERNAME=... RIPIANO_E2E_PASSWORD=... npm run test:e2e`. This creates test documents, tags, and locations in that account.
 
-The document originals are stored under the mounted media path. OCR output is derived and can be rebuilt. The current search is text-only and lists 50 results at a time; richer filters and pagination are scheduled for the next slices.
+The document originals are stored under the mounted media path. OCR output is derived and can be rebuilt. The current search is text-only; the Library and Needs action lists load additional results in pages of 50. Richer filters are scheduled for later slices.
 
 ### Optional Telegram input
 

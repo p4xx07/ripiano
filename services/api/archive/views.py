@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import IntegrityError, connection, transaction
-from django.db.models import F, Q
+from django.db.models import Count, F, Q
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
@@ -113,6 +113,12 @@ def documents(request):
     if unauthorized:
         return unauthorized
     if request.method == "GET":
+        try:
+            offset = int(request.GET.get("offset", "0"))
+        except ValueError:
+            return JsonResponse({"error": "Invalid offset"}, status=400)
+        if offset < 0 or offset > 1000000:
+            return JsonResponse({"error": "Invalid offset"}, status=400)
         queryset = Document.objects.filter(owner=request.user).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
         if request.GET.get("view") == "actions":
@@ -121,12 +127,23 @@ def documents(request):
             if connection.vendor == "postgresql":
                 vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple")
                 search_query = SearchQuery(query, search_type="websearch", config="simple")
-                queryset = queryset.annotate(search_rank=SearchRank(vector, search_query)).filter(search_rank__gt=0).order_by("-search_rank", "-created_at")
+                queryset = queryset.annotate(search_rank=SearchRank(vector, search_query)).filter(search_rank__gt=0).order_by("-search_rank", "-created_at", "-id")
             else:
                 queryset = queryset.filter(Q(title__icontains=query) | Q(extracted_text__icontains=query))
         if request.GET.get("view") == "actions":
-            queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at")
-        return JsonResponse({"documents": [_document_json(doc) for doc in queryset[:50]]})
+            queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at", "-id")
+        elif not query:
+            queryset = queryset.order_by("-created_at", "-id")
+        counts = queryset.aggregate(
+            total=Count("id"),
+            ready=Count("id", filter=Q(status=Document.Status.READY)),
+            waiting=Count("id", filter=Q(status__in=[Document.Status.PENDING, Document.Status.PROCESSING])),
+        )
+        return JsonResponse({
+            "documents": [_document_json(doc) for doc in queryset[offset:offset + 50]],
+            "next_offset": offset + 50 if offset + 50 < counts["total"] else None,
+            "counts": counts,
+        })
 
     upload = request.FILES.get("document")
     if upload is None:

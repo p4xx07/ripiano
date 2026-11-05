@@ -480,6 +480,10 @@ button:disabled {
   overflow: hidden;
   background: var(--color-surface);
 }
+.load-more {
+  display: flex;
+  margin: var(--space-4) auto 0;
+}
 .document-row {
   display: flex;
   align-items: center;

@@ -198,3 +198,34 @@ def test_follow_ups_are_optional_owner_scoped_and_due_ordered():
     assert [item["title"] for item in client.get("/api/documents?view=actions").json()["documents"]] == ["Later", "No due date"]
     reopened = update(sooner, {"action_status": "open"}).json()
     assert reopened["action_completed_at"] is None
+
+
+@pytest.mark.django_db
+def test_document_and_action_lists_page_without_hiding_older_items():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    for index in range(51):
+        Document.objects.create(
+            owner=owner, title=f"Document {index:02d}", original_name=f"doc-{index}.pdf",
+            original_path=f"originals/doc-{index}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10,
+            action_status=Document.ActionStatus.OPEN,
+        )
+    Document.objects.create(
+        owner=other, title="Foreign", original_name="foreign.pdf",
+        original_path="originals/foreign.pdf", original_mime="application/pdf",
+        original_sha256="b" * 64, original_size=10,
+        action_status=Document.ActionStatus.OPEN,
+    )
+    client = Client()
+    client.force_login(owner)
+    for suffix in ("", "?view=actions"):
+        first = client.get(f"/api/documents{suffix}").json()
+        second = client.get(f"/api/documents?offset=50{'&view=actions' if suffix else ''}").json()
+        assert first["counts"]["total"] == 51
+        assert len(first["documents"]) == 50 and first["next_offset"] == 50
+        assert len(second["documents"]) == 1 and second["next_offset"] is None
+        assert len({item["id"] for item in first["documents"] + second["documents"]}) == 51
+        assert all(item["title"] != "Foreign" for item in first["documents"] + second["documents"])
+    assert client.get("/api/documents?offset=-1").status_code == 400
+    assert client.get("/api/documents?offset=bad").status_code == 400

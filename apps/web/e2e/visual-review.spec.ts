@@ -39,7 +39,7 @@ test("review the main archive surfaces", async ({ page }, testInfo) => {
   await expect(page.getByRole("heading", { name: "Nothing found yet" })).toBeVisible();
   await shot("search-empty");
 
-  await page.route("**/api/documents?q=brokenvisualreview", (route) => route.fulfill({
+  await page.route("**/api/documents?q=brokenvisualreview*", (route) => route.fulfill({
     status: 503,
     contentType: "application/json",
     body: JSON.stringify({ error: "Archive temporarily unavailable" }),

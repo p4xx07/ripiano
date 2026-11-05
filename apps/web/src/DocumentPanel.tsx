@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { Document, Location, PhysicalCopy, request, Tag } from "./api";
+import { Button, Field, Modal } from "./ui";
 
 export default function DocumentPanel({
   initial,
@@ -56,14 +57,6 @@ export default function DocumentPanel({
       .then((result) => setLocations(result.locations))
       .catch((cause) => setError(cause.message));
   }, []);
-  useEffect(() => {
-    function escape(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [onClose]);
-
   function toggle(id: string) {
     setSelected((value) =>
       value.includes(id) ? value.filter((item) => item !== id) : [...value, id],
@@ -156,18 +149,7 @@ export default function DocumentPanel({
   }
 
   return (
-    <div
-      className="modal-backdrop detail-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="detail-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="detail-heading"
-      >
+    <Modal titleId="detail-heading" panelClassName="detail-panel" backdropClassName="detail-backdrop" onClose={onClose}>
         <button className="modal-close" onClick={onClose} aria-label="Close">
           <X size={20} />
         </button>
@@ -194,23 +176,21 @@ export default function DocumentPanel({
           </div>
         )}
         <form onSubmit={save}>
-          <label className="detail-label">
-            Title
+          <Field label="Title" className="detail-label">
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               maxLength={300}
               required
             />
-          </label>
-          <label className="detail-label">
-            Document date <small>Optional</small>
+          </Field>
+          <Field label="Document date" hint="Optional" className="detail-label">
             <input
               type="date"
               value={date}
               onChange={(event) => setDate(event.target.value)}
             />
-          </label>
+          </Field>
           <div className="detail-label">
             Tags <small>Choose only what helps</small>
           </div>
@@ -244,9 +224,9 @@ export default function DocumentPanel({
               <TagIcon size={17} /> Create your first tag
             </button>
           )}
-          <button className="button button-primary detail-save" disabled={busy}>
+          <Button className="detail-save" disabled={busy}>
             <Save size={17} /> {busy ? "Saving…" : "Save changes"}
-          </button>
+          </Button>
         </form>
         <div className="detail-files">
           <h3>
@@ -307,13 +287,13 @@ export default function DocumentPanel({
                     </option>
                   ))}
                 </select>
-                <button
-                  className="button button-secondary"
+                <Button
+                  variant="secondary"
                   disabled={busy}
                   onClick={() => void moveCopy(copy)}
                 >
                   Move
-                </button>
+                </Button>
               </div>
               {histories[copy.id] && (
                 <div className="copy-history">
@@ -340,13 +320,13 @@ export default function DocumentPanel({
                 </option>
               ))}
             </select>
-            <button
-              className="button button-secondary"
+            <Button
+              variant="secondary"
               disabled={busy}
               onClick={() => void createCopy()}
             >
               <Plus size={16} /> Create sticker
-            </button>
+            </Button>
           </div>
           {!locations.length && (
             <button className="text-action" onClick={onOpenLocations}>
@@ -354,7 +334,6 @@ export default function DocumentPanel({
             </button>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

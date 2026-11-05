@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Bot, Check, Copy, LockKeyhole, Plus, Shield, X } from "lucide-react";
 import { request, Tag } from "./api";
+import { Button } from "./ui";
 
 type Grant = {
   id: string;
@@ -159,13 +160,13 @@ export default function AgentPanel() {
                   value={newToken}
                   onFocus={(event) => event.target.select()}
                 />
-                <button
-                  className="button button-secondary"
+                <Button
+                  variant="secondary"
                   onClick={() => void copyToken()}
                 >
                   {copied ? <Check size={16} /> : <Copy size={16} />}
                   {copied ? "Copied" : "Copy"}
-                </button>
+                </Button>
               </div>
               <small>
                 MCP URL: <code>{window.location.origin}/mcp</code>
@@ -212,13 +213,13 @@ export default function AgentPanel() {
                     )}
                   </div>
                   {!grant.revoked_at && (
-                    <button
-                      className="button button-secondary"
+                    <Button
+                      variant="secondary"
                       disabled={busy}
                       onClick={() => void revoke(grant)}
                     >
                       Revoke
-                    </button>
+                    </Button>
                   )}
                 </article>
               ))}
@@ -313,12 +314,11 @@ export default function AgentPanel() {
                 required
               />
             </label>
-            <button
-              className="button button-primary"
+            <Button
               disabled={busy || scopes.length === 0}
             >
               <Plus size={17} /> {busy ? "Creating…" : "Create agent token"}
-            </button>
+            </Button>
           </form>
           <div className="tag-tip">
             A local model keeps processing local if its computer is private. A

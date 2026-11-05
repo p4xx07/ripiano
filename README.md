@@ -14,6 +14,7 @@ Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability
 - [Optional local Mac classifier](agents/local_classifier/README.md): Ollama through MCP, 10:00 LaunchAgent, and missed-run catch-up.
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md): build order and verification gates.
 - [Quality judges](docs/QUALITY_JUDGES.md): the 9.5 target, independent review rubric, and release blockers.
+- [Design system](docs/DESIGN_SYSTEM.md): Ripiano colors, shared controls, focus behavior, and mobile density.
 - [Portainer deployment](deploy/README.md): digest-pinned images, NAS volumes, HTTPS, and backup mount.
 
 ## First implementation slice

@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowRight, Plus, Tag as TagIcon, Trash2, X } from "lucide-react";
 import { request, Rule, Tag } from "./api";
+import { Button } from "./ui";
 
 export default function TagPanel() {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -191,12 +192,11 @@ export default function TagPanel() {
                           maxLength={200}
                           required
                         />
-                        <button
-                          className="button button-primary"
+                        <Button
                           disabled={busy}
                         >
                           Add
-                        </button>
+                        </Button>
                         <button
                           className="tag-icon-button"
                           type="button"
@@ -275,10 +275,10 @@ export default function TagPanel() {
                 onChange={(event) => setColor(event.target.value)}
               />
             </label>
-            <button className="button button-primary" disabled={busy}>
+            <Button disabled={busy}>
               {busy ? "Creating…" : "Create tag"}
               <ArrowRight size={17} />
-            </button>
+            </Button>
           </form>
           <div className="tag-tip">
             Phrases are matched locally. Removing an automatic tag from a

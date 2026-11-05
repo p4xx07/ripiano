@@ -36,6 +36,7 @@ import DocumentPanel from "./DocumentPanel";
 import AgentPanel from "./AgentPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
+import { Button, Field, Modal } from "./ui";
 
 type BackupRun = {
   id: string;
@@ -45,6 +46,28 @@ type BackupRun = {
   error: string;
   created_at: string;
 };
+
+function TagSummary({ tags }: { tags: Document["tags"] }) {
+  function chips(limit: number) {
+    return <>
+      {tags.slice(0, limit).map((tag) => (
+        <span key={tag.id} title={tag.name}>
+          <i style={{ background: tag.color }} />
+          <span className="tag-name">{tag.name}</span>
+        </span>
+      ))}
+      {tags.length > limit && (
+        <span className="more-tags" title={tags.slice(limit).map((tag) => tag.name).join(", ")}>
+          +{tags.length - limit} more
+        </span>
+      )}
+    </>;
+  }
+  return <>
+    <div className="document-tags document-tags-desktop">{chips(2)}</div>
+    <div className="document-tags document-tags-mobile">{chips(1)}</div>
+  </>;
+}
 
 declare global {
   interface Window {
@@ -105,17 +128,15 @@ function AuthScreen({
             : "Sign in to find and keep your documents in place."}
         </p>
         <form onSubmit={submit}>
-          <label>
-            Username
+          <Field label="Username">
             <input
               autoComplete="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               required
             />
-          </label>
-          <label>
-            Password
+          </Field>
+          <Field label="Password">
             <input
               type="password"
               autoComplete={setup ? "new-password" : "current-password"}
@@ -124,27 +145,26 @@ function AuthScreen({
               minLength={setup ? 12 : undefined}
               required
             />
-          </label>
+          </Field>
           {setup && (
-            <label>
-              Setup key
+            <Field label="Setup key">
               <input
                 type="password"
                 value={setupKey}
                 onChange={(event) => setSetupKey(event.target.value)}
                 required
               />
-            </label>
+            </Field>
           )}
           {error && (
             <div className="form-error" role="alert">
               {error}
             </div>
           )}
-          <button className="button button-primary auth-submit" disabled={busy}>
+          <Button className="auth-submit" disabled={busy}>
             {busy ? "Please wait…" : setup ? "Create archive" : "Sign in"}{" "}
             <ArrowRight size={18} />
-          </button>
+          </Button>
         </form>
       </div>
       <div className="auth-foot">
@@ -205,13 +225,12 @@ function BackupPanel() {
           </h1>
           <p>Verified snapshots of your database and original documents.</p>
         </div>
-        <button
-          className="button button-primary"
+        <Button
           onClick={start}
           disabled={busy}
         >
           <DatabaseBackup size={18} /> {busy ? "Starting…" : "Back up now"}
-        </button>
+        </Button>
       </div>
       <div className="backup-summary">
         <div>
@@ -594,12 +613,12 @@ function App() {
                   </h1>
                   <p>One calm place for the documents you want to keep.</p>
                 </div>
-                <button
-                  className="button button-primary desktop-add"
+                <Button
+                  className="desktop-add"
                   onClick={() => setShowAdd(true)}
                 >
                   <Plus size={19} /> Add document
-                </button>
+                </Button>
               </div>
 
               <div className="summary-row">
@@ -656,12 +675,13 @@ function App() {
                     </button>
                   )}
                 </div>
-                <button
-                  className="button button-secondary mobile-add"
+                <Button
+                  variant="secondary"
+                  className="mobile-add"
                   onClick={() => setShowAdd(true)}
                 >
                   <Plus size={18} /> Add
-                </button>
+                </Button>
               </div>
               {error && (
                 <div className="inline-error" role="alert">
@@ -696,12 +716,11 @@ function App() {
                       : "Add a document and Ripiano will make its text searchable."}
                   </p>
                   {!query && (
-                    <button
-                      className="button button-primary"
+                    <Button
                       onClick={() => setShowAdd(true)}
                     >
                       <Plus size={18} /> Add your first document
-                    </button>
+                    </Button>
                   )}
                 </div>
               ) : (
@@ -743,16 +762,7 @@ function App() {
                           )}
                         </div>
                         {doc.snippet && <p>{doc.snippet}</p>}
-                        {doc.tags.length > 0 && (
-                          <div className="document-tags">
-                            {doc.tags.map((tag) => (
-                              <span key={tag.id}>
-                                <i style={{ background: tag.color }} />
-                                {tag.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        {doc.tags.length > 0 && <TagSummary tags={doc.tags} />}
                         {doc.duplicate_of && (
                           <span className="duplicate-chip">
                             <Copy size={12} /> Exact copy of{" "}
@@ -829,45 +839,35 @@ function App() {
           <strong>Drop to add documents</strong>
         </div>
       )}
-      <input
-        ref={cameraRef}
-        className="visually-hidden"
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-          void upload(event.target.files)
-        }
-      />
-      <input
-        ref={galleryRef}
-        className="visually-hidden"
-        type="file"
-        accept="image/*"
-        multiple
-        onChange={(event) => void upload(event.target.files)}
-      />
-      <input
-        ref={fileRef}
-        className="visually-hidden"
-        type="file"
-        accept="application/pdf,image/jpeg,image/png"
-        multiple
-        onChange={(event) => void upload(event.target.files)}
-      />
       {showAdd && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setShowAdd(false);
-          }}
-        >
-          <div
-            className="add-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-heading"
-          >
+        <Modal titleId="add-heading" panelClassName="add-modal" onClose={() => setShowAdd(false)}>
+            <input
+              ref={cameraRef}
+              className="visually-hidden"
+              tabIndex={-1}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(event: ChangeEvent<HTMLInputElement>) => void upload(event.target.files)}
+            />
+            <input
+              ref={galleryRef}
+              className="visually-hidden"
+              tabIndex={-1}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(event) => void upload(event.target.files)}
+            />
+            <input
+              ref={fileRef}
+              className="visually-hidden"
+              tabIndex={-1}
+              type="file"
+              accept="application/pdf,image/jpeg,image/png"
+              multiple
+              onChange={(event) => void upload(event.target.files)}
+            />
             <button
               className="modal-close"
               onClick={() => setShowAdd(false)}
@@ -920,8 +920,7 @@ function App() {
                 ? "Scans stay on this device until Ripiano confirms the upload."
                 : "Camera behavior depends on your browser. Use the Android app for multi-page scanning."}
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
       {selectedDocument && (
         <DocumentPanel

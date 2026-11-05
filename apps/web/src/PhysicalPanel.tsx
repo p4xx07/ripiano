@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowRight, Boxes, MapPin, Plus, ScanLine, X } from "lucide-react";
 import { Location, PhysicalCopy, request } from "./api";
+import { Button } from "./ui";
 
 type Lookup = { copy: PhysicalCopy; document: { id: string; title: string } };
 
@@ -113,7 +114,7 @@ export default function PhysicalPanel({
                 aria-label="Sticker code"
                 required
               />
-              <button className="button button-primary">Find</button>
+              <Button>Find</Button>
             </form>
           </div>
           {found && (
@@ -125,12 +126,12 @@ export default function PhysicalPanel({
                 {found.copy.location_path.join(" / ") ||
                   "Location not assigned yet"}
               </p>
-              <button
-                className="button button-secondary"
+              <Button
+                variant="secondary"
                 onClick={() => onOpenDocument(found.document.id)}
               >
                 Open document <ArrowRight size={16} />
-              </button>
+              </Button>
             </div>
           )}
           <div className="section-heading location-heading">
@@ -189,9 +190,9 @@ export default function PhysicalPanel({
                 ))}
               </select>
             </label>
-            <button className="button button-primary" disabled={busy}>
+            <Button disabled={busy}>
               <Plus size={17} /> {busy ? "Adding…" : "Add location"}
-            </button>
+            </Button>
           </form>
           <div className="tag-tip">
             A sticker belongs to the paper copy. Moving it changes the recorded

@@ -38,7 +38,9 @@ export function Modal({ titleId, onClose, panelClassName, backdropClassName = ""
     const app = document.getElementById("root");
     const wasInert = app?.inert ?? false;
     if (app) app.inert = true;
-    dialog.current?.focus();
+    const firstAction = Array.from(dialog.current?.querySelectorAll<HTMLElement>(focusable) ?? [])
+      .find((item) => item.tabIndex >= 0 && item.getClientRects().length > 0);
+    (firstAction ?? dialog.current)?.focus();
 
     function keydown(event: KeyboardEvent) {
       if (event.key === "Escape") {

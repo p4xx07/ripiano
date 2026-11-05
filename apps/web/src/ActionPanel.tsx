@@ -49,15 +49,15 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
         <p>Only documents with something left to do appear here.</p>
       </div>
     </div>
-    {error && <div className="inline-error" role="alert">{error}</div>}
-    {loading ? <p>Loading follow-ups…</p> : documents.length === 0 ? (
+    {error && <div className="inline-error" role="alert">{error}<button onClick={() => void load()}>Retry</button></div>}
+    {loading ? <p>Loading follow-ups…</p> : error ? null : documents.length === 0 ? (
       <div className="empty-state">
         <div className="empty-icon"><ClipboardList size={32} strokeWidth={1.5} /></div>
         <h3>All clear.</h3>
         <p>Mark a document as needing action when there is something to do. Filing stays optional.</p>
       </div>
     ) : <div className="document-list">
-      {documents.map((document) => <article className="document-row" key={document.id}>
+      {documents.map((document) => <article className="document-row action-row" key={document.id}>
         <div className="document-icon"><FileText size={21} /></div>
         <div className="document-info">
           <h3><button className="document-title-button" onClick={() => onOpenDocument(document)}>{document.title}</button></h3>

@@ -303,6 +303,7 @@ function App() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const [listError, setListError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [nativeScanner] = useState(() => Boolean(window.RipianoAndroid));
   const [dropActive, setDropActive] = useState(false);
@@ -331,11 +332,13 @@ function App() {
       );
       if (requestNumber === latestSearch.current) {
         setDocuments(result.documents);
+        setListError("");
         setError("");
       }
     } catch (cause) {
       if (requestNumber !== latestSearch.current) return;
-      setError(
+      setDocuments([]);
+      setListError(
         cause instanceof Error ? cause.message : "Could not load documents",
       );
     }
@@ -707,13 +710,19 @@ function App() {
                   </button>
                 </div>
               )}
+              {listError && (
+                <div className="inline-error" role="alert">
+                  {listError}
+                  <button onClick={() => void loadDocuments(query)}>Retry</button>
+                </div>
+              )}
               {uploading && (
                 <div className="upload-progress">
                   <UploadCloud size={19} /> Adding your document…
                 </div>
               )}
 
-              {isEmpty ? (
+              {listError ? null : isEmpty ? (
                 <div className="empty-state">
                   <div className="empty-icon">
                     <FileText size={33} strokeWidth={1.5} />

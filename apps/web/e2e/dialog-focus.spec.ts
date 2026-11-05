@@ -18,7 +18,7 @@ test("add dialog traps keyboard focus and returns it to Add", async ({ page }) =
   await add.focus();
   await add.press("Enter");
   const dialog = page.getByRole("dialog", { name: "Bring a document in." });
-  await expect(dialog).toBeFocused();
+  await expect(page.getByRole("button", { name: "Close" })).toBeFocused();
   await page.keyboard.press("Shift+Tab");
   await expect(page.getByRole("button", { name: /Browse files/ })).toBeFocused();
   await page.keyboard.press("Tab");

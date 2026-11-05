@@ -39,6 +39,8 @@ Documents can optionally be marked **Needs action** with a due date and note. Th
 
 The **Inbox** shows exceptions only: failed OCR and exact copies that have not been reviewed. Retry OCR or acknowledge that both copies should stay. Ordinary uploads go straight to the Library.
 
+For a batch of files, Ripiano continues after an unsupported file and names each rejected file in the result. Accepted files appear in the Library without another filing step.
+
 1. Copy `.env.example` to `.env` and replace the three example secrets with strong unique values.
 2. Run `docker compose up --build -d` from this directory.
 3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account.

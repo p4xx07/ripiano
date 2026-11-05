@@ -310,6 +310,7 @@ function App() {
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
   const [nativeScanner] = useState(() => Boolean(window.RipianoAndroid));
   const [dropActive, setDropActive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -347,7 +348,6 @@ function App() {
         setCounts(result.counts);
         setNextCursor(result.next_cursor);
         setListError("");
-        setError("");
       }
     } catch (cause) {
       if (requestNumber !== latestSearch.current) return;
@@ -410,23 +410,38 @@ function App() {
 
   async function upload(files: FileList | File[] | null) {
     if (!files?.length) return;
+    const chosen = Array.from(files);
     setUploading(true);
     setShowAdd(false);
+    setView("documents");
+    setQuery("");
     setError("");
     try {
-      for (const file of Array.from(files)) {
-        const form = new FormData();
-        form.append("document", file);
-        await request<Document>("/api/documents", {
-          method: "POST",
-          body: form,
-        });
+      const failures: string[] = [];
+      for (const [index, file] of chosen.entries()) {
+        setUploadProgress(`Adding ${index + 1} of ${chosen.length}…`);
+        try {
+          const form = new FormData();
+          form.append("document", file);
+          await request<Document>("/api/documents", {
+            method: "POST",
+            body: form,
+          });
+        } catch (cause) {
+          failures.push(`${file.name}: ${cause instanceof Error ? cause.message : "Upload failed"}`);
+        }
       }
-      await loadDocuments(query);
+      await loadDocuments("");
+      if (failures.length) {
+        const details = failures.slice(0, 3).join("; ");
+        const remaining = failures.length > 3 ? `; and ${failures.length - 3} more` : "";
+        setError(`${failures.length} of ${chosen.length} files could not be added. ${details}${remaining}`);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Upload failed");
     } finally {
       setUploading(false);
+      setUploadProgress("");
       if (cameraRef.current) cameraRef.current.value = "";
       if (galleryRef.current) galleryRef.current.value = "";
       if (fileRef.current) fileRef.current.value = "";
@@ -748,7 +763,7 @@ function App() {
               )}
               {uploading && (
                 <div className="upload-progress">
-                  <UploadCloud size={19} /> Adding your document…
+                  <UploadCloud size={19} /> {uploadProgress || "Adding your document…"}
                 </div>
               )}
 

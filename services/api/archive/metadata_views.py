@@ -8,7 +8,7 @@ from django.db.models.deletion import ProtectedError
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from .models import ClassificationRule, Tag
+from .models import ClassificationRule, Correspondent, DocumentType, Tag
 from .tasks import reclassify_owner
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,78 @@ def _tag_json(tag):
         "description": tag.description,
         "parent_id": str(tag.parent_id) if tag.parent_id else None,
     }
+
+
+def _vocabulary_json(item):
+    return {"id": str(item.id), "name": item.name}
+
+
+def _vocabulary(request, model, key):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    if request.method == "GET":
+        return JsonResponse({key: [_vocabulary_json(item) for item in model.objects.filter(owner=request.user)]})
+    body = _body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 100:
+        return JsonResponse({"error": "Name must be 1–100 characters"}, status=400)
+    try:
+        with transaction.atomic():
+            item = model.objects.create(owner=request.user, name=name.strip())
+    except IntegrityError:
+        return JsonResponse({"error": "This name already exists"}, status=409)
+    return JsonResponse(_vocabulary_json(item), status=201)
+
+
+def _vocabulary_detail(request, model, item_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    item = model.objects.filter(pk=item_id, owner=request.user).first()
+    if item is None:
+        return JsonResponse({"error": "Filing item not found"}, status=404)
+    if request.method == "DELETE":
+        try:
+            item.delete()
+        except ProtectedError:
+            return JsonResponse({"error": "Remove this from documents before deleting it"}, status=409)
+        return JsonResponse({"deleted": True})
+    body = _body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 100:
+        return JsonResponse({"error": "Name must be 1–100 characters"}, status=400)
+    item.name = name.strip()
+    try:
+        with transaction.atomic():
+            item.save(update_fields=["name"])
+    except IntegrityError:
+        return JsonResponse({"error": "This name already exists"}, status=409)
+    return JsonResponse(_vocabulary_json(item))
+
+
+@require_http_methods(["GET", "POST"])
+def correspondents(request):
+    return _vocabulary(request, Correspondent, "correspondents")
+
+
+@require_http_methods(["PATCH", "DELETE"])
+def correspondent_detail(request, correspondent_id):
+    return _vocabulary_detail(request, Correspondent, correspondent_id)
+
+
+@require_http_methods(["GET", "POST"])
+def document_types(request):
+    return _vocabulary(request, DocumentType, "document_types")
+
+
+@require_http_methods(["PATCH", "DELETE"])
+def document_type_detail(request, type_id):
+    return _vocabulary_detail(request, DocumentType, type_id)
 
 
 @require_http_methods(["GET", "POST"])

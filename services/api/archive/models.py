@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+from django.db.models.functions import Lower
 
 
 class Document(models.Model):
@@ -43,6 +44,8 @@ class Document(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
     document_date = models.DateField(null=True, blank=True)
+    correspondent = models.ForeignKey("Correspondent", null=True, blank=True, on_delete=models.PROTECT, related_name="documents")
+    document_type = models.ForeignKey("DocumentType", null=True, blank=True, on_delete=models.PROTECT, related_name="documents")
     action_status = models.CharField(max_length=10, choices=ActionStatus.choices, default=ActionStatus.NONE, db_index=True)
     action_due_date = models.DateField(null=True, blank=True)
     action_note = models.CharField(max_length=500, blank=True)
@@ -92,6 +95,28 @@ class Tag(models.Model):
     class Meta:
         ordering = ["name"]
         constraints = [models.UniqueConstraint(fields=["owner", "name"], name="unique_tag_name_per_owner")]
+
+
+class Correspondent(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="correspondents")
+    name = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(Lower("name"), "owner", name="unique_correspondent_owner_name_ci")]
+
+
+class DocumentType(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="document_types")
+    name = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(Lower("name"), "owner", name="unique_document_type_owner_name_ci")]
 
 
 class DocumentTag(models.Model):

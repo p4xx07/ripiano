@@ -822,6 +822,8 @@ function App() {
                         <div className="document-meta">
                           {formatDate(doc.created_at)} <span>·</span>{" "}
                           {doc.original_name}
+                          {doc.correspondent && <>{" "}<span>·</span> {doc.correspondent.name}</>}
+                          {doc.document_type && <>{" "}<span>·</span> {doc.document_type.name}</>}
                           {doc.source === "telegram" && (
                             <>
                               {" "}

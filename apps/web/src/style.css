@@ -1067,6 +1067,67 @@ button:disabled {
   margin-top: var(--space-9);
   align-items: start;
 }
+.filing-vocabularies {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+  margin-top: var(--space-9);
+}
+.filing-card {
+  min-width: 0;
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+.filing-card h2 {
+  margin: 0 0 var(--space-1);
+  color: var(--color-heading);
+  font-size: var(--type-section);
+}
+.filing-card > p {
+  margin: 0 0 var(--space-4);
+  color: var(--color-muted);
+}
+.filing-vocabulary-form,
+.filing-vocabulary-list li,
+.filing-vocabulary-list form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.filing-vocabulary-form input,
+.filing-vocabulary-list input {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: var(--space-compact);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft);
+  font-size: var(--type-body);
+}
+.filing-vocabulary-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-4) 0 0;
+}
+.filing-vocabulary-list li {
+  min-width: 0;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+.filing-vocabulary-list li span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.filing-vocabulary-list form { width: 100%; }
+.filing-vocabulary-list li > button,
+.filing-vocabulary-list form > button:last-child {
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+}
+.filing-card .filing-empty { margin: var(--space-4) 0 0; }
 .tag-list-section .section-heading {
   margin-bottom: var(--space-4);
 }
@@ -1389,6 +1450,9 @@ button:disabled {
 
 @media (max-width: 900px) {
   .tag-layout {
+    grid-template-columns: 1fr;
+  }
+  .filing-vocabularies {
     grid-template-columns: 1fr;
   }
 }
@@ -1768,6 +1832,29 @@ button:disabled {
   font-size: var(--type-small);
   color: var(--color-accent-strong);
   text-decoration: none;
+}
+.filing-create {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: calc(-1 * var(--space-2));
+}
+.filing-create input {
+  flex: 1 1 180px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft);
+  padding: var(--space-compact);
+  font-size: var(--type-body);
+}
+.filing-create input:focus-visible {
+  outline: 3px solid var(--color-focus-halo);
+  border-color: var(--color-focus);
+}
+.filing-create > button:last-child {
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
 }
 .copy-move,
 .new-copy {

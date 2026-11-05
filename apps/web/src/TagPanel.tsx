@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowRight, Plus, Tag as TagIcon, Trash2, X } from "lucide-react";
 import { request, Rule, Tag } from "./api";
 import { Button } from "./ui";
+import FilingVocabularyPanel from "./FilingVocabularyPanel";
 
 export default function TagPanel() {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -285,6 +286,10 @@ export default function TagPanel() {
             document is remembered as a correction.
           </div>
         </section>
+      </div>
+      <div className="filing-vocabularies">
+        <FilingVocabularyPanel kind="correspondents" />
+        <FilingVocabularyPanel kind="document-types" />
       </div>
     </>
   );

@@ -11,7 +11,7 @@ from django.test import Client, override_settings
 from django.utils import timezone
 from PIL import Image
 
-from archive.models import Document, DocumentTag, PhysicalCopy, Tag
+from archive.models import Correspondent, Document, DocumentTag, DocumentType, PhysicalCopy, Tag
 from archive.tasks import reconcile_pending_documents
 
 
@@ -59,6 +59,54 @@ def test_upload_search_download_and_owner_isolation(tmp_path):
         assert client.get("/api/documents").json()["documents"] == []
         assert client.get(f"/api/documents/{document.id}").status_code == 404
         assert client.get(f"/api/documents/{document.id}/original").status_code == 404
+
+
+@pytest.mark.django_db
+def test_correspondents_and_document_types_are_owner_scoped_and_searchable():
+    alice = get_user_model().objects.create_user("alice", password="secure-password-1")
+    bob = get_user_model().objects.create_user("bob", password="secure-password-2")
+    document = Document.objects.create(
+        owner=alice, title="Envelope", original_name="envelope.pdf", original_path="originals/envelope.pdf",
+        original_mime="application/pdf", original_sha256="a" * 64, original_size=10,
+        status=Document.Status.READY,
+    )
+    client = Client()
+    client.force_login(alice)
+    correspondent = client.post("/api/correspondents", json.dumps({"name": "Comune di Milano"}), content_type="application/json")
+    document_type = client.post("/api/document-types", json.dumps({"name": "Tax notice"}), content_type="application/json")
+    assert correspondent.status_code == document_type.status_code == 201
+    correspondent_id, type_id = correspondent.json()["id"], document_type.json()["id"]
+    assert client.post("/api/correspondents", json.dumps({"name": "comune di milano"}), content_type="application/json").status_code == 409
+    assert client.post("/api/document-types", json.dumps({"name": "TAX NOTICE"}), content_type="application/json").status_code == 409
+    updated = client.patch(f"/api/documents/{document.id}", json.dumps({"correspondent_id": correspondent_id, "document_type_id": type_id}), content_type="application/json")
+    assert updated.status_code == 200
+    assert updated.json()["correspondent"]["name"] == "Comune di Milano"
+    assert updated.json()["document_type"]["name"] == "Tax notice"
+    assert [item["id"] for item in client.get("/api/documents?q=Milano").json()["documents"]] == [str(document.id)]
+    assert [item["id"] for item in client.get("/api/documents?q=Tax%20notice").json()["documents"]] == [str(document.id)]
+    assert client.delete(f"/api/correspondents/{correspondent_id}").status_code == 409
+    renamed = client.patch(f"/api/correspondents/{correspondent_id}", json.dumps({"name": "City of Milan"}), content_type="application/json")
+    assert renamed.json()["name"] == "City of Milan"
+    assert client.get(f"/api/documents/{document.id}").json()["correspondent"]["name"] == "City of Milan"
+
+    client.force_login(bob)
+    assert client.get("/api/correspondents").json()["correspondents"] == []
+    assert client.get("/api/document-types").json()["document_types"] == []
+    own = Document.objects.create(
+        owner=bob, title="Private", original_name="private.pdf", original_path="originals/private.pdf",
+        original_mime="application/pdf", original_sha256="b" * 64, original_size=10,
+    )
+    assert client.patch(f"/api/documents/{own.id}", json.dumps({"correspondent_id": correspondent_id}), content_type="application/json").status_code == 400
+    assert client.patch(f"/api/documents/{own.id}", json.dumps({"document_type_id": type_id}), content_type="application/json").status_code == 400
+    assert client.patch(f"/api/correspondents/{correspondent_id}", json.dumps({"name": "Stolen"}), content_type="application/json").status_code == 404
+    assert client.get("/api/documents?q=Milan").json()["documents"] == []
+    client.force_login(alice)
+    cleared = client.patch(f"/api/documents/{document.id}", json.dumps({"correspondent_id": None, "document_type_id": None}), content_type="application/json")
+    assert cleared.json()["correspondent"] is cleared.json()["document_type"] is None
+    assert client.delete(f"/api/correspondents/{correspondent_id}").status_code == 200
+    assert client.delete(f"/api/document-types/{type_id}").status_code == 200
+    assert not Correspondent.objects.filter(owner=alice).exists()
+    assert not DocumentType.objects.filter(owner=alice).exists()
 
 
 @pytest.mark.django_db

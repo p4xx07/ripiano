@@ -22,6 +22,8 @@ export type Rule = {
   enabled: boolean;
 };
 
+export type FilingItem = { id: string; name: string };
+
 export type Location = {
   id: string;
   name: string;
@@ -51,6 +53,8 @@ export type Document = {
   error: string;
   created_at: string;
   document_date: string | null;
+  correspondent: FilingItem | null;
+  document_type: FilingItem | null;
   action_status: "none" | "open" | "done";
   action_due_date: string | null;
   action_note: string;

@@ -17,7 +17,7 @@ from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
-from .models import BackupRun, Document, DocumentTag, PhysicalCopy, Tag, TagOverride
+from .models import BackupRun, Correspondent, Document, DocumentTag, DocumentType, PhysicalCopy, Tag, TagOverride
 from .physical_views import copy_json
 from .ingestion import ingest_document
 from .storage import InvalidDocument
@@ -79,6 +79,8 @@ def _document_json(document):
         "error": document.error,
         "created_at": document.created_at.isoformat(),
         "document_date": document.document_date.isoformat() if document.document_date else None,
+        "correspondent": {"id": str(document.correspondent_id), "name": document.correspondent.name} if document.correspondent_id else None,
+        "document_type": {"id": str(document.document_type_id), "name": document.document_type.name} if document.document_type_id else None,
         "action_status": document.action_status,
         "action_due_date": document.action_due_date.isoformat() if document.action_due_date else None,
         "action_note": document.action_note,
@@ -150,7 +152,7 @@ def documents(request):
     if request.method == "GET":
         if "offset" in request.GET:
             return JsonResponse({"error": "Use a page cursor"}, status=400)
-        queryset = Document.objects.filter(owner=request.user).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location")
+        queryset = Document.objects.filter(owner=request.user).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
         requested_view = request.GET.get("view")
         view = "actions" if requested_view == "actions" else "exceptions" if requested_view == "exceptions" else "search" if query else "documents"
@@ -166,9 +168,9 @@ def documents(request):
             if connection.vendor == "postgresql":
                 vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
                 search_query = SearchQuery(query, search_type="plain", config="simple")
-                queryset = queryset.annotate(search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField())).filter(Q(search_score__gt=0) | Q(tag_match=True) | Q(sticker_match=True)).order_by("-search_score", "-created_at", "-id")
+                queryset = queryset.annotate(search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField())).filter(Q(search_score__gt=0) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=query) | Q(document_type__name__icontains=query)).order_by("-search_score", "-created_at", "-id")
             else:
-                queryset = queryset.filter(Q(title__icontains=query) | Q(extracted_text__icontains=query) | Q(action_note__icontains=query) | Q(tag_match=True) | Q(sticker_match=True))
+                queryset = queryset.filter(Q(title__icontains=query) | Q(extracted_text__icontains=query) | Q(action_note__icontains=query) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=query) | Q(document_type__name__icontains=query))
         if view == "actions":
             queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at", "-id")
         elif view != "search":
@@ -215,14 +217,14 @@ def documents(request):
             scan_id = str(UUID(scan_id))
         except ValueError:
             return JsonResponse({"error": "Invalid scan ID"}, status=400)
-        existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location").first()
+        existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").first()
         if existing:
             return JsonResponse(_document_json(existing), status=200)
     try:
         document = ingest_document(request.user, upload, source=Document.Source.ANDROID if scan_id else Document.Source.WEB, source_ref=scan_id)
     except IntegrityError:
         if scan_id:
-            existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location").first()
+            existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").first()
             if existing:
                 return JsonResponse(_document_json(existing), status=200)
         raise
@@ -236,7 +238,7 @@ def document_detail(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location").first()
+    document = Document.objects.filter(pk=document_id, owner=request.user).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if request.method == "PATCH":
@@ -255,6 +257,23 @@ def document_detail(request, document_id):
             except (TypeError, ValueError):
                 return JsonResponse({"error": "Use an ISO date (YYYY-MM-DD)"}, status=400)
             changes.append("document_date")
+        for field, model in (("correspondent", Correspondent), ("document_type", DocumentType)):
+            key = f"{field}_id"
+            if key not in body:
+                continue
+            raw = body[key]
+            if raw is None or raw == "":
+                item = None
+            else:
+                try:
+                    item_id = UUID(raw) if isinstance(raw, str) else None
+                except ValueError:
+                    item_id = None
+                item = model.objects.filter(pk=item_id, owner=request.user).first() if item_id else None
+                if item is None:
+                    return JsonResponse({"error": f"{field.replace('_', ' ').title()} not found"}, status=400)
+            setattr(document, field, item)
+            changes.append(field)
         if "action_status" in body:
             status = body["action_status"]
             if status not in Document.ActionStatus.values:
@@ -302,7 +321,7 @@ def document_detail(request, document_id):
                 for tag in chosen:
                     TagOverride.objects.filter(document=document, tag=tag).delete()
                     DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
-        document = Document.objects.filter(pk=document.id).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location").get()
+        document = Document.objects.filter(pk=document.id).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").get()
     return JsonResponse(_document_json(document))
 
 

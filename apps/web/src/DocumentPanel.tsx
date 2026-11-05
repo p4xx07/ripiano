@@ -12,7 +12,7 @@ import {
   Tag as TagIcon,
   X,
 } from "lucide-react";
-import { Document, Location, PhysicalCopy, request, Tag } from "./api";
+import { Document, FilingItem, Location, PhysicalCopy, request, Tag } from "./api";
 import { Button, Field, Modal } from "./ui";
 
 export default function DocumentPanel({
@@ -33,6 +33,14 @@ export default function DocumentPanel({
   const [current, setCurrent] = useState(initial);
   const [title, setTitle] = useState(initial.title);
   const [date, setDate] = useState(initial.document_date ?? "");
+  const [correspondentId, setCorrespondentId] = useState(initial.correspondent?.id ?? "");
+  const [documentTypeId, setDocumentTypeId] = useState(initial.document_type?.id ?? "");
+  const [correspondents, setCorrespondents] = useState<FilingItem[]>([]);
+  const [documentTypes, setDocumentTypes] = useState<FilingItem[]>([]);
+  const [newCorrespondent, setNewCorrespondent] = useState("");
+  const [newDocumentType, setNewDocumentType] = useState("");
+  const [creatingCorrespondent, setCreatingCorrespondent] = useState(false);
+  const [creatingDocumentType, setCreatingDocumentType] = useState(false);
   const [actionStatus, setActionStatus] = useState(initial.action_status);
   const [actionDueDate, setActionDueDate] = useState(initial.action_due_date ?? "");
   const [actionNote, setActionNote] = useState(initial.action_note);
@@ -60,6 +68,15 @@ export default function DocumentPanel({
       .then((result) => setLocations(result.locations))
       .catch((cause) => setError(cause.message));
   }, []);
+  useEffect(() => {
+    Promise.all([
+      request<{ correspondents: FilingItem[] }>("/api/correspondents"),
+      request<{ document_types: FilingItem[] }>("/api/document-types"),
+    ]).then(([senders, types]) => {
+      setCorrespondents(senders.correspondents);
+      setDocumentTypes(types.document_types);
+    }).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load filing details"));
+  }, []);
   function toggle(id: string) {
     setSelected((value) =>
       value.includes(id) ? value.filter((item) => item !== id) : [...value, id],
@@ -76,6 +93,8 @@ export default function DocumentPanel({
         body: JSON.stringify({
           title,
           document_date: date || null,
+          correspondent_id: correspondentId || null,
+          document_type_id: documentTypeId || null,
           action_status: actionStatus,
           action_due_date: actionDueDate || null,
           action_note: actionNote,
@@ -89,6 +108,32 @@ export default function DocumentPanel({
       setError(
         cause instanceof Error ? cause.message : "Could not save document",
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createFilingItem(kind: "correspondent" | "document_type") {
+    const name = kind === "correspondent" ? newCorrespondent.trim() : newDocumentType.trim();
+    if (!name) return;
+    setBusy(true);
+    setError("");
+    try {
+      const endpoint = kind === "correspondent" ? "/api/correspondents" : "/api/document-types";
+      const item = await request<FilingItem>(endpoint, { method: "POST", body: JSON.stringify({ name }) });
+      if (kind === "correspondent") {
+        setCorrespondents((current) => [...current, item].sort((a, b) => a.name.localeCompare(b.name)));
+        setCorrespondentId(item.id);
+        setNewCorrespondent("");
+        setCreatingCorrespondent(false);
+      } else {
+        setDocumentTypes((current) => [...current, item].sort((a, b) => a.name.localeCompare(b.name)));
+        setDocumentTypeId(item.id);
+        setNewDocumentType("");
+        setCreatingDocumentType(false);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create filing detail");
     } finally {
       setBusy(false);
     }
@@ -197,6 +242,32 @@ export default function DocumentPanel({
               onChange={(event) => setDate(event.target.value)}
             />
           </Field>
+          <Field label="From" hint="Optional sender or organization" className="detail-label">
+            <select value={correspondentId} onChange={(event) => setCorrespondentId(event.target.value)}>
+              <option value="">No sender</option>
+              {correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </Field>
+          {creatingCorrespondent ? (
+            <div className="filing-create">
+              <input aria-label="New sender name" value={newCorrespondent} onChange={(event) => setNewCorrespondent(event.target.value)} maxLength={100} placeholder="e.g. City of Milan" />
+              <Button type="button" variant="secondary" disabled={busy || !newCorrespondent.trim()} onClick={() => void createFilingItem("correspondent")}>Add sender</Button>
+              <button type="button" aria-label="Cancel new sender" onClick={() => setCreatingCorrespondent(false)}><X size={16} /></button>
+            </div>
+          ) : <button type="button" className="text-action" onClick={() => setCreatingCorrespondent(true)}><Plus size={15} /> Add a sender</button>}
+          <Field label="Document type" hint="Optional" className="detail-label">
+            <select value={documentTypeId} onChange={(event) => setDocumentTypeId(event.target.value)}>
+              <option value="">No type</option>
+              {documentTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </Field>
+          {creatingDocumentType ? (
+            <div className="filing-create">
+              <input aria-label="New document type name" value={newDocumentType} onChange={(event) => setNewDocumentType(event.target.value)} maxLength={100} placeholder="e.g. Insurance policy" />
+              <Button type="button" variant="secondary" disabled={busy || !newDocumentType.trim()} onClick={() => void createFilingItem("document_type")}>Add type</Button>
+              <button type="button" aria-label="Cancel new type" onClick={() => setCreatingDocumentType(false)}><X size={16} /></button>
+            </div>
+          ) : <button type="button" className="text-action" onClick={() => setCreatingDocumentType(true)}><Plus size={15} /> Add a type</button>}
           <Field label="Follow-up" hint="Optional" className="detail-label">
             <select value={actionStatus} onChange={(event) => setActionStatus(event.target.value as Document["action_status"])}>
               <option value="none">Nothing to do</option>

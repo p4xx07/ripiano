@@ -19,6 +19,8 @@ urlpatterns = [
     path("api/correspondents/<uuid:correspondent_id>", metadata_views.correspondent_detail),
     path("api/document-types", metadata_views.document_types),
     path("api/document-types/<uuid:type_id>", metadata_views.document_type_detail),
+    path("api/saved-views", metadata_views.saved_views),
+    path("api/saved-views/<uuid:view_id>", metadata_views.saved_view_detail),
     path("api/filing-rules", metadata_views.filing_rules),
     path("api/filing-rules/<uuid:rule_id>", metadata_views.filing_rule_detail),
     path("api/rules", metadata_views.rules),

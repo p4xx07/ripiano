@@ -11,7 +11,7 @@ from django.test import Client, override_settings
 from django.utils import timezone
 from PIL import Image
 
-from archive.models import Correspondent, Document, DocumentTag, DocumentType, PhysicalCopy, Tag
+from archive.models import Correspondent, Document, DocumentTag, DocumentType, PhysicalCopy, SavedView, Tag
 from archive.tasks import reconcile_pending_documents
 
 
@@ -323,6 +323,44 @@ def test_library_filters_bind_cursor_and_keep_owner_scope():
     assert client.get("/api/documents", {"tag_id": "not-a-uuid"}).status_code == 400
     assert client.get("/api/documents", {"date_from": "yesterday"}).status_code == 400
     assert client.get("/api/documents", {"date_from": "2026-05-01", "date_to": "2026-04-01"}).status_code == 400
+
+
+@pytest.mark.django_db
+def test_saved_searches_are_owned_validated_and_survive_deleted_metadata():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    tag = Tag.objects.create(owner=owner, name="Tax")
+    foreign_tag = Tag.objects.create(owner=other, name="Private")
+    sender = Correspondent.objects.create(owner=owner, name="City")
+    kind = DocumentType.objects.create(owner=owner, name="Notice")
+    client = Client()
+    client.force_login(owner)
+    payload = {
+        "name": "Tax notices", "query": "permit", "tag_id": str(tag.id),
+        "correspondent_id": str(sender.id), "document_type_id": str(kind.id),
+        "date_from": "2026-01-01", "date_to": "2026-12-31",
+    }
+    created = client.post("/api/saved-views", json.dumps(payload), content_type="application/json")
+    assert created.status_code == 201
+    view_id = created.json()["id"]
+    assert created.json()["tag_id"] == str(tag.id)
+    assert client.get("/api/saved-views").json()["views"][0]["name"] == "Tax notices"
+    assert client.post("/api/saved-views", json.dumps({**payload, "name": "tax NOTICES"}), content_type="application/json").status_code == 409
+    assert client.post("/api/saved-views", json.dumps({**payload, "tag_id": str(foreign_tag.id), "name": "Foreign"}), content_type="application/json").status_code == 400
+    assert client.patch(f"/api/saved-views/{view_id}", json.dumps({"date_from": "2027-01-01"}), content_type="application/json").status_code == 400
+    renamed = client.patch(f"/api/saved-views/{view_id}", json.dumps({"name": "City permits", "query": "notice"}), content_type="application/json")
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "City permits" and renamed.json()["query"] == "notice"
+
+    client.force_login(other)
+    assert client.get("/api/saved-views").json()["views"] == []
+    assert client.patch(f"/api/saved-views/{view_id}", json.dumps({"name": "Taken"}), content_type="application/json").status_code == 404
+    assert client.delete(f"/api/saved-views/{view_id}").status_code == 404
+    client.force_login(owner)
+    tag.delete()
+    assert client.get("/api/saved-views").json()["views"][0]["tag_id"] is None
+    assert client.delete(f"/api/saved-views/{view_id}").status_code == 200
+    assert SavedView.objects.filter(owner=owner).count() == 0
 
 
 @pytest.mark.django_db

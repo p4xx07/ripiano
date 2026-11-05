@@ -126,6 +126,23 @@ class DocumentType(models.Model):
         constraints = [models.UniqueConstraint(Lower("name"), "owner", name="unique_document_type_owner_name_ci")]
 
 
+class SavedView(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="saved_views")
+    name = models.CharField(max_length=100)
+    query = models.CharField(max_length=200, blank=True)
+    tag = models.ForeignKey(Tag, null=True, blank=True, on_delete=models.SET_NULL)
+    correspondent = models.ForeignKey(Correspondent, null=True, blank=True, on_delete=models.SET_NULL)
+    document_type = models.ForeignKey(DocumentType, null=True, blank=True, on_delete=models.SET_NULL)
+    date_from = models.DateField(null=True, blank=True)
+    date_to = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(Lower("name"), "owner", name="unique_saved_view_owner_name_ci")]
+
+
 class FilingRule(models.Model):
     class Kind(models.TextChoices):
         CORRESPONDENT = "correspondent", "Correspondent"

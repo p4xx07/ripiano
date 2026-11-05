@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from datetime import date
 from uuid import UUID
 
 from django.contrib.auth import get_user_model
@@ -9,7 +10,7 @@ from django.db.models.deletion import ProtectedError
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from .models import ClassificationRule, Correspondent, DocumentType, FilingRule, Tag
+from .models import ClassificationRule, Correspondent, DocumentType, FilingRule, SavedView, Tag
 from .tasks import reclassify_filing_candidates, reclassify_tag_candidates
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,106 @@ def document_types(request):
 @require_http_methods(["PATCH", "DELETE"])
 def document_type_detail(request, type_id):
     return _vocabulary_detail(request, DocumentType, type_id)
+
+
+def _saved_view_json(view):
+    return {
+        "id": str(view.id), "name": view.name, "query": view.query,
+        "tag_id": str(view.tag_id) if view.tag_id else None,
+        "correspondent_id": str(view.correspondent_id) if view.correspondent_id else None,
+        "document_type_id": str(view.document_type_id) if view.document_type_id else None,
+        "date_from": view.date_from.isoformat() if view.date_from else None,
+        "date_to": view.date_to.isoformat() if view.date_to else None,
+    }
+
+
+def _saved_view_values(body, owner, current=None):
+    name = body.get("name", current.name if current else None)
+    query = body.get("query", current.query if current else "")
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 100:
+        raise ValueError("Name must be 1–100 characters")
+    if not isinstance(query, str) or len(query.strip()) > 200:
+        raise ValueError("Search text must be at most 200 characters")
+    values = {"name": name.strip(), "query": query.strip()}
+    for key, model in (("tag", Tag), ("correspondent", Correspondent), ("document_type", DocumentType)):
+        raw = body.get(f"{key}_id", getattr(current, f"{key}_id") if current else None)
+        if raw in (None, ""):
+            values[key] = None
+            continue
+        try:
+            item = model.objects.filter(pk=UUID(str(raw)), owner=owner).first()
+        except (TypeError, ValueError, AttributeError):
+            item = None
+        if item is None:
+            raise ValueError(f"{key.replace('_', ' ').title()} not found")
+        values[key] = item
+    for key in ("date_from", "date_to"):
+        raw = body.get(key, getattr(current, key) if current else None)
+        if raw in (None, ""):
+            values[key] = None
+        else:
+            try:
+                if isinstance(raw, str):
+                    values[key] = date.fromisoformat(raw)
+                elif isinstance(raw, date):
+                    values[key] = raw
+                else:
+                    raise ValueError
+            except ValueError as exc:
+                raise ValueError("Invalid document date") from exc
+    if values["date_from"] and values["date_to"] and values["date_from"] > values["date_to"]:
+        raise ValueError("Start date must be before end date")
+    return values
+
+
+@require_http_methods(["GET", "POST"])
+def saved_views(request):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    if request.method == "GET":
+        return JsonResponse({"views": [_saved_view_json(view) for view in SavedView.objects.filter(owner=request.user)]})
+    body = _body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    try:
+        values = _saved_view_values(body, request.user)
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    try:
+        with transaction.atomic():
+            view = SavedView.objects.create(owner=request.user, **values)
+    except IntegrityError:
+        return JsonResponse({"error": "A saved search with this name already exists"}, status=409)
+    return JsonResponse(_saved_view_json(view), status=201)
+
+
+@require_http_methods(["PATCH", "DELETE"])
+def saved_view_detail(request, view_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    view = SavedView.objects.filter(pk=view_id, owner=request.user).first()
+    if view is None:
+        return JsonResponse({"error": "Saved search not found"}, status=404)
+    if request.method == "DELETE":
+        view.delete()
+        return JsonResponse({"deleted": True})
+    body = _body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    try:
+        values = _saved_view_values(body, request.user, view)
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    for key, value in values.items():
+        setattr(view, key, value)
+    try:
+        with transaction.atomic():
+            view.save(update_fields=list(values))
+    except IntegrityError:
+        return JsonResponse({"error": "A saved search with this name already exists"}, status=409)
+    return JsonResponse(_saved_view_json(view))
 
 
 def _filing_rule_json(rule):

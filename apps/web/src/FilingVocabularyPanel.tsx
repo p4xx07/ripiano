@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
-import { FilingItem, request } from "./api";
+import { FilingItem, FilingRule, request } from "./api";
 import { Button } from "./ui";
 
 export default function FilingVocabularyPanel({ kind }: { kind: "correspondents" | "document-types" }) {
@@ -9,10 +9,13 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
   const singular = isSender ? "sender" : "type";
   const key = isSender ? "correspondents" : "document_types";
   const [items, setItems] = useState<FilingItem[]>([]);
+  const [rules, setRules] = useState<FilingRule[]>([]);
   const [name, setName] = useState("");
   const [filter, setFilter] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [editedName, setEditedName] = useState("");
+  const [newRuleTarget, setNewRuleTarget] = useState<string | null>(null);
+  const [newRuleText, setNewRuleText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -22,12 +25,16 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
 
   const load = useCallback(async () => {
     try {
-      const result = await request<Record<typeof key, FilingItem[]>>(`/api/${kind}`);
+      const [result, ruleResult] = await Promise.all([
+        request<Record<typeof key, FilingItem[]>>(`/api/${kind}`),
+        request<{ rules: FilingRule[] }>(`/api/filing-rules?kind=${isSender ? "correspondent" : "document_type"}`),
+      ]);
       setItems(result[key]);
+      setRules(ruleResult.rules);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : `Could not load ${title.toLowerCase()}`);
     }
-  }, [kind, key, title]);
+  }, [kind, key, title, isSender]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -92,6 +99,41 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
     }
   }
 
+  async function addRule(event: FormEvent) {
+    event.preventDefault();
+    if (!newRuleTarget) return;
+    setBusy(true);
+    setError("");
+    try {
+      await request("/api/filing-rules", { method: "POST", body: JSON.stringify({
+        kind: isSender ? "correspondent" : "document_type",
+        target_id: newRuleTarget, pattern: newRuleText, field: "either",
+      }) });
+      setNewRuleTarget(null);
+      setNewRuleText("");
+      setNotice("Matching phrase added. Existing documents will be checked in the background.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not add matching phrase");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeRule(rule: FilingRule) {
+    setBusy(true);
+    setError("");
+    try {
+      await request(`/api/filing-rules/${rule.id}`, { method: "DELETE" });
+      setNotice("Matching phrase removed. Existing documents will be checked in the background.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not remove matching phrase");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <section className="filing-card">
     <h2>{title}</h2>
     <p>{isSender ? "Find documents by who sent them." : "Group documents by what they are."}</p>
@@ -104,15 +146,25 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
     <input ref={filterRef} className="filing-filter" aria-label={`Filter ${title.toLowerCase()}`} value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={`Filter ${isSender ? "senders" : "types"}…`} />
     {items.length === 0 ? <p className="filing-empty">None yet. Add one here or while editing a document.</p> : visibleItems.length === 0 ? <p className="filing-empty">No matches. Try another name.</p> : <ul className="filing-vocabulary-list">
       {visibleItems.map((item) => <li key={item.id}>
-        {editing === item.id ? <form onSubmit={rename}>
-          <input autoFocus aria-label={`Rename ${item.name}`} value={editedName} onChange={(event) => setEditedName(event.target.value)} maxLength={100} required />
-          <Button disabled={busy}>Save</Button>
-          <button type="button" aria-label="Cancel rename" onClick={() => { focusAfterEdit.current = item.id; setEditing(null); setNotice("Rename cancelled."); }}><X size={16} /></button>
-        </form> : <>
-          <span>{item.name}</span>
-          <button ref={(node) => { if (node) renameButtons.current.set(item.id, node); else renameButtons.current.delete(item.id); }} type="button" aria-label={`Rename ${item.name}`} onClick={() => { setEditing(item.id); setEditedName(item.name); }}><Pencil size={16} /></button>
-          <button type="button" aria-label={`Delete ${item.name}`} disabled={busy} onClick={() => void remove(item)}><Trash2 size={16} /></button>
-        </>}
+        <div className="filing-vocabulary-row">
+          {editing === item.id ? <form onSubmit={rename}>
+            <input autoFocus aria-label={`Rename ${item.name}`} value={editedName} onChange={(event) => setEditedName(event.target.value)} maxLength={100} required />
+            <Button disabled={busy}>Save</Button>
+            <button type="button" aria-label="Cancel rename" onClick={() => { focusAfterEdit.current = item.id; setEditing(null); setNotice("Rename cancelled."); }}><X size={16} /></button>
+          </form> : <>
+            <span>{item.name}</span>
+            <button ref={(node) => { if (node) renameButtons.current.set(item.id, node); else renameButtons.current.delete(item.id); }} type="button" aria-label={`Rename ${item.name}`} onClick={() => { setEditing(item.id); setEditedName(item.name); }}><Pencil size={16} /></button>
+            <button type="button" aria-label={`Delete ${item.name}`} disabled={busy} onClick={() => void remove(item)}><Trash2 size={16} /></button>
+          </>}
+        </div>
+        <div className="filing-rule-list">
+          {rules.filter((rule) => rule.target_id === item.id).map((rule) => <span className="rule-chip" key={rule.id}>{rule.pattern}<button type="button" aria-label={`Remove phrase ${rule.pattern} from ${item.name}`} disabled={busy} onClick={() => void removeRule(rule)}><X size={13} /></button></span>)}
+          {newRuleTarget === item.id ? <form className="filing-rule-form" onSubmit={addRule}>
+            <input autoFocus aria-label={`Matching phrase for ${item.name}`} value={newRuleText} onChange={(event) => setNewRuleText(event.target.value)} maxLength={200} placeholder="Phrase in title or text" required />
+            <Button disabled={busy}>Add</Button>
+            <button type="button" aria-label="Cancel phrase" onClick={() => setNewRuleTarget(null)}><X size={16} /></button>
+          </form> : <button type="button" className="text-action" onClick={() => { setNewRuleTarget(item.id); setNewRuleText(""); }}><Plus size={14} /> Add matching phrase</button>}
+        </div>
       </li>)}
     </ul>}
   </section>;

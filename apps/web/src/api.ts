@@ -24,6 +24,16 @@ export type Rule = {
 
 export type FilingItem = { id: string; name: string };
 
+export type FilingRule = {
+  id: string;
+  kind: "correspondent" | "document_type";
+  target_id: string;
+  target_name: string;
+  pattern: string;
+  field: "title" | "text" | "either";
+  enabled: boolean;
+};
+
 export type Location = {
   id: string;
   name: string;
@@ -55,6 +65,8 @@ export type Document = {
   document_date: string | null;
   correspondent: FilingItem | null;
   document_type: FilingItem | null;
+  correspondent_origin: "none" | "rule" | "manual";
+  document_type_origin: "none" | "rule" | "manual";
   action_status: "none" | "open" | "done";
   action_due_date: string | null;
   action_note: string;

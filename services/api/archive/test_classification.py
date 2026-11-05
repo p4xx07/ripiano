@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 
 from archive.classification import apply_rules
-from archive.models import ClassificationRule, Document, DocumentTag, Tag
+from archive.models import ClassificationRule, Correspondent, Document, DocumentTag, DocumentType, FilingRule, Tag
 from archive.tasks import reclassify_owner
 
 
@@ -62,3 +62,67 @@ def test_tags_and_rules_are_owner_isolated():
     own_document = ready_document(bob)
     assert client.patch(f"/api/documents/{own_document.id}", json.dumps({"tags": [str(tag.id)]}), content_type="application/json").status_code == 400
     assert not DocumentTag.objects.filter(document=own_document).exists()
+
+
+@pytest.mark.django_db
+def test_filing_phrases_choose_specific_match_and_preserve_manual_corrections():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    document = ready_document(owner, text="Permit notice from City of Milan")
+    untouched = ready_document(owner, text="Permit notice from City of Milan")
+    generic = Correspondent.objects.create(owner=owner, name="City")
+    specific = Correspondent.objects.create(owner=owner, name="City of Milan")
+    notice = DocumentType.objects.create(owner=owner, name="Permit notice")
+    corrected_type = DocumentType.objects.create(owner=owner, name="Correspondence")
+    foreign = Correspondent.objects.create(owner=other, name="Foreign")
+    client = Client()
+    client.force_login(owner)
+
+    def create(kind, target, pattern, field="either"):
+        return client.post("/api/filing-rules", json.dumps({
+            "kind": kind, "target_id": str(target.id), "pattern": pattern, "field": field,
+        }), content_type="application/json")
+
+    with patch("archive.metadata_views.reclassify_owner.delay"):
+        assert create("correspondent", generic, "City").status_code == 201
+        specific_rule = create("correspondent", specific, "City of Milan")
+        assert specific_rule.status_code == 201
+        assert create("document_type", notice, "Permit notice", "text").status_code == 201
+        assert create("correspondent", specific, "City of Milan").status_code == 409
+        assert create("correspondent", foreign, "secret").status_code == 400
+    reclassify_owner(owner.id)
+    document.refresh_from_db()
+    assert document.correspondent == specific
+    assert document.document_type == notice
+    assert document.correspondent_origin == document.document_type_origin == Document.FilingOrigin.RULE
+    untouched.refresh_from_db()
+    assert untouched.document_type == notice
+    assert len(client.get("/api/filing-rules?kind=correspondent").json()["rules"]) == 2
+
+    cleared = client.patch(f"/api/documents/{document.id}", json.dumps({"correspondent_id": None}), content_type="application/json")
+    assert cleared.json()["correspondent"] is None
+    assert cleared.json()["correspondent_origin"] == Document.FilingOrigin.MANUAL
+    corrected = client.patch(f"/api/documents/{document.id}", json.dumps({"document_type_id": str(corrected_type.id)}), content_type="application/json")
+    assert corrected.json()["document_type_origin"] == Document.FilingOrigin.MANUAL
+    reclassify_owner(owner.id)
+    document.refresh_from_db()
+    assert document.correspondent is None
+    assert document.document_type == corrected_type
+
+    with patch("archive.metadata_views.reclassify_owner.delay"):
+        assert client.delete(f"/api/filing-rules/{specific_rule.json()['id']}").status_code == 200
+        for rule in client.get("/api/filing-rules?kind=document_type").json()["rules"]:
+            assert client.delete(f"/api/filing-rules/{rule['id']}").status_code == 200
+    reclassify_owner(owner.id)
+    document.refresh_from_db()
+    untouched.refresh_from_db()
+    assert document.correspondent is None
+    assert document.document_type == corrected_type
+    assert document.document_type_origin == Document.FilingOrigin.MANUAL
+    assert untouched.document_type is None
+    assert untouched.document_type_origin == Document.FilingOrigin.NONE
+
+    client.force_login(other)
+    assert client.get("/api/filing-rules").json()["rules"] == []
+    assert client.delete(f"/api/filing-rules/{specific_rule.json()['id']}").status_code == 404
+    assert FilingRule.objects.filter(owner=owner).count() == 1

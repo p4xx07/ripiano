@@ -24,6 +24,11 @@ class Document(models.Model):
         OPEN = "open", "Needs action"
         DONE = "done", "Completed"
 
+    class FilingOrigin(models.TextChoices):
+        NONE = "none", "Unassigned"
+        RULE = "rule", "Matching phrase"
+        MANUAL = "manual", "Set by user"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="documents")
     source = models.CharField(max_length=30, choices=Source.choices, default=Source.WEB)
@@ -46,6 +51,8 @@ class Document(models.Model):
     document_date = models.DateField(null=True, blank=True)
     correspondent = models.ForeignKey("Correspondent", null=True, blank=True, on_delete=models.PROTECT, related_name="documents")
     document_type = models.ForeignKey("DocumentType", null=True, blank=True, on_delete=models.PROTECT, related_name="documents")
+    correspondent_origin = models.CharField(max_length=10, choices=FilingOrigin.choices, default=FilingOrigin.NONE)
+    document_type_origin = models.CharField(max_length=10, choices=FilingOrigin.choices, default=FilingOrigin.NONE)
     action_status = models.CharField(max_length=10, choices=ActionStatus.choices, default=ActionStatus.NONE, db_index=True)
     action_due_date = models.DateField(null=True, blank=True)
     action_note = models.CharField(max_length=500, blank=True)
@@ -117,6 +124,35 @@ class DocumentType(models.Model):
     class Meta:
         ordering = ["name"]
         constraints = [models.UniqueConstraint(Lower("name"), "owner", name="unique_document_type_owner_name_ci")]
+
+
+class FilingRule(models.Model):
+    class Kind(models.TextChoices):
+        CORRESPONDENT = "correspondent", "Correspondent"
+        DOCUMENT_TYPE = "document_type", "Document type"
+
+    class Field(models.TextChoices):
+        TITLE = "title", "Title"
+        TEXT = "text", "Document text"
+        EITHER = "either", "Title or text"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="filing_rules")
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    correspondent = models.ForeignKey(Correspondent, null=True, blank=True, on_delete=models.CASCADE, related_name="rules")
+    document_type = models.ForeignKey(DocumentType, null=True, blank=True, on_delete=models.CASCADE, related_name="rules")
+    pattern = models.CharField(max_length=200)
+    field = models.CharField(max_length=10, choices=Field.choices, default=Field.EITHER)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.CheckConstraint(condition=Q(kind="correspondent", correspondent__isnull=False, document_type__isnull=True) | Q(kind="document_type", correspondent__isnull=True, document_type__isnull=False), name="filing_rule_exactly_one_target"),
+            models.UniqueConstraint(fields=["owner", "correspondent", "pattern", "field"], condition=Q(kind="correspondent"), name="unique_correspondent_phrase"),
+            models.UniqueConstraint(fields=["owner", "document_type", "pattern", "field"], condition=Q(kind="document_type"), name="unique_document_type_phrase"),
+        ]
 
 
 class DocumentTag(models.Model):

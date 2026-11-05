@@ -88,18 +88,23 @@ export default function DocumentPanel({
     setBusy(true);
     setError("");
     try {
+      const changes: Record<string, unknown> = {
+        title,
+        document_date: date || null,
+        action_status: actionStatus,
+        action_due_date: actionDueDate || null,
+        action_note: actionNote,
+      };
+      const previousTags = current.tags.map((tag) => tag.id).sort();
+      const chosenTags = [...selected].sort();
+      if (chosenTags.length !== previousTags.length || chosenTags.some((id, index) => id !== previousTags[index])) {
+        changes.tags = selected;
+      }
+      if (correspondentId !== (current.correspondent?.id ?? "")) changes.correspondent_id = correspondentId || null;
+      if (documentTypeId !== (current.document_type?.id ?? "")) changes.document_type_id = documentTypeId || null;
       const updated = await request<Document>(`/api/documents/${current.id}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          title,
-          document_date: date || null,
-          correspondent_id: correspondentId || null,
-          document_type_id: documentTypeId || null,
-          action_status: actionStatus,
-          action_due_date: actionDueDate || null,
-          action_note: actionNote,
-          tags: selected,
-        }),
+        body: JSON.stringify(changes),
       });
       setCurrent(updated);
       onSaved(updated);
@@ -242,7 +247,7 @@ export default function DocumentPanel({
               onChange={(event) => setDate(event.target.value)}
             />
           </Field>
-          <Field label="From" hint="Optional sender or organization" className="detail-label">
+          <Field label="From" hint={current.correspondent_origin === "rule" ? "Added by matching phrase · change it if needed" : "Optional sender or organization"} className="detail-label">
             <select value={correspondentId} onChange={(event) => setCorrespondentId(event.target.value)}>
               <option value="">No sender</option>
               {correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -255,7 +260,7 @@ export default function DocumentPanel({
               <button type="button" aria-label="Cancel new sender" onClick={() => setCreatingCorrespondent(false)}><X size={16} /></button>
             </div>
           ) : <button type="button" className="text-action" onClick={() => setCreatingCorrespondent(true)}><Plus size={15} /> Add a sender</button>}
-          <Field label="Document type" hint="Optional" className="detail-label">
+          <Field label="Document type" hint={current.document_type_origin === "rule" ? "Added by matching phrase · change it if needed" : "Optional"} className="detail-label">
             <select value={documentTypeId} onChange={(event) => setDocumentTypeId(event.target.value)}>
               <option value="">No type</option>
               {documentTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}

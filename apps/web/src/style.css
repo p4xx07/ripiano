@@ -1090,7 +1090,7 @@ button:disabled {
   color: var(--color-muted);
 }
 .filing-vocabulary-form,
-.filing-vocabulary-list li,
+.filing-vocabulary-row,
 .filing-vocabulary-list form {
   display: flex;
   align-items: center;
@@ -1130,18 +1130,29 @@ button:disabled {
   padding: var(--space-2) 0;
   border-top: 1px solid var(--color-border);
 }
-.filing-vocabulary-list li span {
+.filing-vocabulary-row > span {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .filing-vocabulary-list form { width: 100%; }
-.filing-vocabulary-list li > button,
+.filing-vocabulary-row > button,
 .filing-vocabulary-list form > button:last-child {
   border: 0;
   background: transparent;
   color: var(--color-muted);
 }
+.filing-rule-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.filing-rule-list .filing-rule-form {
+  flex-wrap: wrap;
+}
+.filing-rule-list .text-action { padding: var(--space-1) 0; }
 .filing-card .filing-empty { margin: var(--space-4) 0 0; }
 .tag-list-section .section-heading {
   margin-bottom: var(--space-4);

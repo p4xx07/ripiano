@@ -81,6 +81,8 @@ def _document_json(document):
         "document_date": document.document_date.isoformat() if document.document_date else None,
         "correspondent": {"id": str(document.correspondent_id), "name": document.correspondent.name} if document.correspondent_id else None,
         "document_type": {"id": str(document.document_type_id), "name": document.document_type.name} if document.document_type_id else None,
+        "correspondent_origin": document.correspondent_origin,
+        "document_type_origin": document.document_type_origin,
         "action_status": document.action_status,
         "action_due_date": document.action_due_date.isoformat() if document.action_due_date else None,
         "action_note": document.action_note,
@@ -273,7 +275,8 @@ def document_detail(request, document_id):
                 if item is None:
                     return JsonResponse({"error": f"{field.replace('_', ' ').title()} not found"}, status=400)
             setattr(document, field, item)
-            changes.append(field)
+            setattr(document, f"{field}_origin", Document.FilingOrigin.MANUAL)
+            changes.extend([field, f"{field}_origin"])
         if "action_status" in body:
             status = body["action_status"]
             if status not in Document.ActionStatus.values:

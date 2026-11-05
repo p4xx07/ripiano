@@ -8,7 +8,7 @@ from django.db.models.deletion import ProtectedError
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from .models import ClassificationRule, Correspondent, DocumentType, Tag
+from .models import ClassificationRule, Correspondent, DocumentType, FilingRule, Tag
 from .tasks import reclassify_owner
 
 logger = logging.getLogger(__name__)
@@ -114,6 +114,69 @@ def document_types(request):
 @require_http_methods(["PATCH", "DELETE"])
 def document_type_detail(request, type_id):
     return _vocabulary_detail(request, DocumentType, type_id)
+
+
+def _filing_rule_json(rule):
+    target = rule.correspondent if rule.kind == FilingRule.Kind.CORRESPONDENT else rule.document_type
+    return {
+        "id": str(rule.id), "kind": rule.kind, "target_id": str(target.id), "target_name": target.name,
+        "pattern": rule.pattern, "field": rule.field, "enabled": rule.enabled,
+    }
+
+
+@require_http_methods(["GET", "POST"])
+def filing_rules(request):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    if request.method == "GET":
+        kind = request.GET.get("kind")
+        if kind is not None and kind not in FilingRule.Kind.values:
+            return JsonResponse({"error": "Invalid filing kind"}, status=400)
+        queryset = FilingRule.objects.filter(owner=request.user).select_related("correspondent", "document_type")
+        if kind:
+            queryset = queryset.filter(kind=kind)
+        return JsonResponse({"rules": [_filing_rule_json(rule) for rule in queryset]})
+    body = _body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    kind = body.get("kind")
+    model = Correspondent if kind == FilingRule.Kind.CORRESPONDENT else DocumentType if kind == FilingRule.Kind.DOCUMENT_TYPE else None
+    if model is None:
+        return JsonResponse({"error": "Choose a correspondent or document type"}, status=400)
+    try:
+        target_id = UUID(body.get("target_id", ""))
+    except (TypeError, ValueError, AttributeError):
+        return JsonResponse({"error": "Invalid target ID"}, status=400)
+    target = model.objects.filter(pk=target_id, owner=request.user).first()
+    pattern = body.get("pattern")
+    field = body.get("field", FilingRule.Field.EITHER)
+    if target is None or not isinstance(pattern, str) or not pattern.strip() or len(pattern.strip()) > 200 or field not in FilingRule.Field.values:
+        return JsonResponse({"error": "Choose an owned target, phrase, and field"}, status=400)
+    try:
+        with transaction.atomic():
+            rule = FilingRule.objects.create(
+                owner=request.user, kind=kind, pattern=pattern.strip(), field=field,
+                correspondent=target if kind == FilingRule.Kind.CORRESPONDENT else None,
+                document_type=target if kind == FilingRule.Kind.DOCUMENT_TYPE else None,
+            )
+    except IntegrityError:
+        return JsonResponse({"error": "This matching phrase already exists"}, status=409)
+    _queue_reclassification(request.user.id)
+    return JsonResponse(_filing_rule_json(rule), status=201)
+
+
+@require_http_methods(["DELETE"])
+def filing_rule_detail(request, rule_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    rule = FilingRule.objects.filter(pk=rule_id, owner=request.user).first()
+    if rule is None:
+        return JsonResponse({"error": "Filing rule not found"}, status=404)
+    rule.delete()
+    _queue_reclassification(request.user.id)
+    return JsonResponse({"deleted": True})
 
 
 @require_http_methods(["GET", "POST"])

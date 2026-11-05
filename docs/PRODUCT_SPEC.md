@@ -22,7 +22,7 @@ Common operations must have direct, understandable controls. Advanced search, wo
 
 ### Capture and filing
 
-1. User taps Add and chooses camera, Photos/Gallery, Files, share sheet, drag-and-drop, email, scanner folder, or API.
+1. User taps Add and chooses camera, Photos/Gallery, Files, share sheet, drag-and-drop, email, scanner folder, or API; an optional Telegram bot accepts forwarded files in a private chat.
 2. Ripiano immediately saves an immutable original and creates a durable processing job. The UI shows upload and processing state, errors, and retry options. No metadata is required before saving.
 3. Text is extracted or OCR'd; an archive PDF/A and preview are generated where supported. Rules and local classification propose a title, issued date, correspondent, type, tags, and storage path. Each proposal records its source and evidence.
 4. High-confidence, calibrated decisions are applied automatically. Uncertain, conflicting, duplicate, or failed items appear in Inbox with one-screen correction. Users can defer a decision without losing the document.

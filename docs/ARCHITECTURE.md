@@ -8,9 +8,11 @@ Status: proposed implementation baseline, 2026-11-04. Exact component versions a
 flowchart LR
   PWA[React PWA: iOS, Android, desktop] --> API[Same-origin Ripiano API]
   AND[Android client: shared UI + native scanner] --> API
-  API --> PG[(PostgreSQL)]
-  API --> MEDIA[(NAS managed media volume)]
-  API --> BROKER[(Valkey task broker)]
+  API --> INGEST[Shared ingestion service]
+  TG[Optional Telegram poller] --> INGEST
+  INGEST --> PG[(PostgreSQL)]
+  INGEST --> MEDIA[(NAS managed media volume)]
+  INGEST --> BROKER[(Valkey task broker)]
   BROKER --> WORKER[Processing worker]
   WORKER --> MEDIA
   WORKER --> PG
@@ -21,6 +23,8 @@ flowchart LR
 ```
 
 The web/PWA and API are served on one HTTPS origin through the Synology reverse proxy, as in Condivisa. The Portainer stack contains an API/web service, processing worker, scheduler, PostgreSQL, Valkey, and optional conversion services. The public entry point is the reverse proxy; database, broker, converter, and MCP internals are not separately exposed to the internet. The Android client can use the same origin over LAN or Tailscale.
+
+External inputs use a shared ingestion service. Each adapter supplies an owner, original bytes, filename, source, and stable source reference. The service validates and durably stores the original, creates the document record, then queues the common OCR/classification pipeline. Source references prevent repeats after adapter restarts. The first adapter is an optional Telegram long poller with a persisted update cursor. It accepts files only from configured private chat IDs, so no inbound webhook port is needed. Standard Telegram Bot API downloads are limited to 20 MB and updates expire after 24 hours. Telegram handles the document before Ripiano receives it, so this input is explicitly less private than direct upload. Future S3, Google Drive, and watched-folder adapters should use the same contract and their own least-privilege credentials and cursors.
 
 ### Initial technology choices
 
@@ -81,7 +85,7 @@ A work-managed Mac is an optional convenience, not the private-by-design default
 
 ## Backups, restore, and upgrades
 
-Schedule a backup job to a mounted path configured in Portainer (default daily at 02:00 Europe/Rome, user-configurable). Quiesce writes briefly while capturing a consistent PostgreSQL dump and the list of referenced immutable media, then resume normal ingestion. Hold media garbage collection until that snapshot's files have been copied. Include application settings, physical location data, and a versioned manifest/checksum list. Stage under `/backup/staging`; publish only validated snapshots under `/backup/complete`, which is the folder the user selects in Synology Hyper Backup. Reuse unchanged media between snapshots where the backup filesystem supports it. Retention is configurable and never deletes the last known-good snapshot. Report failure in the UI. Restore into an empty stack with a documented command and perform a clean-stack drill before release. API tokens and secrets are rotated or re-issued as part of restore; grant permissions and revocation state remain correct.
+Schedule a backup job to a mounted path configured in Portainer (default daily at 02:00 Europe/Rome, user-configurable). PostgreSQL creates a consistent MVCC dump, then the worker copies immutable media. Garbage collection remains disabled until a future delete workflow coordinates with active snapshots. Include application settings and physical location data in the database dump and a versioned manifest/checksum list with each snapshot. Stage under `/backup/staging`; publish only validated snapshots under `/backup/complete`, which is the folder the user selects in Synology Hyper Backup. Reuse unchanged media between snapshots where the backup filesystem supports it. Retention is configurable and never deletes the last known-good snapshot. Report failure in the UI. Restore into an empty stack with a documented command and perform a clean-stack drill before release. API tokens and secrets are rotated or re-issued as part of restore; grant permissions and revocation state remain correct.
 
 Synology Hyper Backup reads the output folder and sends it to Backblaze B2 under the user's configuration. Ripiano does not require or store Backblaze credentials. Backup and restore include application version and schema version so incompatible restores are rejected with an explanation. Pinned container versions and pre-upgrade backups are mandatory.
 

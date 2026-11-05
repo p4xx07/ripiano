@@ -1,0 +1,5 @@
+Invocation:
+Copied a synthetic PNG to `/private/tmp/ripiano-watch-drill/ignored.txt` and created a symlink `/private/tmp/ripiano-watch-drill/ignored-link.png` to the existing fixture. Then inspected the archive through `/api/documents`.
+
+Result:
+{"ignored_name_matches":0,"folder_sources":1,"folder_names":["from-nas.png"]}

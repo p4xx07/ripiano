@@ -1,0 +1,134 @@
+name: ripiano
+
+x-api-env: &api-env
+  RIPIANO_DEBUG: ${RIPIANO_DEBUG:-0}
+  RIPIANO_SECRET_KEY: ${RIPIANO_SECRET_KEY:?Set RIPIANO_SECRET_KEY}
+  RIPIANO_SETUP_KEY: ${RIPIANO_SETUP_KEY:?Set RIPIANO_SETUP_KEY}
+  RIPIANO_PUBLIC_ORIGIN: ${RIPIANO_PUBLIC_ORIGIN:?Set RIPIANO_PUBLIC_ORIGIN}
+  RIPIANO_ALLOWED_HOSTS: ${RIPIANO_ALLOWED_HOSTS:?Set RIPIANO_ALLOWED_HOSTS}
+  RIPIANO_DB_HOST: db
+  RIPIANO_DB_NAME: ripiano
+  RIPIANO_DB_USER: ripiano
+  RIPIANO_DB_PASSWORD: ${RIPIANO_DB_PASSWORD:?Set RIPIANO_DB_PASSWORD}
+  RIPIANO_BROKER_URL: redis://broker:6379/0
+  RIPIANO_MEDIA_ROOT: /data
+  RIPIANO_BACKUP_ROOT: /backup
+  RIPIANO_BACKUP_HOUR: ${RIPIANO_BACKUP_HOUR:-2}
+  RIPIANO_BACKUP_MINUTE: ${RIPIANO_BACKUP_MINUTE:-0}
+  RIPIANO_BACKUP_RETENTION: ${RIPIANO_BACKUP_RETENTION:-7}
+
+x-api-base: &api-base
+  build: ./services/api
+  environment: *api-env
+  volumes:
+    - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+  depends_on:
+    db:
+      condition: service_healthy
+    broker:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:17.6-bookworm
+    environment:
+      POSTGRES_DB: ripiano
+      POSTGRES_USER: ripiano
+      POSTGRES_PASSWORD: ${RIPIANO_DB_PASSWORD:?Set RIPIANO_DB_PASSWORD}
+    volumes:
+      - ${RIPIANO_DB_PATH:-ripiano_postgres}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ripiano -d ripiano"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  broker:
+    image: valkey/valkey:8.1.3-alpine
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - broker_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  api:
+    <<: *api-base
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+      - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup:ro
+    command: ["sh", "-c", ".venv/bin/python manage.py migrate --noinput && exec .venv/bin/gunicorn ripiano.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 60"]
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+  worker:
+    <<: *api-base
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+      - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup
+    command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1"]
+    depends_on:
+      api:
+        condition: service_healthy
+  scheduler:
+    <<: *api-base
+    command: [".venv/bin/celery", "-A", "ripiano", "beat", "--loglevel=INFO"]
+    depends_on:
+      api:
+        condition: service_healthy
+  mcp:
+    <<: *api-base
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data:ro
+    command: [".venv/bin/uvicorn", "mcp_asgi:app", "--host", "0.0.0.0", "--port", "8001"]
+    depends_on:
+      api:
+        condition: service_healthy
+  telegram:
+    <<: *api-base
+    profiles: ["telegram"]
+    command: [".venv/bin/python", "manage.py", "telegram_input"]
+    environment:
+      <<: *api-env
+      RIPIANO_TELEGRAM_BOT_TOKEN: ${RIPIANO_TELEGRAM_BOT_TOKEN:-}
+      RIPIANO_TELEGRAM_OWNER_USERNAME: ${RIPIANO_TELEGRAM_OWNER_USERNAME:-}
+      RIPIANO_TELEGRAM_ALLOWED_CHAT_IDS: ${RIPIANO_TELEGRAM_ALLOWED_CHAT_IDS:-}
+    depends_on:
+      api:
+        condition: service_healthy
+  watched_folder:
+    <<: *api-base
+    profiles: ["watch"]
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+      - ${RIPIANO_WATCH_PATH:-./incoming}:/watch:ro
+    command: [".venv/bin/python", "manage.py", "watch_folder"]
+    environment:
+      <<: *api-env
+      RIPIANO_WATCH_PATH: /watch
+      RIPIANO_WATCH_OWNER_USERNAME: ${RIPIANO_WATCH_OWNER_USERNAME:-}
+      RIPIANO_WATCH_POLL_SECONDS: ${RIPIANO_WATCH_POLL_SECONDS:-5}
+    depends_on:
+      api:
+        condition: service_healthy
+  web:
+    build: ./apps/web
+    ports:
+      - "${RIPIANO_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+      mcp:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  broker_data:
+  ripiano_media:
+  ripiano_postgres:
+  ripiano_backup:

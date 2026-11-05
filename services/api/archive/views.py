@@ -1,27 +1,61 @@
 import json
 import logging
 import secrets
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from uuid import UUID
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.core import signing
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import IntegrityError, connection, transaction
-from django.db.models import Count, F, Q
+from django.db.models import BigIntegerField, Count, Exists, F, OuterRef, Q
+from django.db.models.functions import Cast
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
-from .models import BackupRun, Document, DocumentTag, Tag, TagOverride
+from .models import BackupRun, Document, DocumentTag, PhysicalCopy, Tag, TagOverride
 from .physical_views import copy_json
 from .ingestion import ingest_document
 from .storage import InvalidDocument
 from .tasks import backup_archive
 
 logger = logging.getLogger(__name__)
+CURSOR_SALT = "ripiano-document-page-v1"
+
+
+def _read_page_cursor(raw, owner, query, view):
+    try:
+        value = signing.loads(raw, salt=CURSOR_SALT, max_age=86400)
+        if not isinstance(value, dict) or value.get("owner") != str(owner.pk) or value.get("query") != query or value.get("view") != view:
+            raise ValueError
+        created_at = datetime.fromisoformat(value["created_at"])
+        if timezone.is_naive(created_at):
+            raise ValueError
+        document_id = UUID(value["id"])
+        due_date = date.fromisoformat(value["due_date"]) if value.get("due_date") else None
+        score = int(value["score"]) if view == "search" else None
+        if score is not None and score < 0:
+            raise ValueError
+        counts = value["counts"]
+        if not isinstance(counts, dict) or not all(isinstance(counts.get(key), int) and counts[key] >= 0 for key in ("total", "ready", "waiting")):
+            raise ValueError
+        return created_at, document_id, due_date, score, counts
+    except (signing.BadSignature, KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("Invalid page cursor") from exc
+
+
+def _next_page_cursor(document, owner, query, view, counts):
+    return signing.dumps({
+        "owner": str(owner.pk), "query": query, "view": view,
+        "created_at": document.created_at.isoformat(), "id": str(document.id),
+        "due_date": document.action_due_date.isoformat() if document.action_due_date else None,
+        "score": int(getattr(document, "search_score", 0)) if view == "search" else None,
+        "counts": counts,
+    }, salt=CURSOR_SALT)
 
 
 def _payload(request):
@@ -113,35 +147,58 @@ def documents(request):
     if unauthorized:
         return unauthorized
     if request.method == "GET":
-        try:
-            offset = int(request.GET.get("offset", "0"))
-        except ValueError:
-            return JsonResponse({"error": "Invalid offset"}, status=400)
-        if offset < 0 or offset > 1000000:
-            return JsonResponse({"error": "Invalid offset"}, status=400)
+        if "offset" in request.GET:
+            return JsonResponse({"error": "Use a page cursor"}, status=400)
         queryset = Document.objects.filter(owner=request.user).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
-        if request.GET.get("view") == "actions":
+        view = "actions" if request.GET.get("view") == "actions" else "search" if query else "documents"
+        if view == "actions":
             queryset = queryset.filter(action_status=Document.ActionStatus.OPEN)
         if query:
+            queryset = queryset.annotate(
+                tag_match=Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=query)),
+                sticker_match=Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=query)),
+            )
             if connection.vendor == "postgresql":
-                vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple")
-                search_query = SearchQuery(query, search_type="websearch", config="simple")
-                queryset = queryset.annotate(search_rank=SearchRank(vector, search_query)).filter(search_rank__gt=0).order_by("-search_rank", "-created_at", "-id")
+                vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
+                search_query = SearchQuery(query, search_type="plain", config="simple")
+                queryset = queryset.annotate(search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField())).filter(Q(search_score__gt=0) | Q(tag_match=True) | Q(sticker_match=True)).order_by("-search_score", "-created_at", "-id")
             else:
-                queryset = queryset.filter(Q(title__icontains=query) | Q(extracted_text__icontains=query))
-        if request.GET.get("view") == "actions":
+                queryset = queryset.filter(Q(title__icontains=query) | Q(extracted_text__icontains=query) | Q(action_note__icontains=query) | Q(tag_match=True) | Q(sticker_match=True))
+        if view == "actions":
             queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at", "-id")
         elif not query:
             queryset = queryset.order_by("-created_at", "-id")
-        counts = queryset.aggregate(
-            total=Count("id"),
-            ready=Count("id", filter=Q(status=Document.Status.READY)),
-            waiting=Count("id", filter=Q(status__in=[Document.Status.PENDING, Document.Status.PROCESSING])),
-        )
+        elif connection.vendor != "postgresql":
+            queryset = queryset.order_by("-created_at", "-id")
+
+        cursor_raw = request.GET.get("cursor")
+        if cursor_raw:
+            try:
+                created_at, document_id, due_date, score, counts = _read_page_cursor(cursor_raw, request.user, query, view)
+            except ValueError:
+                return JsonResponse({"error": "Invalid page cursor"}, status=400)
+            older = Q(created_at__lt=created_at) | Q(created_at=created_at, id__lt=document_id)
+            if view == "actions":
+                if due_date is None:
+                    queryset = queryset.filter(Q(action_due_date__isnull=True) & older)
+                else:
+                    queryset = queryset.filter(Q(action_due_date__gt=due_date) | Q(action_due_date__isnull=True) | (Q(action_due_date=due_date) & older))
+            elif view == "search" and connection.vendor == "postgresql":
+                queryset = queryset.filter(Q(search_score__lt=score) | (Q(search_score=score) & older))
+            else:
+                queryset = queryset.filter(older)
+        else:
+            counts = queryset.aggregate(
+                total=Count("id"),
+                ready=Count("id", filter=Q(status=Document.Status.READY)),
+                waiting=Count("id", filter=Q(status__in=[Document.Status.PENDING, Document.Status.PROCESSING])),
+            )
+        page = list(queryset[:51])
+        visible = page[:50]
         return JsonResponse({
-            "documents": [_document_json(doc) for doc in queryset[offset:offset + 50]],
-            "next_offset": offset + 50 if offset + 50 < counts["total"] else None,
+            "documents": [_document_json(doc) for doc in visible],
+            "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, counts) if len(page) > 50 else None,
             "counts": counts,
         })
 

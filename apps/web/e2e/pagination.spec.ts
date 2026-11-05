@@ -25,13 +25,13 @@ test("older documents and follow-ups remain reachable after the first 50", async
     snippet: "",
   }));
   await page.route("**/api/documents?*", (route) => {
-    const offset = Number(new URL(route.request().url()).searchParams.get("offset") ?? 0);
+    const offset = new URL(route.request().url()).searchParams.has("cursor") ? 50 : 0;
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         documents: documents.slice(offset, offset + 50),
-        next_offset: offset + 50 < documents.length ? offset + 50 : null,
-        counts: { total: 51, ready: 51, waiting: 0 },
+        next_cursor: offset + 50 < documents.length ? "page-2" : null,
+        counts: { total: documents.length, ready: documents.length, waiting: 0 },
       }),
     });
   });
@@ -45,12 +45,16 @@ test("older documents and follow-ups remain reachable after the first 50", async
   await page.getByRole("button", { name: "Show more documents" }).click();
   await expect(page.locator(".document-list .document-row")).toHaveCount(51);
   await expect(page.getByRole("button", { name: "Paged document 51" })).toBeVisible();
+  documents.unshift({ ...documents[0], id: "new-arrival", title: "New arrival" });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New arrival" })).toBeVisible();
+  await expect(page.locator(".summary-card").first()).toContainText("52");
 
   const menu = page.getByRole("button", { name: "Toggle menu" });
   if (await menu.isVisible()) await menu.click();
   await page.getByRole("button", { name: "Needs action", exact: true }).click();
   await expect(page.getByRole("button", { name: "Show more follow-ups" })).toBeVisible();
   await page.getByRole("button", { name: "Show more follow-ups" }).click();
-  await expect(page.locator(".action-row")).toHaveCount(51);
+  await expect(page.locator(".action-row")).toHaveCount(52);
   await expect(page.getByRole("button", { name: "Paged document 51" })).toBeVisible();
 });

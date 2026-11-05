@@ -82,6 +82,8 @@ test("capture, find, tag, and locate a paper copy", async ({
   ).toBeVisible();
 
   await navigate(page, "All documents");
+  await page.getByRole("textbox", { name: "Search documents" }).fill(tagName);
+  await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   await page.getByRole("textbox", { name: "Search documents" }).fill("9473");
   await page.getByRole("button", { name, exact: true }).click();
   await expect(

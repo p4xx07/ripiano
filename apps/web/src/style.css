@@ -844,6 +844,9 @@ button:disabled {
   }
 }
 @media (max-width: 570px) {
+  .refresh-label {
+    display: none;
+  }
   .topbar-right {
     font-size: var(--type-caption);
   }

@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 import json
 from io import BytesIO
 from uuid import uuid4
@@ -11,7 +11,7 @@ from django.test import Client, override_settings
 from django.utils import timezone
 from PIL import Image
 
-from archive.models import Document
+from archive.models import Document, DocumentTag, PhysicalCopy, Tag
 from archive.tasks import reconcile_pending_documents
 
 
@@ -221,11 +221,117 @@ def test_document_and_action_lists_page_without_hiding_older_items():
     client.force_login(owner)
     for suffix in ("", "?view=actions"):
         first = client.get(f"/api/documents{suffix}").json()
-        second = client.get(f"/api/documents?offset=50{'&view=actions' if suffix else ''}").json()
+        second = client.get("/api/documents", {"cursor": first["next_cursor"], "view": "actions" if suffix else "documents"}).json()
         assert first["counts"]["total"] == 51
-        assert len(first["documents"]) == 50 and first["next_offset"] == 50
-        assert len(second["documents"]) == 1 and second["next_offset"] is None
+        assert len(first["documents"]) == 50 and first["next_cursor"]
+        assert len(second["documents"]) == 1 and second["next_cursor"] is None
         assert len({item["id"] for item in first["documents"] + second["documents"]}) == 51
         assert all(item["title"] != "Foreign" for item in first["documents"] + second["documents"])
-    assert client.get("/api/documents?offset=-1").status_code == 400
-    assert client.get("/api/documents?offset=bad").status_code == 400
+    assert client.get("/api/documents?offset=50").status_code == 400
+    assert client.get("/api/documents?cursor=bad").status_code == 400
+
+
+@pytest.mark.django_db
+def test_page_cursor_survives_new_ingest_and_completed_follow_up():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    client = Client()
+    client.force_login(owner)
+
+    def create(index):
+        return Document.objects.create(
+            owner=owner, title=f"Document {index:02d}", original_name=f"doc-{index}.pdf",
+            original_path=f"originals/doc-{index}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10, action_status=Document.ActionStatus.OPEN,
+        )
+
+    documents = [create(index) for index in range(51)]
+    first = client.get("/api/documents").json()
+    first_actions = client.get("/api/documents?view=actions").json()
+    assert client.get("/api/documents", {"q": "another", "cursor": first["next_cursor"]}).status_code == 400
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    client.force_login(other)
+    assert client.get("/api/documents", {"cursor": first["next_cursor"]}).status_code == 400
+    client.force_login(owner)
+    newest = create(51)
+    documents[-1].action_status = Document.ActionStatus.DONE
+    documents[-1].save(update_fields=["action_status"])
+
+    second = client.get("/api/documents", {"cursor": first["next_cursor"]}).json()
+    second_actions = client.get("/api/documents", {"view": "actions", "cursor": first_actions["next_cursor"]}).json()
+    assert [item["id"] for item in second["documents"]] == [str(documents[0].id)]
+    assert [item["id"] for item in second_actions["documents"]] == [str(documents[0].id)]
+    assert not ({item["id"] for item in first["documents"]} & {item["id"] for item in second["documents"]})
+    assert client.get("/api/documents").json()["documents"][0]["id"] == str(newest.id)
+    assert client.get("/api/documents", {"view": "actions", "cursor": first["next_cursor"]}).status_code == 400
+
+
+@pytest.mark.django_db
+def test_search_cursor_has_stable_tie_breaker_on_equal_timestamps():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    for index in range(51):
+        Document.objects.create(
+            owner=owner, title=f"Receipt {index}", original_name=f"receipt-{index}.pdf",
+            original_path=f"originals/receipt-{index}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10,
+        )
+    Document.objects.filter(owner=owner).update(created_at=timezone.now())
+    client = Client()
+    client.force_login(owner)
+    first = client.get("/api/documents", {"q": "Receipt"}).json()
+    second = client.get("/api/documents", {"q": "Receipt", "cursor": first["next_cursor"]}).json()
+    assert len({item["id"] for item in first["documents"] + second["documents"]}) == 51
+    assert second["next_cursor"] is None
+
+
+@pytest.mark.django_db
+def test_action_cursor_keeps_undated_follow_ups_after_dated_ones():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    for index in range(50):
+        Document.objects.create(
+            owner=owner, title=f"Dated {index}", original_name=f"dated-{index}.pdf",
+            original_path=f"originals/dated-{index}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10,
+            action_status=Document.ActionStatus.OPEN, action_due_date=date(2027, 1, 1),
+        )
+    undated = Document.objects.create(
+        owner=owner, title="Undated", original_name="undated.pdf",
+        original_path="originals/undated.pdf", original_mime="application/pdf",
+        original_sha256="b" * 64, original_size=10,
+        action_status=Document.ActionStatus.OPEN,
+    )
+    client = Client()
+    client.force_login(owner)
+    first = client.get("/api/documents?view=actions").json()
+    second = client.get("/api/documents", {"view": "actions", "cursor": first["next_cursor"]}).json()
+    assert len(first["documents"]) == 50
+    assert [item["id"] for item in second["documents"]] == [str(undated.id)]
+
+
+@pytest.mark.django_db
+def test_search_finds_tags_action_notes_and_sticker_codes_without_crossing_owners():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+
+    def make_document(user, name):
+        return Document.objects.create(
+            owner=user, title=name, original_name=f"{name}.pdf", original_path=f"originals/{name}.pdf",
+            original_mime="application/pdf", original_sha256="a" * 64, original_size=10,
+        )
+
+    document = make_document(owner, "Untitled")
+    private = make_document(other, "Foreign")
+    tag = Tag.objects.create(owner=owner, name="Insurance")
+    DocumentTag.objects.create(document=document, tag=tag)
+    PhysicalCopy.objects.create(document=document, sticker_code="R-ABC23456")
+    document.action_note = "Renew before December"
+    document.save(update_fields=["action_note"])
+    private.action_note = "Private secret"
+    private.save(update_fields=["action_note"])
+
+    client = Client()
+    client.force_login(owner)
+    for query in ("Insurance", "R-ABC23456", "Renew"):
+        result = client.get("/api/documents", {"q": query}).json()
+        assert [item["id"] for item in result["documents"]] == [str(document.id)]
+        assert result["counts"]["total"] == 1
+    assert client.get("/api/documents", {"q": "secret"}).json()["documents"] == []

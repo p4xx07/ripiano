@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ClipboardList, FileText } from "lucide-react";
+import { Check, ClipboardList, FileText, RotateCcw } from "lucide-react";
 import { Document, formatDate, request } from "./api";
 import { Button } from "./ui";
 
@@ -8,7 +8,7 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
   onOpenDocument: (document: Document) => void;
 }) {
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const latestRequest = useRef(0);
   const loadingMoreRef = useRef(false);
@@ -16,24 +16,24 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async (offset = 0) => {
-    if (offset && loadingMoreRef.current) return;
-    if (offset) {
+  const load = useCallback(async (cursor: string | null = null) => {
+    if (cursor && loadingMoreRef.current) return;
+    if (cursor) {
       loadingMoreRef.current = true;
       setLoadingMore(true);
     }
     const requestNumber = ++latestRequest.current;
     try {
-      const result = await request<{ documents: Document[]; next_offset: number | null }>(`/api/documents?view=actions&offset=${offset}`);
+      const result = await request<{ documents: Document[]; next_cursor: string | null }>(`/api/documents?view=actions${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
       if (requestNumber !== latestRequest.current) return;
-      setDocuments((current) => offset ? [...current, ...result.documents] : result.documents);
-      setNextOffset(result.next_offset);
+      setDocuments((current) => cursor ? [...current, ...result.documents] : result.documents);
+      setNextCursor(result.next_cursor);
       setError("");
     } catch (cause) {
       if (requestNumber !== latestRequest.current) return;
       setError(cause instanceof Error ? cause.message : "Could not load follow-ups");
     } finally {
-      if (offset) loadingMoreRef.current = false;
+      if (cursor) loadingMoreRef.current = false;
       if (requestNumber === latestRequest.current) {
         setLoading(false);
         setLoadingMore(false);
@@ -65,8 +65,9 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
         <h1>Needs action<span className="heading-period">.</span></h1>
         <p>Only documents with something left to do appear here.</p>
       </div>
+      <Button type="button" variant="secondary" aria-label="Refresh" title="Refresh follow-ups" onClick={() => void load()}><RotateCcw size={16} /> <span className="refresh-label">Refresh</span></Button>
     </div>
-    {error && <div className="inline-error" role="alert">{error}<button onClick={() => void load(documents.length ? nextOffset ?? 0 : 0)}>Retry</button></div>}
+    {error && <div className="inline-error" role="alert">{error}<button onClick={() => void load(documents.length ? nextCursor : null)}>Retry</button></div>}
     {loading ? <p>Loading follow-ups…</p> : error && !documents.length ? null : documents.length === 0 ? (
       <div className="empty-state">
         <div className="empty-icon"><ClipboardList size={32} strokeWidth={1.5} /></div>
@@ -87,7 +88,7 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
         </Button>
       </article>)}
     </div>
-    {nextOffset !== null && <Button type="button" variant="secondary" className="load-more" disabled={loadingMore} onClick={() => void load(nextOffset)}>{loadingMore ? "Loading…" : "Show more follow-ups"}</Button>}
+    {nextCursor !== null && <Button type="button" variant="secondary" className="load-more" disabled={loadingMore} onClick={() => void load(nextCursor)}>{loadingMore ? "Loading…" : "Show more follow-ups"}</Button>}
     </>}
   </>;
 }

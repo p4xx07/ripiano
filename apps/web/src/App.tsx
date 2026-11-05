@@ -21,6 +21,7 @@ import {
   FileText,
   FolderOpen,
   ImagePlus,
+  Inbox,
   LockKeyhole,
   LogOut,
   MapPin,
@@ -35,6 +36,7 @@ import {
 import { Document, formatDate, request, Session } from "./api";
 import DocumentPanel from "./DocumentPanel";
 import ActionPanel from "./ActionPanel";
+import InboxPanel from "./InboxPanel";
 import AgentPanel from "./AgentPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
@@ -316,12 +318,13 @@ function App() {
   const initialSticker =
     new URLSearchParams(window.location.search).get("sticker") ?? "";
   const [view, setView] = useState<
-    "documents" | "actions" | "tags" | "physical" | "backups" | "agents"
+    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents"
   >(initialSticker ? "physical" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
   );
   const [actionRefresh, setActionRefresh] = useState(0);
+  const [inboxRefresh, setInboxRefresh] = useState(0);
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -505,6 +508,12 @@ function App() {
         </div>
         <div className="sidebar-label">YOUR SPACE</div>
         <button
+          className={`nav-link ${view === "inbox" ? "active" : ""}`}
+          onClick={() => { setView("inbox"); setMenuOpen(false); }}
+        >
+          <Inbox size={18} /> Inbox
+        </button>
+        <button
           className={`nav-link ${view === "documents" ? "active" : ""}`}
           onClick={() => {
             setView("documents");
@@ -595,6 +604,8 @@ function App() {
             Your archive <span>/</span>{" "}
             {view === "documents"
               ? "All documents"
+              : view === "inbox"
+                ? "Inbox"
               : view === "actions"
                 ? "Needs action"
               : view === "tags"
@@ -612,6 +623,8 @@ function App() {
         <section className="page-content">
           {view === "backups" ? (
             <BackupPanel />
+          ) : view === "inbox" ? (
+            <InboxPanel refreshKey={inboxRefresh} onOpenDocument={setSelectedDocument} />
           ) : view === "actions" ? (
             <ActionPanel refreshKey={actionRefresh} onOpenDocument={setSelectedDocument} />
           ) : view === "agents" ? (
@@ -973,7 +986,7 @@ function App() {
           key={selectedDocument.id}
           initial={selectedDocument}
           onClose={() => setSelectedDocument(null)}
-          onSaved={() => { void loadDocuments(query); setActionRefresh((value) => value + 1); }}
+          onSaved={() => { void loadDocuments(query); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }}
           onOpenTags={() => {
             setSelectedDocument(null);
             setView("tags");

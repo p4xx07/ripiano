@@ -72,6 +72,7 @@ def _document_json(document):
         "title": document.title,
         "original_name": document.original_name,
         "duplicate_of": {"id": str(document.duplicate_of_id), "title": document.duplicate_of.title} if document.duplicate_of_id else None,
+        "duplicate_reviewed_at": document.duplicate_reviewed_at.isoformat() if document.duplicate_reviewed_at else None,
         "source": document.source,
         "status": document.status,
         "archive_available": bool(document.archive_path) and document.status == Document.Status.READY,
@@ -151,9 +152,12 @@ def documents(request):
             return JsonResponse({"error": "Use a page cursor"}, status=400)
         queryset = Document.objects.filter(owner=request.user).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
-        view = "actions" if request.GET.get("view") == "actions" else "search" if query else "documents"
+        requested_view = request.GET.get("view")
+        view = "actions" if requested_view == "actions" else "exceptions" if requested_view == "exceptions" else "search" if query else "documents"
         if view == "actions":
             queryset = queryset.filter(action_status=Document.ActionStatus.OPEN)
+        elif view == "exceptions":
+            queryset = queryset.filter(Q(status=Document.Status.FAILED) | Q(duplicate_of__isnull=False, duplicate_reviewed_at__isnull=True))
         if query:
             queryset = queryset.annotate(
                 tag_match=Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=query)),
@@ -167,7 +171,7 @@ def documents(request):
                 queryset = queryset.filter(Q(title__icontains=query) | Q(extracted_text__icontains=query) | Q(action_note__icontains=query) | Q(tag_match=True) | Q(sticker_match=True))
         if view == "actions":
             queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at", "-id")
-        elif not query:
+        elif view != "search":
             queryset = queryset.order_by("-created_at", "-id")
         elif connection.vendor != "postgresql":
             queryset = queryset.order_by("-created_at", "-id")
@@ -270,6 +274,11 @@ def document_detail(request, document_id):
                 return JsonResponse({"error": "Action note must be at most 500 characters"}, status=400)
             document.action_note = body["action_note"].strip()
             changes.append("action_note")
+        if "duplicate_reviewed" in body:
+            if not isinstance(body["duplicate_reviewed"], bool) or document.duplicate_of_id is None:
+                return JsonResponse({"error": "Only exact copies can be reviewed"}, status=400)
+            document.duplicate_reviewed_at = timezone.now() if body["duplicate_reviewed"] else None
+            changes.append("duplicate_reviewed_at")
         chosen = None
         if "tags" in body:
             if not isinstance(body["tags"], list) or len(body["tags"]) > 100:

@@ -44,6 +44,7 @@ export type Document = {
   title: string;
   original_name: string;
   duplicate_of: { id: string; title: string } | null;
+  duplicate_reviewed_at: string | null;
   source: "web" | "telegram" | "android" | "folder";
   status: "pending" | "processing" | "ready" | "failed";
   archive_available: boolean;

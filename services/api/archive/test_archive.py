@@ -308,6 +308,45 @@ def test_action_cursor_keeps_undated_follow_ups_after_dated_ones():
 
 
 @pytest.mark.django_db
+def test_exception_inbox_only_shows_failed_and_unreviewed_copies():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+
+    def create(user, title, **fields):
+        return Document.objects.create(
+            owner=user, title=title, original_name=f"{title}.pdf", original_path=f"originals/{title}.pdf",
+            original_mime="application/pdf", original_sha256="a" * 64, original_size=10, **fields,
+        )
+
+    original = create(owner, "Original", status=Document.Status.READY)
+    duplicate = create(owner, "Copy", duplicate_of=original)
+    failed = create(owner, "Failed", status=Document.Status.FAILED, error="OCR failed")
+    create(other, "Foreign failed", status=Document.Status.FAILED)
+    client = Client()
+    client.force_login(owner)
+
+    def inbox():
+        return {item["id"] for item in client.get("/api/documents?view=exceptions").json()["documents"]}
+
+    assert inbox() == {str(duplicate.id), str(failed.id)}
+    assert client.patch(f"/api/documents/{original.id}", json.dumps({"duplicate_reviewed": True}), content_type="application/json").status_code == 400
+    assert client.patch(f"/api/documents/{duplicate.id}", json.dumps({"duplicate_reviewed": "yes"}), content_type="application/json").status_code == 400
+    reviewed = client.patch(f"/api/documents/{duplicate.id}", json.dumps({"duplicate_reviewed": True}), content_type="application/json").json()
+    assert reviewed["duplicate_reviewed_at"] is not None
+    assert inbox() == {str(failed.id)}
+    reopened = client.patch(f"/api/documents/{duplicate.id}", json.dumps({"duplicate_reviewed": False}), content_type="application/json").json()
+    assert reopened["duplicate_reviewed_at"] is None
+    assert inbox() == {str(duplicate.id), str(failed.id)}
+
+    with patch("archive.tasks.process_document.delay"):
+        assert client.post(f"/api/documents/{failed.id}/retry").status_code == 202
+    assert inbox() == {str(duplicate.id)}
+    client.force_login(other)
+    assert client.get("/api/documents?view=exceptions").json()["counts"]["total"] == 1
+    assert client.patch(f"/api/documents/{duplicate.id}", json.dumps({"duplicate_reviewed": True}), content_type="application/json").status_code == 404
+
+
+@pytest.mark.django_db
 def test_search_finds_tags_action_notes_and_sticker_codes_without_crossing_owners():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     other = get_user_model().objects.create_user("other", password="secure-password-2")

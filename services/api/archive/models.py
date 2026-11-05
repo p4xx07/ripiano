@@ -34,6 +34,7 @@ class Document(models.Model):
     original_sha256 = models.CharField(max_length=64)
     original_size = models.PositiveBigIntegerField()
     duplicate_of = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="exact_copies")
+    duplicate_reviewed_at = models.DateTimeField(null=True, blank=True)
     archive_path = models.CharField(max_length=500, blank=True)
     extracted_text = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)

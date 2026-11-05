@@ -23,6 +23,8 @@ The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved or
 
 ### Run locally
 
+Documents can optionally be marked **Needs action** with a due date and note. The separate action list shows only open follow-ups; completing one keeps the document in the archive. Uploading and automatic tags do not require this step.
+
 1. Copy `.env.example` to `.env` and replace the three example secrets with strong unique values.
 2. Run `docker compose up --build -d` from this directory.
 3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account.

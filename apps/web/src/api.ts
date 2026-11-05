@@ -50,6 +50,10 @@ export type Document = {
   error: string;
   created_at: string;
   document_date: string | null;
+  action_status: "none" | "open" | "done";
+  action_due_date: string | null;
+  action_note: string;
+  action_completed_at: string | null;
   tags: {
     id: string;
     name: string;

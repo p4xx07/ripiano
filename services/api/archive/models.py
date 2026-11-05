@@ -18,6 +18,11 @@ class Document(models.Model):
         READY = "ready", "Ready"
         FAILED = "failed", "Failed"
 
+    class ActionStatus(models.TextChoices):
+        NONE = "none", "No follow-up"
+        OPEN = "open", "Needs action"
+        DONE = "done", "Completed"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="documents")
     source = models.CharField(max_length=30, choices=Source.choices, default=Source.WEB)
@@ -37,6 +42,10 @@ class Document(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
     document_date = models.DateField(null=True, blank=True)
+    action_status = models.CharField(max_length=10, choices=ActionStatus.choices, default=ActionStatus.NONE, db_index=True)
+    action_due_date = models.DateField(null=True, blank=True)
+    action_note = models.CharField(max_length=500, blank=True)
+    action_completed_at = models.DateTimeField(null=True, blank=True)
     tags = models.ManyToManyField("Tag", through="DocumentTag", related_name="documents")
 
     class Meta:

@@ -1,4 +1,5 @@
 from datetime import timedelta
+import json
 from io import BytesIO
 from uuid import uuid4
 from unittest.mock import patch
@@ -159,3 +160,41 @@ def test_failed_document_can_retry_and_archive_is_owner_only(tmp_path):
         document.status = Document.Status.READY
         document.save(update_fields=["archive_path", "status"])
         assert b"".join(client.get(f"/api/documents/{document.id}/archive").streaming_content).startswith(b"%PDF-")
+
+
+@pytest.mark.django_db
+def test_follow_ups_are_optional_owner_scoped_and_due_ordered():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+
+    def make_document(user, title):
+        return Document.objects.create(
+            owner=user, title=title, original_name=f"{title}.pdf", original_path=f"originals/{title}.pdf",
+            original_mime="application/pdf", original_sha256="a" * 64, original_size=10,
+        )
+
+    later = make_document(owner, "Later")
+    sooner = make_document(owner, "Sooner")
+    no_due_date = make_document(owner, "No due date")
+    foreign = make_document(other, "Foreign")
+    client = Client()
+    client.force_login(owner)
+    assert client.get("/api/documents?view=actions").json()["documents"] == []
+
+    def update(document, body):
+        return client.patch(f"/api/documents/{document.id}", json.dumps(body), content_type="application/json")
+
+    assert update(later, {"action_status": "open", "action_due_date": "2027-02-01", "action_note": "Pay this"}).status_code == 200
+    assert update(sooner, {"action_status": "open", "action_due_date": "2027-01-01"}).status_code == 200
+    assert update(no_due_date, {"action_status": "open"}).status_code == 200
+    assert update(foreign, {"action_status": "open"}).status_code == 404
+    assert [item["title"] for item in client.get("/api/documents?view=actions").json()["documents"]] == ["Sooner", "Later", "No due date"]
+    assert update(sooner, {"action_due_date": "bad"}).status_code == 400
+    assert update(sooner, {"action_status": "wrong"}).status_code == 400
+    assert update(sooner, {"action_note": "x" * 501}).status_code == 400
+
+    completed = update(sooner, {"action_status": "done"}).json()
+    assert completed["action_completed_at"] is not None
+    assert [item["title"] for item in client.get("/api/documents?view=actions").json()["documents"]] == ["Later", "No due date"]
+    reopened = update(sooner, {"action_status": "open"}).json()
+    assert reopened["action_completed_at"] is None

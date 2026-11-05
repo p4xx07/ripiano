@@ -9,10 +9,11 @@ from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import IntegrityError, connection, transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
+from django.utils import timezone
 
 from .models import BackupRun, Document, DocumentTag, Tag, TagOverride
 from .physical_views import copy_json
@@ -43,6 +44,10 @@ def _document_json(document):
         "error": document.error,
         "created_at": document.created_at.isoformat(),
         "document_date": document.document_date.isoformat() if document.document_date else None,
+        "action_status": document.action_status,
+        "action_due_date": document.action_due_date.isoformat() if document.action_due_date else None,
+        "action_note": document.action_note,
+        "action_completed_at": document.action_completed_at.isoformat() if document.action_completed_at else None,
         "tags": [{"id": str(link.tag_id), "name": link.tag.name, "color": link.tag.color, "origin": link.origin} for link in document.tag_links.all()],
         "physical_copies": [copy_json(copy) for copy in document.physical_copies.all()],
         "snippet": document.extracted_text[:240],
@@ -110,6 +115,8 @@ def documents(request):
     if request.method == "GET":
         queryset = Document.objects.filter(owner=request.user).select_related("duplicate_of").prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
+        if request.GET.get("view") == "actions":
+            queryset = queryset.filter(action_status=Document.ActionStatus.OPEN)
         if query:
             if connection.vendor == "postgresql":
                 vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple")
@@ -117,6 +124,8 @@ def documents(request):
                 queryset = queryset.annotate(search_rank=SearchRank(vector, search_query)).filter(search_rank__gt=0).order_by("-search_rank", "-created_at")
             else:
                 queryset = queryset.filter(Q(title__icontains=query) | Q(extracted_text__icontains=query))
+        if request.GET.get("view") == "actions":
+            queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at")
         return JsonResponse({"documents": [_document_json(doc) for doc in queryset[:50]]})
 
     upload = request.FILES.get("document")
@@ -168,6 +177,25 @@ def document_detail(request, document_id):
             except (TypeError, ValueError):
                 return JsonResponse({"error": "Use an ISO date (YYYY-MM-DD)"}, status=400)
             changes.append("document_date")
+        if "action_status" in body:
+            status = body["action_status"]
+            if status not in Document.ActionStatus.values:
+                return JsonResponse({"error": "Invalid action status"}, status=400)
+            if status != document.action_status:
+                document.action_status = status
+                document.action_completed_at = timezone.now() if status == Document.ActionStatus.DONE else None
+                changes.extend(["action_status", "action_completed_at"])
+        if "action_due_date" in body:
+            try:
+                document.action_due_date = date.fromisoformat(body["action_due_date"]) if body["action_due_date"] else None
+            except (TypeError, ValueError):
+                return JsonResponse({"error": "Use an ISO due date (YYYY-MM-DD)"}, status=400)
+            changes.append("action_due_date")
+        if "action_note" in body:
+            if not isinstance(body["action_note"], str) or len(body["action_note"].strip()) > 500:
+                return JsonResponse({"error": "Action note must be at most 500 characters"}, status=400)
+            document.action_note = body["action_note"].strip()
+            changes.append("action_note")
         chosen = None
         if "tags" in body:
             if not isinstance(body["tags"], list) or len(body["tags"]) > 100:

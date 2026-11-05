@@ -14,6 +14,7 @@ import {
   Camera,
   Check,
   Clock3,
+  ClipboardList,
   Copy,
   DatabaseBackup,
   Eye,
@@ -33,6 +34,7 @@ import {
 } from "lucide-react";
 import { Document, formatDate, request, Session } from "./api";
 import DocumentPanel from "./DocumentPanel";
+import ActionPanel from "./ActionPanel";
 import AgentPanel from "./AgentPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
@@ -310,11 +312,12 @@ function App() {
   const initialSticker =
     new URLSearchParams(window.location.search).get("sticker") ?? "";
   const [view, setView] = useState<
-    "documents" | "tags" | "physical" | "backups" | "agents"
+    "documents" | "actions" | "tags" | "physical" | "backups" | "agents"
   >(initialSticker ? "physical" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
   );
+  const [actionRefresh, setActionRefresh] = useState(0);
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -495,6 +498,12 @@ function App() {
           <FolderOpen size={18} /> All documents
         </button>
         <button
+          className={`nav-link ${view === "actions" ? "active" : ""}`}
+          onClick={() => { setView("actions"); setMenuOpen(false); }}
+        >
+          <ClipboardList size={18} /> Needs action
+        </button>
+        <button
           className={`nav-link ${view === "tags" ? "active" : ""}`}
           onClick={() => {
             setView("tags");
@@ -569,6 +578,8 @@ function App() {
             Your archive <span>/</span>{" "}
             {view === "documents"
               ? "All documents"
+              : view === "actions"
+                ? "Needs action"
               : view === "tags"
                 ? "Tags & filing"
                 : view === "physical"
@@ -584,6 +595,8 @@ function App() {
         <section className="page-content">
           {view === "backups" ? (
             <BackupPanel />
+          ) : view === "actions" ? (
+            <ActionPanel refreshKey={actionRefresh} onOpenDocument={setSelectedDocument} />
           ) : view === "agents" ? (
             <AgentPanel />
           ) : view === "tags" ? (
@@ -927,7 +940,7 @@ function App() {
           key={selectedDocument.id}
           initial={selectedDocument}
           onClose={() => setSelectedDocument(null)}
-          onSaved={() => void loadDocuments(query)}
+          onSaved={() => { void loadDocuments(query); setActionRefresh((value) => value + 1); }}
           onOpenTags={() => {
             setSelectedDocument(null);
             setView("tags");

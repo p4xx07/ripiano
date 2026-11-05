@@ -1146,7 +1146,8 @@ button:disabled {
 }
 .tag-create-card input:not([type="color"]),
 .tag-create-card textarea,
-.detail-label input {
+.detail-label input,
+.detail-label select {
   width: 100%;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -1158,7 +1159,8 @@ button:disabled {
 }
 .tag-create-card input:focus,
 .tag-create-card textarea:focus,
-.detail-label input:focus {
+.detail-label input:focus,
+.detail-label select:focus {
   border-color: var(--color-focus);
   box-shadow: 0 0 0 3px var(--color-focus-halo);
 }

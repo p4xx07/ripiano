@@ -33,6 +33,9 @@ export default function DocumentPanel({
   const [current, setCurrent] = useState(initial);
   const [title, setTitle] = useState(initial.title);
   const [date, setDate] = useState(initial.document_date ?? "");
+  const [actionStatus, setActionStatus] = useState(initial.action_status);
+  const [actionDueDate, setActionDueDate] = useState(initial.action_due_date ?? "");
+  const [actionNote, setActionNote] = useState(initial.action_note);
   const [selected, setSelected] = useState<string[]>(
     initial.tags.map((tag) => tag.id),
   );
@@ -73,6 +76,9 @@ export default function DocumentPanel({
         body: JSON.stringify({
           title,
           document_date: date || null,
+          action_status: actionStatus,
+          action_due_date: actionDueDate || null,
+          action_note: actionNote,
           tags: selected,
         }),
       });
@@ -191,6 +197,21 @@ export default function DocumentPanel({
               onChange={(event) => setDate(event.target.value)}
             />
           </Field>
+          <Field label="Follow-up" hint="Optional" className="detail-label">
+            <select value={actionStatus} onChange={(event) => setActionStatus(event.target.value as Document["action_status"])}>
+              <option value="none">Nothing to do</option>
+              <option value="open">Needs action</option>
+              <option value="done">Completed</option>
+            </select>
+          </Field>
+          {actionStatus === "open" && <>
+            <Field label="Due date" hint="Optional" className="detail-label">
+              <input type="date" value={actionDueDate} onChange={(event) => setActionDueDate(event.target.value)} />
+            </Field>
+            <Field label="What needs doing?" hint="Optional" className="detail-label">
+              <input value={actionNote} onChange={(event) => setActionNote(event.target.value)} maxLength={500} placeholder="For example, pay by Friday" />
+            </Field>
+          </>}
           <div className="detail-label">
             Tags <small>Choose only what helps</small>
           </div>

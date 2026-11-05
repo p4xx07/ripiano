@@ -41,15 +41,18 @@ test("Inbox shows an exact copy and keeping both preserves the document", async 
   const row = page.getByRole("article").filter({ has: page.getByRole("button", { name: `${name}-copy`, exact: true }) });
   await expect(row).toContainText("Exact copy of");
   await page.screenshot({ path: testInfo.outputPath("inbox.png") });
-  await row.getByRole("button", { name: "Keep both" }).click();
+  await row.getByRole("button", { name: "Keep both" }).focus();
+  await page.keyboard.press("Enter");
   await expect(row).toBeHidden();
+  await expect(page.locator(".exception-row .document-title-button").first()).toBeFocused();
+  await expect(page.getByRole("status")).toContainText("Both documents remain in the Library");
 
   await navigate(page, "All documents");
   await page.getByRole("textbox", { name: "Search documents" }).fill(`${name}-copy`);
   await expect(page.getByRole("button", { name: `${name}-copy`, exact: true })).toBeVisible();
 });
 
-test("failed OCR can be retried directly from Inbox", async ({ page }) => {
+test("failed OCR can be retried directly from Inbox", async ({ page }, testInfo) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
   let failed = true;
   await page.route("**/api/documents?view=exceptions*", (route) => route.fulfill({
@@ -77,6 +80,11 @@ test("failed OCR can be retried directly from Inbox", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
   await navigate(page, "Inbox");
   await expect(page.getByText("OCR could not finish: OCR failed")).toBeVisible();
-  await page.getByRole("button", { name: "Try OCR again" }).click();
-  await expect(page.getByRole("heading", { name: "Nothing needs your attention." })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("failed-ocr.png") });
+  await page.getByRole("button", { name: "Try OCR again" }).focus();
+  await page.keyboard.press("Enter");
+  const emptyHeading = page.getByRole("heading", { name: "Nothing needs your attention." });
+  await expect(emptyHeading).toBeVisible();
+  await expect(emptyHeading).toBeFocused();
+  await expect(page.getByRole("status")).toContainText("OCR restarted");
 });

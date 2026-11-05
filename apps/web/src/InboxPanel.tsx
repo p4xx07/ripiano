@@ -13,8 +13,11 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
   const [loadingMore, setLoadingMore] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const latestRequest = useRef(0);
   const loadingMoreRef = useRef(false);
+  const moveFocusAfterLoad = useRef(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (cursor: string | null = null) => {
     if (cursor && loadingMoreRef.current) return;
@@ -33,6 +36,7 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
       setError("");
     } catch (cause) {
       if (requestNumber !== latestRequest.current) return;
+      moveFocusAfterLoad.current = false;
       setError(cause instanceof Error ? cause.message : "Could not load Inbox");
     } finally {
       if (cursor) loadingMoreRef.current = false;
@@ -44,6 +48,11 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
   }, []);
 
   useEffect(() => { void load(); }, [load, refreshKey]);
+  useEffect(() => {
+    if (!moveFocusAfterLoad.current) return;
+    moveFocusAfterLoad.current = false;
+    contentRef.current?.querySelector<HTMLElement>(".exception-row .document-title-button, .empty-state h3")?.focus();
+  }, [documents]);
 
   async function keepBoth(document: Document) {
     setBusyId(document.id);
@@ -53,8 +62,11 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
         method: "PATCH",
         body: JSON.stringify({ duplicate_reviewed: true }),
       });
+      moveFocusAfterLoad.current = true;
+      setNotice("Copy reviewed. Both documents remain in the Library.");
       await load();
     } catch (cause) {
+      moveFocusAfterLoad.current = false;
       setError(cause instanceof Error ? cause.message : "Could not review this copy");
     } finally {
       setBusyId(null);
@@ -66,8 +78,11 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
     setError("");
     try {
       await request(`/api/documents/${document.id}/retry`, { method: "POST" });
+      moveFocusAfterLoad.current = true;
+      setNotice("OCR restarted. The original remains safe in the Library.");
       await load();
     } catch (cause) {
+      moveFocusAfterLoad.current = false;
       setError(cause instanceof Error ? cause.message : "Could not retry OCR");
     } finally {
       setBusyId(null);
@@ -83,11 +98,13 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
       </div>
       <Button type="button" variant="secondary" aria-label="Refresh" title="Refresh Inbox" onClick={() => void load()}><RotateCcw size={16} /> <span className="refresh-label">Refresh</span></Button>
     </div>
+    <div className="visually-hidden" role="status" aria-live="polite">{notice}</div>
     {error && <div className="inline-error" role="alert">{error}<button onClick={() => void load(documents.length ? nextCursor : null)}>Retry</button></div>}
+    <div ref={contentRef}>
     {loading ? <p>Loading Inbox…</p> : error && !documents.length ? null : documents.length === 0 ? (
       <div className="empty-state">
         <div className="empty-icon"><Inbox size={32} strokeWidth={1.5} /></div>
-        <h3>Nothing needs your attention.</h3>
+        <h3 tabIndex={-1}>Nothing needs your attention.</h3>
         <p>New documents stay in the Library automatically. Failed processing or an exact copy will appear here.</p>
       </div>
     ) : <>
@@ -107,5 +124,6 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
       </div>
       {nextCursor && <Button type="button" variant="secondary" className="load-more" disabled={loadingMore} onClick={() => void load(nextCursor)}>{loadingMore ? "Loading…" : "Show more exceptions"}</Button>}
     </>}
+    </div>
   </>;
 }

@@ -402,6 +402,104 @@ button:disabled {
   gap: var(--space-compact);
   margin: var(--space-5) 0 var(--space-4);
 }
+.saved-search-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  margin-top: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+}
+.saved-search-heading,
+.saved-search-actions,
+.saved-search-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.saved-search-heading {
+  color: var(--color-accent-strong);
+  font-size: var(--type-small);
+}
+.saved-search-list {
+  flex: 1 1 auto;
+}
+.saved-search-empty {
+  color: var(--color-muted);
+  font-size: var(--type-small);
+}
+.saved-search-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-tint);
+}
+.saved-search-chip.active {
+  border-color: var(--color-accent-strong);
+}
+.saved-search-chip button {
+  border: 0;
+  background: transparent;
+  color: var(--color-accent-strong);
+  min-width: 40px;
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+}
+.saved-search-chip button:first-child {
+  display: block;
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 var(--space-3);
+  font-size: var(--type-small);
+  font-weight: 700;
+}
+.saved-search-actions {
+  margin-left: auto;
+  gap: var(--space-4);
+}
+.saved-search-actions .text-action {
+  min-height: 36px;
+}
+.saved-search-form {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.saved-search-form input {
+  min-width: 150px;
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft);
+  padding: var(--space-compact);
+  color: var(--color-heading);
+  background: var(--color-surface);
+}
+.saved-search-form input:focus {
+  outline: 0;
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 3px var(--color-focus-halo);
+}
+.saved-search-form > button:last-child {
+  border: 0;
+  background: transparent;
+  min-width: 40px;
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  color: var(--color-muted);
+}
 .filter-toggle {
   white-space: nowrap;
 }

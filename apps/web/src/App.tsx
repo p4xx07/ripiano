@@ -34,13 +34,14 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { Document, FilingItem, formatDate, request, Session, Tag } from "./api";
+import { Document, FilingItem, formatDate, LibraryFilters, request, Session, Tag } from "./api";
 import DocumentPanel from "./DocumentPanel";
 import ActionPanel from "./ActionPanel";
 import InboxPanel from "./InboxPanel";
 import AgentPanel from "./AgentPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
+import SavedSearchBar from "./SavedSearchBar";
 import { Button, Field, Modal } from "./ui";
 
 type BackupRun = {
@@ -50,14 +51,6 @@ type BackupRun = {
   snapshot_name: string;
   error: string;
   created_at: string;
-};
-
-type LibraryFilters = {
-  tag_id: string;
-  correspondent_id: string;
-  document_type_id: string;
-  date_from: string;
-  date_to: string;
 };
 
 const emptyLibraryFilters: LibraryFilters = {
@@ -760,6 +753,12 @@ function App() {
                   <RotateCcw size={16} /> <span className="refresh-label">Refresh</span>
                 </Button>
               </div>
+              <SavedSearchBar query={query} filters={filters} onApply={(savedQuery, savedFilters) => {
+                setQuery(savedQuery);
+                setFilters(savedFilters);
+                setNextCursor(null);
+                setShowFilters(Object.values(savedFilters).some(Boolean));
+              }} />
               <div className="toolbar">
                 <div className="search-box">
                   <Search size={19} />

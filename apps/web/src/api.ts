@@ -24,6 +24,25 @@ export type Rule = {
 
 export type FilingItem = { id: string; name: string };
 
+export type LibraryFilters = {
+  tag_id: string;
+  correspondent_id: string;
+  document_type_id: string;
+  date_from: string;
+  date_to: string;
+};
+
+export type SavedView = {
+  id: string;
+  name: string;
+  query: string;
+  tag_id: string | null;
+  correspondent_id: string | null;
+  document_type_id: string | null;
+  date_from: string | null;
+  date_to: string | null;
+};
+
 export type FilingRule = {
   id: string;
   kind: "correspondent" | "document_type";

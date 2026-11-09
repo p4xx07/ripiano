@@ -70,7 +70,7 @@ test("large batch keeps every failure and announces progress", async ({ page }, 
   })));
 
   await secondRequest;
-  const status = page.getByRole("status");
+  const status = page.locator(".upload-progress");
   await expect(status).toContainText("Adding 2 of 5");
   await expect(status).toHaveAttribute("aria-live", "polite");
   await expect(status).toHaveAttribute("aria-atomic", "true");

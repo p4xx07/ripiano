@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import secrets
 from datetime import date, datetime
 from pathlib import Path
@@ -66,7 +67,41 @@ def _payload(request):
         return None
 
 
-def _document_json(document):
+def _excerpt(text, query):
+    if not text or not query:
+        return ""
+    match = re.search(re.escape(query), text, re.IGNORECASE)
+    if match is None:
+        terms = sorted(set(re.findall(r"\w+", query)), key=lambda value: (-len(value), value.casefold()))
+        for term in terms:
+            if len(term) < 2:
+                continue
+            match = re.search(re.escape(term), text, re.IGNORECASE)
+            if match:
+                break
+    if match is None:
+        return ""
+    start = max(0, match.start() - 32)
+    end = min(len(text), match.end() + 120, start + 240)
+    excerpt = " ".join(text[start:end].split())
+    return ("…" if start else "") + excerpt + ("…" if end < len(text) else "")
+
+
+def _search_snippet(document, query):
+    if not query:
+        return "", None
+    for text, source in ((document.extracted_text, "document"), (document.action_note, "note")):
+        excerpt = _excerpt(text, query)
+        if excerpt:
+            return excerpt, source
+    for copy in document.physical_copies.all():
+        if query.casefold() in copy.sticker_code.casefold():
+            return copy.sticker_code, "sticker"
+    return "", None
+
+
+def _document_json(document, query=""):
+    snippet, snippet_source = _search_snippet(document, query)
     return {
         "id": str(document.id),
         "title": document.title,
@@ -89,7 +124,8 @@ def _document_json(document):
         "action_completed_at": document.action_completed_at.isoformat() if document.action_completed_at else None,
         "tags": [{"id": str(link.tag_id), "name": link.tag.name, "color": link.tag.color, "origin": link.origin} for link in document.tag_links.all()],
         "physical_copies": [copy_json(copy) for copy in document.physical_copies.all()],
-        "snippet": document.extracted_text[:240],
+        "snippet": snippet,
+        "snippet_source": snippet_source,
     }
 
 
@@ -232,7 +268,7 @@ def documents(request):
         page = list(queryset[:51])
         visible = page[:50]
         return JsonResponse({
-            "documents": [_document_json(doc) for doc in visible],
+            "documents": [_document_json(doc, query=query) for doc in visible],
             "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, counts) if len(page) > 50 else None,
             "counts": counts,
         })

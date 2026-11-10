@@ -1,12 +1,13 @@
-# Ripiano handoff — updated 9 November 2026
+# Ripiano handoff — updated 10 November 2026
 
 The user wants exactly one feature completed per turn, then a stop so they can monitor credit usage and decide whether to continue. Resume on branch `codex/initial-implementation` in draft PR [#1](https://github.com/p4xx07/ripiano/pull/1). Do not merge yet. The user has authorized merging into `main` **when the app is actually done** and its release gates pass.
 
 ## Current checkpoint
 
 - Core archive, OCR/search, PWA capture paths, native Android debug scanner, automatic tag/sender/type phrase filing, physical stickers/locations, Telegram and watched-folder inputs, agent MCP grants, NAS backup output, and Library filters are implemented in prior commits.
-- Saved searches now have owner-scoped API and PWA controls to create, reopen, rename, update criteria, and delete. The backend was checkpointed at `1896f45`; the PWA completion is in the next commit. Desktop/mobile evidence is in `qa-artifacts/1896f45/saved-searches`.
-- The latest API suite passed 32 tests, the production PWA built, and migration checks found no changes. The full browser suite result and commit SHA are recorded in the saved-search QA review.
+- Saved searches have owner-scoped API and PWA controls to create, reopen, rename, update criteria, and delete. The complete feature was checkpointed at `cb857fe`; desktop/mobile evidence is in `qa-artifacts/1896f45/saved-searches`.
+- Search results now show a short match-centered excerpt from OCR text or action notes, or a matching sticker code. The unfiltered Library no longer repeats the beginning of every OCR result. Desktop/mobile screenshots and verification are in `qa-artifacts/cb857fe/search-snippets`.
+- The latest API suite passed 32 tests, the production PWA built, and migration checks found no changes. The full browser suite result is recorded in the search-snippet QA review.
 
 ## Resume from here
 

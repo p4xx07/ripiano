@@ -20,6 +20,10 @@ These show the running development stack with synthetic test documents. The mobi
 | --- | --- |
 | ![Desktop Library with saved searches and filters](qa-artifacts/1896f45/saved-searches/desktop/saved-search.png) | ![Mobile Library with saved searches and filters](qa-artifacts/1896f45/saved-searches/mobile/saved-search.png) |
 
+| Matching text on desktop | Matching text on mobile |
+| --- | --- |
+| ![Desktop search result showing a matching OCR passage](qa-artifacts/cb857fe/search-snippets/desktop/search-snippet.png) | ![Mobile search result showing a matching OCR passage](qa-artifacts/cb857fe/search-snippets/mobile/search-snippet.png) |
+
 ## Planning documents
 
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
@@ -80,7 +84,7 @@ This excerpt illustrates storage and exposure; use the linked full stack for dep
 - Android debug build: `cd apps/android && ./gradlew :app:assembleDebug` with JDK 17 and Android SDK 36. See [Android setup](apps/android/README.md).
 - Browser journey (running local stack and a disposable owner account): `cd apps/web && RIPIANO_E2E_ORIGIN=http://localhost:8080 RIPIANO_E2E_USERNAME=... RIPIANO_E2E_PASSWORD=... npm run test:e2e`. This creates test documents, tags, and locations in that account.
 
-The document originals are stored under the mounted media path. OCR output is derived and can be rebuilt. Simple search finds titles, OCR text, tag names, correspondent names, document types, action notes, and sticker codes. The Library can narrow results by a specific tag, sender, document type, and document-date range; these filters combine with text search. Save a search to reopen it in one tap; rename it, update its criteria, or delete it from the Library. The Library and Needs action lists load additional results in cursor-based pages of 50; Refresh shows new arrivals. Advanced query syntax remains scheduled for a later slice.
+The document originals are stored under the mounted media path. OCR output is derived and can be rebuilt. Simple search finds titles, OCR text, tag names, correspondent names, document types, action notes, and sticker codes. Search results show the matching passage from OCR text or action notes, or the matching sticker code; the unfiltered Library stays compact. The Library can narrow results by a specific tag, sender, document type, and document-date range; these filters combine with text search. Save a search to reopen it in one tap; rename it, update its criteria, or delete it from the Library. The Library and Needs action lists load additional results in cursor-based pages of 50; Refresh shows new arrivals. Advanced query syntax remains scheduled for a later slice.
 
 ### Optional Telegram input
 

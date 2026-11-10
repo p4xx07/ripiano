@@ -61,6 +61,13 @@ test("capture, find, tag, and locate a paper copy", async ({
   await page.getByRole("textbox", { name: "Search documents" }).fill("9473");
   await searchable;
   await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  const matchingRow = page.locator(".document-row").filter({
+    has: page.getByRole("button", { name, exact: true }),
+  });
+  const excerpt = matchingRow.locator(".document-snippet");
+  await expect(excerpt).toContainText("Document text:");
+  await expect(excerpt).toContainText("9473");
+  await matchingRow.screenshot({ path: testInfo.outputPath("search-snippet.png") });
   await page.screenshot({
     path: testInfo.outputPath("archive.png"),
     fullPage: true,

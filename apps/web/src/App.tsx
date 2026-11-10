@@ -897,7 +897,11 @@ function App() {
                             </>
                           )}
                         </div>
-                        {doc.snippet && <p>{doc.snippet}</p>}
+                        {doc.snippet && (
+                          <p className="document-snippet">
+                            <strong>{doc.snippet_source === "note" ? "Action note" : doc.snippet_source === "sticker" ? "Sticker" : "Document text"}:</strong> {doc.snippet}
+                          </p>
+                        )}
                         {doc.tags.length > 0 && <TagSummary tags={doc.tags} />}
                         {doc.duplicate_of && (
                           <span className="duplicate-chip">

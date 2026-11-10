@@ -495,7 +495,8 @@ def test_search_finds_tags_action_notes_and_sticker_codes_without_crossing_owner
     DocumentTag.objects.create(document=document, tag=tag)
     PhysicalCopy.objects.create(document=document, sticker_code="R-ABC23456")
     document.action_note = "Renew before December"
-    document.save(update_fields=["action_note"])
+    document.extracted_text = ("Opening words " * 40) + "hidden renewal total" + (" closing words" * 20)
+    document.save(update_fields=["action_note", "extracted_text"])
     private.action_note = "Private secret"
     private.save(update_fields=["action_note"])
 
@@ -505,4 +506,13 @@ def test_search_finds_tags_action_notes_and_sticker_codes_without_crossing_owner
         result = client.get("/api/documents", {"q": query}).json()
         assert [item["id"] for item in result["documents"]] == [str(document.id)]
         assert result["counts"]["total"] == 1
+    assert client.get("/api/documents").json()["documents"][0]["snippet"] == ""
+    sticker = client.get("/api/documents", {"q": "R-ABC23456"}).json()["documents"][0]
+    assert (sticker["snippet"], sticker["snippet_source"]) == ("R-ABC23456", "sticker")
+    note = client.get("/api/documents", {"q": "December"}).json()["documents"][0]
+    assert note["snippet_source"] == "note" and "December" in note["snippet"]
+    ocr = client.get("/api/documents", {"q": "hidden renewal"}).json()["documents"][0]
+    assert ocr["snippet_source"] == "document"
+    assert ocr["snippet"].startswith("…") and "hidden renewal" in ocr["snippet"]
+    assert len(ocr["snippet"]) <= 242
     assert client.get("/api/documents", {"q": "secret"}).json()["documents"] == []

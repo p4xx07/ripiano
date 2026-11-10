@@ -660,6 +660,16 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.document-info .document-snippet strong {
+  color: var(--color-accent-strong);
+  font-weight: 700;
+}
+.document-info .document-snippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
 .document-info .doc-error {
   color: var(--color-danger);
 }

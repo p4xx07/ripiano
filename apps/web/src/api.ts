@@ -98,6 +98,7 @@ export type Document = {
   }[];
   physical_copies: PhysicalCopy[];
   snippet: string;
+  snippet_source: "document" | "note" | "sticker" | null;
 };
 
 function csrfToken() {

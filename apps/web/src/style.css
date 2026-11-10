@@ -503,6 +503,27 @@ button:disabled {
 .filter-toggle {
   white-space: nowrap;
 }
+.search-syntax {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  color: var(--color-muted);
+  font-size: var(--type-small);
+}
+.search-syntax summary {
+  width: fit-content;
+  color: var(--color-accent-strong);
+  cursor: pointer;
+}
+.search-syntax p {
+  max-width: 72ch;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.search-syntax code {
+  color: var(--color-heading);
+  background: var(--color-surface-tint);
+  border-radius: var(--radius-soft);
+  padding: 0 var(--space-1);
+}
 .library-filters {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

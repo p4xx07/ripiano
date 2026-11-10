@@ -155,6 +155,16 @@ test("sender and document type can be managed, assigned, and found", async ({ pa
   await expect(page.locator(".document-row")).toHaveCount(1);
   await page.screenshot({ path: testInfo.outputPath("filing-metadata.png") });
 
+  const fieldQuery = `sender:"${renamedSender}" type:"${typeName}" tag:"${tagName}" date:2026-04-15`;
+  const fieldResults = page.waitForResponse((response) => new URL(response.url()).searchParams.get("q") === fieldQuery && response.status() === 200);
+  await search.fill(fieldQuery);
+  expect((await (await fieldResults).json()).documents).toHaveLength(1);
+  await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await page.getByText("More precise search").click();
+  await expect(page.locator(".search-syntax")).toContainText("sticker:");
+  expect(await page.locator(".search-syntax").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath("field-search.png") });
+
   const inlineSender = `Library sender ${suffix}`;
   await page.getByRole("button", { name, exact: true }).click();
   const reopened = page.getByRole("dialog", { name: "Keep it in place." });

@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import secrets
+import shlex
 from datetime import date, datetime
 from pathlib import Path
 from uuid import UUID
@@ -26,6 +27,30 @@ from .tasks import backup_archive
 
 logger = logging.getLogger(__name__)
 CURSOR_SALT = "ripiano-document-page-v1"
+SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date"}
+
+
+def _parse_search(query):
+    try:
+        tokens = shlex.split(query)
+    except ValueError:
+        return query, []
+    words = []
+    clauses = []
+    for token in tokens:
+        field, separator, value = token.partition(":")
+        if separator and field in SEARCH_FIELDS and value:
+            if field == "date":
+                try:
+                    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+                        raise ValueError
+                    value = date.fromisoformat(value).isoformat()
+                except ValueError as exc:
+                    raise ValueError("Use YYYY-MM-DD after date:") from exc
+            clauses.append((field, value))
+        else:
+            words.append(token)
+    return " ".join(words), clauses
 
 
 def _read_page_cursor(raw, owner, query, view, filters):
@@ -192,6 +217,10 @@ def documents(request):
             return JsonResponse({"error": "Use a page cursor"}, status=400)
         queryset = Document.objects.filter(owner=request.user).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
+        try:
+            free_query, clauses = _parse_search(query)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
         filters = {}
         for key in ("tag_id", "correspondent_id", "document_type_id"):
             raw = request.GET.get(key, "")
@@ -219,23 +248,40 @@ def documents(request):
             queryset = queryset.filter(document_date__gte=filters["date_from"])
         if "date_to" in filters:
             queryset = queryset.filter(document_date__lte=filters["date_to"])
+        for field, value in clauses:
+            if field == "title":
+                queryset = queryset.filter(title__icontains=value)
+            elif field == "text":
+                queryset = queryset.filter(extracted_text__icontains=value)
+            elif field == "note":
+                queryset = queryset.filter(action_note__icontains=value)
+            elif field == "tag":
+                queryset = queryset.filter(Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=value)))
+            elif field == "sender":
+                queryset = queryset.filter(correspondent__name__icontains=value)
+            elif field == "type":
+                queryset = queryset.filter(document_type__name__icontains=value)
+            elif field == "sticker":
+                queryset = queryset.filter(Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=value)))
+            else:
+                queryset = queryset.filter(document_date=value)
         requested_view = request.GET.get("view")
-        view = "actions" if requested_view == "actions" else "exceptions" if requested_view == "exceptions" else "search" if query else "documents"
+        view = "actions" if requested_view == "actions" else "exceptions" if requested_view == "exceptions" else "search" if free_query else "documents"
         if view == "actions":
             queryset = queryset.filter(action_status=Document.ActionStatus.OPEN)
         elif view == "exceptions":
             queryset = queryset.filter(Q(status=Document.Status.FAILED) | Q(duplicate_of__isnull=False, duplicate_reviewed_at__isnull=True))
-        if query:
+        if free_query:
             queryset = queryset.annotate(
-                tag_match=Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=query)),
-                sticker_match=Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=query)),
+                tag_match=Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=free_query)),
+                sticker_match=Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=free_query)),
             )
             if connection.vendor == "postgresql":
                 vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
-                search_query = SearchQuery(query, search_type="plain", config="simple")
-                queryset = queryset.annotate(search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField())).filter(Q(search_score__gt=0) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=query) | Q(document_type__name__icontains=query)).order_by("-search_score", "-created_at", "-id")
+                search_query = SearchQuery(free_query, search_type="plain", config="simple")
+                queryset = queryset.annotate(search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField())).filter(Q(search_score__gt=0) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query)).order_by("-search_score", "-created_at", "-id")
             else:
-                queryset = queryset.filter(Q(title__icontains=query) | Q(extracted_text__icontains=query) | Q(action_note__icontains=query) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=query) | Q(document_type__name__icontains=query))
+                queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
         if view == "actions":
             queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at", "-id")
         elif view != "search":
@@ -267,8 +313,9 @@ def documents(request):
             )
         page = list(queryset[:51])
         visible = page[:50]
+        snippet_query = free_query or next((value for field, value in clauses if field in {"text", "note", "sticker"}), "")
         return JsonResponse({
-            "documents": [_document_json(doc, query=query) for doc in visible],
+            "documents": [_document_json(doc, query=snippet_query) for doc in visible],
             "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, counts) if len(page) > 50 else None,
             "counts": counts,
         })

@@ -7,7 +7,8 @@ The user wants exactly one feature completed per turn, then a stop so they can m
 - Core archive, OCR/search, PWA capture paths, native Android debug scanner, automatic tag/sender/type phrase filing, physical stickers/locations, Telegram and watched-folder inputs, agent MCP grants, NAS backup output, and Library filters are implemented in prior commits.
 - Saved searches have owner-scoped API and PWA controls to create, reopen, rename, update criteria, and delete. The complete feature was checkpointed at `cb857fe`; desktop/mobile evidence is in `qa-artifacts/1896f45/saved-searches`.
 - Search results now show a short match-centered excerpt from OCR text or action notes, or a matching sticker code. The unfiltered Library no longer repeats the beginning of every OCR result. Desktop/mobile screenshots and verification are in `qa-artifacts/cb857fe/search-snippets`.
-- The latest API suite passed 32 tests, the production PWA built, and migration checks found no changes. The full browser suite result is recorded in the search-snippet QA review.
+- Field-qualified Library search now accepts title, OCR text, action note, tag, sender, type, sticker, and exact document date. Quoted names with spaces and combined clauses work; an in-app help panel explains the syntax. Desktop/mobile evidence is in `qa-artifacts/93eb784/field-search`.
+- The latest API suite, production PWA build, migration check, and browser result are recorded in the field-search QA review.
 
 ## Resume from here
 

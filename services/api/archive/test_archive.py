@@ -413,6 +413,10 @@ def test_search_cursor_has_stable_tie_breaker_on_equal_timestamps():
     second = client.get("/api/documents", {"q": "Receipt", "cursor": first["next_cursor"]}).json()
     assert len({item["id"] for item in first["documents"] + second["documents"]}) == 51
     assert second["next_cursor"] is None
+    field_first = client.get("/api/documents", {"q": "title:Receipt"}).json()
+    field_second = client.get("/api/documents", {"q": "title:Receipt", "cursor": field_first["next_cursor"]}).json()
+    assert len({item["id"] for item in field_first["documents"] + field_second["documents"]}) == 51
+    assert client.get("/api/documents", {"q": "title:Other", "cursor": field_first["next_cursor"]}).status_code == 400
 
 
 @pytest.mark.django_db
@@ -516,3 +520,59 @@ def test_search_finds_tags_action_notes_and_sticker_codes_without_crossing_owner
     assert ocr["snippet"].startswith("…") and "hidden renewal" in ocr["snippet"]
     assert len(ocr["snippet"]) <= 242
     assert client.get("/api/documents", {"q": "secret"}).json()["documents"] == []
+
+
+@pytest.mark.django_db
+def test_field_search_combines_owned_metadata_text_and_dates():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    sender = Correspondent.objects.create(owner=owner, name="City office")
+    kind = DocumentType.objects.create(owner=owner, name="Permit notice")
+    tax = Tag.objects.create(owner=owner, name="Tax records")
+    filing = Tag.objects.create(owner=owner, name="Filing")
+
+    def make_document(user, title):
+        return Document.objects.create(
+            owner=user, title=title, original_name=f"{title}.pdf",
+            original_path=f"originals/{title}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10,
+            extracted_text="Permit fee due", action_note="Renew next year",
+            document_date=date(2026, 4, 15),
+        )
+
+    matching = make_document(owner, "Property tax")
+    matching.correspondent = sender
+    matching.document_type = kind
+    matching.save(update_fields=["correspondent", "document_type"])
+    DocumentTag.objects.create(document=matching, tag=tax)
+    DocumentTag.objects.create(document=matching, tag=filing)
+    PhysicalCopy.objects.create(document=matching, sticker_code="R-ABC23456")
+    partial = make_document(owner, "Other tax")
+    partial.extracted_text = "Other content"
+    partial.action_note = ""
+    partial.save(update_fields=["extracted_text", "action_note"])
+    DocumentTag.objects.create(document=partial, tag=tax)
+    make_document(other, "Property tax")
+
+    client = Client()
+    client.force_login(owner)
+    for query in (
+        'title:"Property tax"',
+        'title:"Property tax" sender:"City office"',
+        'text:Permit note:Renew',
+        'tag:"Tax records" tag:Filing',
+        'sender:"City office" type:"Permit notice" sticker:R-ABC date:2026-04-15',
+        'sender:"City office" Permit',
+    ):
+        result = client.get("/api/documents", {"q": query})
+        assert result.status_code == 200
+        assert [item["id"] for item in result.json()["documents"]] == [str(matching.id)]
+        assert result.json()["counts"]["total"] == 1
+    assert client.get("/api/documents", {"q": 'sender:"City office" tag:missing'}).json()["documents"] == []
+    text_result = client.get("/api/documents", {"q": "text:Permit"}).json()["documents"][0]
+    assert text_result["snippet_source"] == "document" and "Permit" in text_result["snippet"]
+    note_result = client.get("/api/documents", {"q": "note:Renew"}).json()["documents"][0]
+    assert note_result["snippet_source"] == "note" and "Renew" in note_result["snippet"]
+    assert client.get("/api/documents", {"q": "date:2026-99-99"}).status_code == 400
+    assert client.get("/api/documents", {"q": "date:20260415"}).status_code == 400
+    assert client.get("/api/documents", {"q": "sender:City", "date_from": "2026-04-16"}).json()["documents"] == []

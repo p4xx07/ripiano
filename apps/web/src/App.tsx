@@ -788,6 +788,10 @@ function App() {
                   <Plus size={18} /> Add
                 </Button>
               </div>
+              <details className="search-syntax">
+                <summary>More precise search</summary>
+                <p>Use <code>tag:tax</code>, <code>sender:"City office"</code>, or <code>date:2026-04-15</code>. You can also search by <code>title:</code>, <code>text:</code>, <code>note:</code>, <code>type:</code>, and <code>sticker:</code>. Combine fields and ordinary words to narrow results.</p>
+              </details>
               {showFilters && <div className="library-filters" id="library-filters">
                 <Field label="Tag" className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">Any tag</option>{filterOptions.tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></Field>
                 <Field label="From" className="detail-label"><select value={filters.correspondent_id} onChange={(event) => updateFilter("correspondent_id", event.target.value)}><option value="">Any sender</option>{filterOptions.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>

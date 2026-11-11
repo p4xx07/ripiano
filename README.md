@@ -32,6 +32,10 @@ These show the running development stack with synthetic test documents. The mobi
 | --- | --- |
 | ![Desktop Library sorted by title](qa-artifacts/e9bb89a/library-sort/desktop/library-sort.png) | ![Mobile Library sorted by title](qa-artifacts/e9bb89a/library-sort/mobile/library-sort.png) |
 
+| Tag several documents on desktop | Tag several documents on mobile |
+| --- | --- |
+| ![Desktop Library after adding one tag to two selected documents](qa-artifacts/8200572/bulk-tags/desktop/bulk-tags.png) | ![Mobile Library after adding one tag to two selected documents](qa-artifacts/8200572/bulk-tags/mobile/bulk-tags.png) |
+
 ## Planning documents
 
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
@@ -92,7 +96,7 @@ This excerpt illustrates storage and exposure; use the linked full stack for dep
 - Android debug build: `cd apps/android && ./gradlew :app:assembleDebug` with JDK 17 and Android SDK 36. See [Android setup](apps/android/README.md).
 - Browser journey (running local stack and a disposable owner account): `cd apps/web && RIPIANO_E2E_ORIGIN=http://localhost:8080 RIPIANO_E2E_USERNAME=... RIPIANO_E2E_PASSWORD=... npm run test:e2e`. This creates test documents, tags, and locations in that account.
 
-The document originals are stored under the mounted media path. OCR output is derived and can be rebuilt. Simple search finds titles, OCR text, tag names, correspondent names, document types, action notes, and sticker codes. Search results show the matching passage from OCR text or action notes, or the matching sticker code; the unfiltered Library stays compact. To narrow search by field, use `title:`, `text:`, `note:`, `tag:`, `sender:`, `type:`, `sticker:`, or `date:YYYY-MM-DD`; quote values containing spaces, such as `sender:"City office"`. Multiple field terms and ordinary text combine. The Library can also narrow results with the visual tag, sender, type, and date filters. Save a search to reopen it in one tap; rename it, update its criteria, or delete it from the Library. Sort the Library by relevance, date added, document date, or title; date-less documents stay at the end of document-date sorts. The Library and Needs action lists load additional results in cursor-based pages of 50; Refresh shows new arrivals. Boolean and range query syntax remain future work.
+The document originals are stored under the mounted media path. OCR output is derived and can be rebuilt. Simple search finds titles, OCR text, tag names, correspondent names, document types, action notes, and sticker codes. Search results show the matching passage from OCR text or action notes, or the matching sticker code; the unfiltered Library stays compact. To narrow search by field, use `title:`, `text:`, `note:`, `tag:`, `sender:`, `type:`, `sticker:`, or `date:YYYY-MM-DD`; quote values containing spaces, such as `sender:"City office"`. Multiple field terms and ordinary text combine. The Library can also narrow results with the visual tag, sender, type, and date filters. Save a search to reopen it in one tap; rename it, update its criteria, or delete it from the Library. Sort the Library by relevance, date added, document date, or title; date-less documents stay at the end of document-date sorts. Select up to 100 loaded documents to add or remove a tag together; those changes count as manual corrections for future automatic filing. The Library and Needs action lists load additional results in cursor-based pages of 50; Refresh shows new arrivals. Boolean and range query syntax remain future work.
 
 ### Optional Telegram input
 

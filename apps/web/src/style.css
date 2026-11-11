@@ -632,6 +632,55 @@ button:disabled {
   overflow: hidden;
   background: var(--color-surface);
 }
+.bulk-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+.bulk-actions {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.bulk-actions strong {
+  color: var(--color-heading);
+  font-size: var(--type-small);
+}
+.bulk-actions select {
+  min-height: 42px;
+  min-width: 160px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-3);
+  color: var(--color-heading);
+  background: var(--color-surface);
+}
+.bulk-controls .inline-error,
+.bulk-notice {
+  flex-basis: 100%;
+  margin: 0;
+}
+.bulk-notice {
+  color: var(--color-accent-strong);
+  font-size: var(--type-small);
+}
+.document-select {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+.document-select input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--color-accent-strong);
+}
 .exception-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1035,6 +1084,12 @@ button:disabled {
   }
 }
 @media (max-width: 570px) {
+  .bulk-actions {
+    flex-basis: 100%;
+  }
+  .bulk-actions select {
+    flex: 1 1 100%;
+  }
   .toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

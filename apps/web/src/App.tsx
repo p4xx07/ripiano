@@ -316,6 +316,12 @@ function App() {
   const [sort, setSort] = useState("");
   const [filters, setFilters] = useState<LibraryFilters>({ ...emptyLibraryFilters });
   const [showFilters, setShowFilters] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkTagId, setBulkTagId] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkError, setBulkError] = useState("");
+  const [bulkNotice, setBulkNotice] = useState("");
   const [filterOptions, setFilterOptions] = useState<{ tags: Tag[]; correspondents: FilingItem[]; document_types: FilingItem[] }>({ tags: [], correspondents: [], document_types: [] });
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
@@ -359,6 +365,33 @@ function App() {
   function updateFilter(key: keyof LibraryFilters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));
     setNextCursor(null);
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => current.includes(id)
+      ? current.filter((item) => item !== id)
+      : current.length < 100 ? [...current, id] : current);
+  }
+
+  async function applyBulkTag(action: "add" | "remove") {
+    if (!selectedIds.length || !bulkTagId) return;
+    setBulkBusy(true);
+    setBulkError("");
+    setBulkNotice("");
+    try {
+      const result = await request<{ updated: number }>("/api/documents/bulk-tags", {
+        method: "POST",
+        body: JSON.stringify({ action, document_ids: selectedIds, tag_id: bulkTagId }),
+      });
+      const tagName = filterOptions.tags.find((tag) => tag.id === bulkTagId)?.name ?? "tag";
+      setBulkNotice(`${action === "add" ? "Added" : "Removed"} ${tagName} ${action === "add" ? "to" : "from"} ${result.updated} documents.`);
+      setSelectedIds([]);
+      await loadDocuments(query);
+    } catch (cause) {
+      setBulkError(cause instanceof Error ? cause.message : "Could not update selected documents");
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   const loadDocuments = useCallback(async (search: string, cursor: string | null = null) => {
@@ -414,6 +447,13 @@ function App() {
     const timer = window.setTimeout(() => loadDocuments(query), 200);
     return () => window.clearTimeout(timer);
   }, [session?.authenticated, query, view, loadDocuments]);
+
+  useEffect(() => {
+    setSelectedIds([]);
+    setBulkError("");
+    setBulkNotice("");
+    if (view !== "documents") setSelectionMode(false);
+  }, [query, filters, sort, view]);
 
   useEffect(() => {
     if (session?.authenticated && view === "documents") void loadFilterOptions();
@@ -847,6 +887,26 @@ function App() {
                   <UploadCloud size={19} /> {uploadProgress || "Adding your document…"}
                 </div>
               )}
+              {!listError && (!isEmpty || selectionMode || bulkNotice) && <div className="bulk-controls">
+                <button type="button" className="text-action" disabled={bulkBusy || (isEmpty && !selectionMode)} onClick={() => { setSelectionMode(!selectionMode); setSelectedIds([]); setBulkError(""); setBulkNotice(""); }}>
+                  {selectionMode ? "Done selecting" : "Select documents"}
+                </button>
+                {selectionMode && <div className="bulk-actions">
+                  <strong>{selectedIds.length} selected</strong>
+                  <button type="button" className="text-action" disabled={bulkBusy} onClick={() => setSelectedIds(documents.slice(0, 100).map((doc) => doc.id))}>
+                    {documents.length > 100 ? "Select first 100 loaded" : "Select loaded"}
+                  </button>
+                  {selectedIds.length > 0 && <button type="button" className="text-action" disabled={bulkBusy} onClick={() => setSelectedIds([])}>Clear selection</button>}
+                  <select aria-label="Tag for selected documents" value={bulkTagId} disabled={bulkBusy || !filterOptions.tags.length} onChange={(event) => setBulkTagId(event.target.value)}>
+                    <option value="">Choose a tag</option>
+                    {filterOptions.tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                  </select>
+                  <Button type="button" disabled={bulkBusy || !selectedIds.length || !bulkTagId} onClick={() => void applyBulkTag("add")}>Add tag</Button>
+                  <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTagId} onClick={() => void applyBulkTag("remove")}>Remove tag</Button>
+                </div>}
+                {bulkError && <p className="inline-error" role="alert">{bulkError}</p>}
+                {bulkNotice && <p className="bulk-notice" role="status">{bulkNotice}</p>}
+              </div>}
 
               {listError ? null : isEmpty ? (
                 <div className="empty-state">
@@ -876,9 +936,10 @@ function App() {
                 <div className="document-list">
                   {documents.map((doc) => (
                     <article className="document-row" key={doc.id}>
-                      <div className="document-icon">
-                        <FileText size={21} />
-                      </div>
+                      {selectionMode ? <label className="document-select">
+                        <input type="checkbox" checked={selectedIds.includes(doc.id)} disabled={bulkBusy || (selectedIds.length >= 100 && !selectedIds.includes(doc.id))} onChange={() => toggleSelected(doc.id)} />
+                        <span className="visually-hidden">Select {doc.title}</span>
+                      </label> : <div className="document-icon"><FileText size={21} /></div>}
                       <div className="document-info">
                         <h3>
                           <button

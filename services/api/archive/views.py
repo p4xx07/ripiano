@@ -20,7 +20,7 @@ from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
 from .models import BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, Tag, TagOverride
-from .custom_field_views import normalize_value
+from .custom_field_views import normalize_filter_value
 from .physical_views import copy_json
 from .ingestion import ingest_document
 from .storage import InvalidDocument
@@ -247,7 +247,7 @@ def documents(request):
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
         filters = {}
-        for key in ("tag_id", "correspondent_id", "document_type_id"):
+        for key in ("tag_id", "correspondent_id", "document_type_id", "custom_field_id"):
             raw = request.GET.get(key, "")
             if raw:
                 try:
@@ -263,6 +263,24 @@ def documents(request):
                     return JsonResponse({"error": f"Invalid {key.replace('_', ' ')}"}, status=400)
         if filters.get("date_from") and filters.get("date_to") and filters["date_from"] > filters["date_to"]:
             return JsonResponse({"error": "Start date must be before end date"}, status=400)
+        custom_value = request.GET.get("custom_value", "").strip()
+        if custom_value and not filters.get("custom_field_id"):
+            return JsonResponse({"error": "Choose a custom field before its value"}, status=400)
+        if len(custom_value) > 500:
+            return JsonResponse({"error": "Custom field value is too long"}, status=400)
+        if filters.get("custom_field_id"):
+            definition = CustomField.objects.filter(pk=filters["custom_field_id"], owner=request.user).first()
+            if definition is None:
+                return JsonResponse({"error": "Custom field not found"}, status=400)
+            filters["custom_value"] = custom_value
+            matches = CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field=definition)
+            if custom_value:
+                try:
+                    normalized = normalize_filter_value(definition, custom_value)
+                except ValueError as exc:
+                    return JsonResponse({"error": str(exc)}, status=400)
+                matches = matches.filter(value__icontains=normalized) if definition.kind == CustomField.Kind.TEXT else matches.filter(value=normalized)
+            queryset = queryset.filter(Exists(matches))
         if "tag_id" in filters:
             queryset = queryset.filter(tag_links__tag_id=filters["tag_id"])
         if "correspondent_id" in filters:
@@ -297,13 +315,7 @@ def documents(request):
                     queryset = queryset.filter(Exists(CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field=definition, value__icontains=raw_value)))
                 else:
                     try:
-                        if definition.kind == CustomField.Kind.BOOLEAN:
-                            if raw_value.casefold() not in {"true", "false", "yes", "no"}:
-                                raise ValueError("Use yes or no for this field")
-                            typed_value = raw_value.casefold() in {"true", "yes"}
-                        else:
-                            typed_value = raw_value
-                        normalized = normalize_value(definition.kind, typed_value)
+                        normalized = normalize_filter_value(definition, raw_value)
                     except ValueError as exc:
                         return JsonResponse({"error": str(exc)}, status=400)
                     queryset = queryset.filter(Exists(CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field=definition, value=normalized)))

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { ListFilter, Plus } from "lucide-react";
+import { ListFilter, Pencil, Plus, Trash2, X } from "lucide-react";
 import { CustomField, request } from "./api";
 import { Button } from "./ui";
 
@@ -14,6 +14,8 @@ export default function CustomFieldsPanel({ documentId, onChanged }: { documentI
   const createDetails = useRef<HTMLDetailsElement>(null);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<CustomField["kind"]>("text");
+  const [renameId, setRenameId] = useState("");
+  const [renameName, setRenameName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -65,6 +67,40 @@ export default function CustomFieldsPanel({ documentId, onChanged }: { documentI
     }
   }
 
+  async function rename(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await request(`/api/custom-fields/${renameId}`, { method: "PATCH", body: JSON.stringify({ name: renameName }) });
+      setRenameId("");
+      await load();
+      setNotice("Field renamed on all documents.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not rename field");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(field: CustomField) {
+    if (!window.confirm(`Delete unused field “${field.name}”?`)) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await request(`/api/custom-fields/${field.id}`, { method: "DELETE" });
+      if (selectedFieldId === field.id) setSelectedFieldId("");
+      await load();
+      setNotice(`Deleted unused field “${field.name}”.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not delete field");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const visibleFields = fields.filter((field) => field.value !== null || field.id === selectedFieldId);
 
   return <section className="custom-fields" aria-labelledby="custom-fields-heading">
@@ -96,5 +132,19 @@ export default function CustomFieldsPanel({ documentId, onChanged }: { documentI
         <Button disabled={busy || !name.trim()}><Plus size={16} /> Add field</Button>
       </form>
     </details>
+    {fields.length > 0 && <details className="custom-manage">
+      <summary>Manage field names</summary>
+      <p>Renaming updates every document. Delete a field after removing its values and saved searches.</p>
+      <ul>{fields.map((field) => <li key={field.id}>
+        {renameId === field.id ? <form onSubmit={(event) => void rename(event)}>
+          <input aria-label={`New name for ${field.name}`} value={renameName} onChange={(event) => setRenameName(event.target.value)} maxLength={100} required />
+          <Button disabled={busy || !renameName.trim()}>Save name</Button>
+          <button type="button" aria-label="Cancel rename" onClick={() => setRenameId("")}><X size={16} /></button>
+        </form> : <><span>{field.name} · {kindLabels[field.kind]}</span>
+          <button type="button" aria-label={`Rename ${field.name}`} disabled={busy} onClick={() => { setRenameId(field.id); setRenameName(field.name); }}><Pencil size={16} /></button>
+          {!field.in_use && <button type="button" aria-label={`Delete unused field ${field.name}`} disabled={busy} onClick={() => void remove(field)}><Trash2 size={16} /></button>}
+        </>}
+      </li>)}</ul>
+    </details>}
   </section>;
 }

@@ -7,7 +7,7 @@ from django.db.models.deletion import ProtectedError
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from .models import CustomField, CustomFieldValue, Document
+from .models import CustomField, CustomFieldValue, Document, SavedView
 
 
 def normalize_value(kind, value):
@@ -45,9 +45,20 @@ def normalize_value(kind, value):
     raise ValueError("Unknown custom field type")
 
 
-def field_json(field, value=None):
-    return {"id": str(field.id), "name": field.name, "kind": field.kind,
-            "value": (value == "true" if field.kind == CustomField.Kind.BOOLEAN else value) if value is not None else None}
+def normalize_filter_value(field, value):
+    if field.kind == CustomField.Kind.BOOLEAN:
+        if value.casefold() not in {"true", "false", "yes", "no"}:
+            raise ValueError("Use yes or no for this field")
+        value = value.casefold() in {"true", "yes"}
+    return normalize_value(field.kind, value)
+
+
+def field_json(field, value=None, in_use=None):
+    result = {"id": str(field.id), "name": field.name, "kind": field.kind,
+              "value": (value == "true" if field.kind == CustomField.Kind.BOOLEAN else value) if value is not None else None}
+    if in_use is not None:
+        result["in_use"] = in_use
+    return result
 
 
 def _body(request):
@@ -96,12 +107,12 @@ def custom_field_detail(request, field_id):
     if field is None:
         return JsonResponse({"error": "Custom field not found"}, status=404)
     if request.method == "DELETE":
-        if field.values.exists():
-            return JsonResponse({"error": "Clear this field from documents before deleting it"}, status=409)
+        if field.values.exists() or SavedView.objects.filter(custom_field=field).exists():
+            return JsonResponse({"error": "Remove this field from documents and saved searches before deleting it"}, status=409)
         try:
             field.delete()
         except ProtectedError:
-            return JsonResponse({"error": "Clear this field from documents before deleting it"}, status=409)
+            return JsonResponse({"error": "Remove this field from documents and saved searches before deleting it"}, status=409)
         return JsonResponse({"deleted": True})
     body = _body(request)
     name = body.get("name") if body else None
@@ -124,7 +135,9 @@ def document_custom_fields(request, document_id):
     if not Document.objects.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).exists():
         return JsonResponse({"error": "Document not found"}, status=404)
     values = dict(CustomFieldValue.objects.filter(document_id=document_id, field__owner=request.user).values_list("field_id", "value"))
-    return JsonResponse({"fields": [field_json(field, values.get(field.id)) for field in CustomField.objects.filter(owner=request.user)]})
+    used_ids = set(CustomFieldValue.objects.filter(field__owner=request.user).values_list("field_id", flat=True).distinct())
+    used_ids.update(SavedView.objects.filter(owner=request.user, custom_field__isnull=False).values_list("custom_field_id", flat=True).distinct())
+    return JsonResponse({"fields": [field_json(field, values.get(field.id), field.id in used_ids) for field in CustomField.objects.filter(owner=request.user)]})
 
 
 @transaction.atomic

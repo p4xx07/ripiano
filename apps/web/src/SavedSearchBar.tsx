@@ -17,6 +17,8 @@ function criteria(query: string, filters: LibraryFilters) {
     document_type_id: filters.document_type_id || null,
     date_from: filters.date_from || null,
     date_to: filters.date_to || null,
+    custom_field_id: filters.custom_field_id || null,
+    custom_value: filters.custom_value,
   };
 }
 
@@ -27,6 +29,8 @@ function viewFilters(view: SavedView): LibraryFilters {
     document_type_id: view.document_type_id ?? "",
     date_from: view.date_from ?? "",
     date_to: view.date_to ?? "",
+    custom_field_id: view.custom_field_id ?? "",
+    custom_value: view.custom_value ?? "",
   };
 }
 

@@ -10,7 +10,8 @@ from django.db.models.deletion import ProtectedError
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from .models import ClassificationRule, Correspondent, DocumentType, FilingRule, SavedView, Tag
+from .models import ClassificationRule, Correspondent, CustomField, DocumentType, FilingRule, SavedView, Tag
+from .custom_field_views import normalize_filter_value
 from .tasks import reclassify_filing_candidates, reclassify_tag_candidates
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,8 @@ def _saved_view_json(view):
         "tag_id": str(view.tag_id) if view.tag_id else None,
         "correspondent_id": str(view.correspondent_id) if view.correspondent_id else None,
         "document_type_id": str(view.document_type_id) if view.document_type_id else None,
+        "custom_field_id": str(view.custom_field_id) if view.custom_field_id else None,
+        "custom_value": view.custom_value,
         "date_from": view.date_from.isoformat() if view.date_from else None,
         "date_to": view.date_to.isoformat() if view.date_to else None,
     }
@@ -144,7 +147,7 @@ def _saved_view_values(body, owner, current=None):
     if not isinstance(query, str) or len(query.strip()) > 200:
         raise ValueError("Search text must be at most 200 characters")
     values = {"name": name.strip(), "query": query.strip()}
-    for key, model in (("tag", Tag), ("correspondent", Correspondent), ("document_type", DocumentType)):
+    for key, model in (("tag", Tag), ("correspondent", Correspondent), ("document_type", DocumentType), ("custom_field", CustomField)):
         raw = body.get(f"{key}_id", getattr(current, f"{key}_id") if current else None)
         if raw in (None, ""):
             values[key] = None
@@ -172,6 +175,14 @@ def _saved_view_values(body, owner, current=None):
                 raise ValueError("Invalid document date") from exc
     if values["date_from"] and values["date_to"] and values["date_from"] > values["date_to"]:
         raise ValueError("Start date must be before end date")
+    custom_value = body.get("custom_value", current.custom_value if current else "")
+    if not isinstance(custom_value, str) or len(custom_value.strip()) > 500:
+        raise ValueError("Custom field value must be at most 500 characters")
+    values["custom_value"] = custom_value.strip()
+    if values["custom_value"]:
+        if values["custom_field"] is None:
+            raise ValueError("Choose a custom field before its value")
+        normalize_filter_value(values["custom_field"], values["custom_value"])
     return values
 
 

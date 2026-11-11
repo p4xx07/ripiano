@@ -56,6 +56,11 @@ def test_typed_custom_fields_validate_and_search_values():
     assert "Policy no: A-123" in search[0]["snippet"]
     for query in ('field:"Premium=125.50"', 'field:"Expires=2027-04-03"', 'field:"Paid=no"'):
         assert [item["id"] for item in client.get("/api/documents", {"q": query}).json()["documents"]] == [str(policy.id)]
+    assert client.get("/api/documents", {"custom_field_id": fields["Policy no"], "custom_value": "A-123"}).json()["counts"]["total"] == 1
+    assert client.get("/api/documents", {"custom_field_id": fields["Premium"], "custom_value": "125.50"}).json()["counts"]["total"] == 1
+    assert client.get("/api/documents", {"custom_field_id": fields["Expires"], "custom_value": "2027-04-03"}).json()["counts"]["total"] == 1
+    assert client.get("/api/documents", {"custom_field_id": fields["Paid"], "custom_value": "no"}).json()["counts"]["total"] == 1
+    assert client.get("/api/documents", {"custom_field_id": fields["Paid"], "custom_value": "maybe"}).status_code == 400
     assert client.get("/api/documents", {"q": 'field:"Premium=125"'}).json()["documents"] == []
     assert client.get("/api/documents", {"q": 'field:"Policy no"'}).status_code == 400
     assert client.get("/api/documents", {"q": 'field:"Unknown=A-123"'}).json()["documents"] == []

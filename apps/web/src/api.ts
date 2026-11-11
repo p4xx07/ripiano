@@ -30,6 +30,8 @@ export type LibraryFilters = {
   document_type_id: string;
   date_from: string;
   date_to: string;
+  custom_field_id: string;
+  custom_value: string;
 };
 
 export type SavedView = {
@@ -41,6 +43,8 @@ export type SavedView = {
   document_type_id: string | null;
   date_from: string | null;
   date_to: string | null;
+  custom_field_id: string | null;
+  custom_value: string;
 };
 
 export type FilingRule = {
@@ -116,6 +120,7 @@ export type CustomField = {
   name: string;
   kind: "text" | "number" | "date" | "boolean";
   value: string | boolean | null;
+  in_use?: boolean;
 };
 
 function csrfToken() {

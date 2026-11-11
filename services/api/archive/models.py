@@ -195,6 +195,8 @@ class SavedView(models.Model):
     tag = models.ForeignKey(Tag, null=True, blank=True, on_delete=models.SET_NULL)
     correspondent = models.ForeignKey(Correspondent, null=True, blank=True, on_delete=models.SET_NULL)
     document_type = models.ForeignKey(DocumentType, null=True, blank=True, on_delete=models.SET_NULL)
+    custom_field = models.ForeignKey(CustomField, null=True, blank=True, on_delete=models.PROTECT)
+    custom_value = models.CharField(max_length=500, blank=True)
     date_from = models.DateField(null=True, blank=True)
     date_to = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

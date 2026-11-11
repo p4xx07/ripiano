@@ -69,6 +69,7 @@ export default function DocumentPanel({
   const [noteNotice, setNoteNotice] = useState("");
   const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null);
   const [reprocessNotice, setReprocessNotice] = useState("");
+  const [copyNotice, setCopyNotice] = useState("");
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -301,6 +302,25 @@ export default function DocumentPanel({
     }
   }
 
+  async function setCopyMissing(copy: PhysicalCopy, missing: boolean) {
+    setBusy(true);
+    setError("");
+    setCopyNotice("");
+    try {
+      await request(`/api/copies/${copy.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ missing }),
+      });
+      await refreshCopies();
+      await showHistory(copy);
+      setCopyNotice(missing ? `Paper copy ${copy.sticker_code} marked missing. Its last known location is saved.` : `Paper copy ${copy.sticker_code} marked found. Check its location below.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not update paper-copy status");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function showHistory(copy: PhysicalCopy) {
     try {
       const result = await request<{
@@ -492,15 +512,17 @@ export default function DocumentPanel({
           <h3>
             <MapPin size={17} /> Paper copies
           </h3>
+          {copyNotice && <p className="bulk-notice" role="status">{copyNotice}</p>}
           {!copies.length && (
             <p>Digital only. You can add a sticker if you keep a paper copy.</p>
           )}
           {copies.map((copy) => (
-            <div className="copy-card" key={copy.id}>
+            <div className={`copy-card ${copy.missing_at ? "copy-card-missing" : ""}`} key={copy.id}>
               <strong>{copy.sticker_code}</strong>
               <span>
-                {copy.location_path.join(" / ") || "Location not assigned"}
+                {copy.missing_at ? "Last known: " : ""}{copy.location_path.join(" / ") || "Location not assigned"}
               </span>
+              {copy.missing_at && <span className="copy-missing-label">Reported missing</span>}
               <div className="copy-actions">
                 <a
                   href={`/api/copies/${copy.id}/label`}
@@ -512,9 +534,13 @@ export default function DocumentPanel({
                 <button onClick={() => void showHistory(copy)}>
                   <History size={16} /> History
                 </button>
+                <button type="button" disabled={busy} onClick={() => void setCopyMissing(copy, !copy.missing_at)}>
+                  {copy.missing_at ? "Mark found" : "Mark missing"}
+                </button>
               </div>
               <div className="copy-move">
                 <select
+                  disabled={busy || Boolean(copy.missing_at)}
                   value={moveChoices[copy.id] ?? copy.location_id ?? ""}
                   onChange={(event) =>
                     setMoveChoices((value) => ({
@@ -532,12 +558,13 @@ export default function DocumentPanel({
                 </select>
                 <Button
                   variant="secondary"
-                  disabled={busy}
+                  disabled={busy || Boolean(copy.missing_at)}
                   onClick={() => void moveCopy(copy)}
                 >
                   Move
                 </Button>
               </div>
+              {copy.missing_at && <p className="copy-missing-hint">Mark it found before changing its location.</p>}
               {histories[copy.id] && (
                 <div className="copy-history">
                   {histories[copy.id].map((move, index) => (

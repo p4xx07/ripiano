@@ -61,6 +61,7 @@ def test_trash_hides_every_access_path_and_restore_preserves_archive(tmp_path):
         assert client.post(f"/api/documents/{document.id}/reprocess").status_code == 404
         assert client.get(f"/api/documents/{document.id}/copies").status_code == 404
         assert client.patch(f"/api/copies/{copy.id}", json.dumps({"location_id": None}), content_type="application/json").status_code == 404
+        assert client.patch(f"/api/copies/{copy.id}/status", json.dumps({"missing": True}), content_type="application/json").status_code == 404
         assert client.get(f"/api/copies/{copy.id}/label").status_code == 404
         assert client.get(f"/api/stickers/{copy.sticker_code}").status_code == 410
         assert client.get(f"/api/stickers/{copy.sticker_code}").json()["error"].endswith("Restore the document to use it again.")

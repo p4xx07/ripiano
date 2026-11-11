@@ -67,6 +67,7 @@ export type PhysicalCopy = {
   sticker_code: string;
   location_id: string | null;
   location_path: string[];
+  missing_at: string | null;
   created_at: string;
 };
 

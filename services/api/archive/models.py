@@ -246,6 +246,7 @@ class PhysicalCopy(models.Model):
     document = models.ForeignKey(Document, on_delete=models.PROTECT, related_name="physical_copies")
     sticker_code = models.CharField(max_length=12, unique=True)
     location = models.ForeignKey(Location, null=True, blank=True, on_delete=models.PROTECT, related_name="physical_copies")
+    missing_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -253,7 +254,14 @@ class PhysicalCopy(models.Model):
 
 
 class Movement(models.Model):
+    class Kind(models.TextChoices):
+        PLACEMENT = "placement", "Initial placement"
+        MOVE = "move", "Move"
+        MISSING = "missing", "Marked missing"
+        FOUND = "found", "Marked found"
+
     physical_copy = models.ForeignKey(PhysicalCopy, on_delete=models.CASCADE, related_name="movements")
+    kind = models.CharField(max_length=12, choices=Kind.choices, default=Kind.MOVE)
     from_location = models.ForeignKey(Location, null=True, blank=True, on_delete=models.SET_NULL, related_name="moves_from")
     to_location = models.ForeignKey(Location, null=True, blank=True, on_delete=models.SET_NULL, related_name="moves_to")
     moved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)

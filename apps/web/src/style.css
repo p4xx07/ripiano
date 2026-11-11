@@ -1762,6 +1762,20 @@ button:disabled {
 .trash-heading {
   margin-bottom: var(--space-7);
 }
+.copy-card.copy-card-missing {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-soft);
+}
+.copy-card > .copy-missing-label,
+.sticker-result .copy-missing-label {
+  color: var(--color-warning);
+  font-weight: 700;
+}
+.copy-missing-hint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--type-small);
+}
 .detail-notes {
   border-top: 1px solid var(--color-border);
   margin-top: var(--space-7);

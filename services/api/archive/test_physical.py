@@ -30,6 +30,7 @@ def test_sticker_location_move_and_owner_isolation():
     copy = response.json()
     assert copy["sticker_code"].startswith("R-")
     assert copy["location_path"] == ["Shelf A", "Box 1"]
+    assert copy["missing_at"] is None
     assert client.get(f"/api/stickers/{copy['sticker_code']}").json()["document"]["id"] == str(document.id)
     with patch("archive.physical_views.segno.make_qr", wraps=segno.make_qr) as make_qr:
         label = client.get(f"/api/copies/{copy['id']}/label")
@@ -42,6 +43,21 @@ def test_sticker_location_move_and_owner_isolation():
     assert moved.json()["location_path"] == ["Shelf A"]
     assert Movement.objects.filter(physical_copy_id=copy["id"]).count() == 2
     assert client.get(f"/api/copies/{copy['id']}/history").json()["movements"][0]["note"] == "Moved upstairs"
+    assert client.patch(f"/api/copies/{copy['id']}/status", json.dumps({"missing": "yes"}), content_type="application/json").status_code == 400
+    missing = client.patch(f"/api/copies/{copy['id']}/status", json.dumps({"missing": True}), content_type="application/json")
+    assert missing.status_code == 200
+    assert missing.json()["missing_at"] is not None
+    assert missing.json()["location_path"] == ["Shelf A"]
+    assert client.patch(f"/api/copies/{copy['id']}/status", json.dumps({"missing": True}), content_type="application/json").status_code == 409
+    assert client.patch(f"/api/copies/{copy['id']}", json.dumps({"location_id": box.json()["id"]}), content_type="application/json").status_code == 409
+    assert client.get(f"/api/stickers/{copy['sticker_code']}").json()["copy"]["missing_at"] is not None
+    assert client.get(f"/api/copies/{copy['id']}/history").json()["movements"][0]["kind"] == "missing"
+    found = client.patch(f"/api/copies/{copy['id']}/status", json.dumps({"missing": False}), content_type="application/json")
+    assert found.status_code == 200
+    assert found.json()["missing_at"] is None
+    assert found.json()["location_path"] == ["Shelf A"]
+    assert client.get(f"/api/copies/{copy['id']}/history").json()["movements"][0]["kind"] == "found"
+    assert Movement.objects.filter(physical_copy_id=copy["id"]).count() == 4
     assert client.delete(f"/api/locations/{shelf.json()['id']}").status_code == 409
 
     client.force_login(other)
@@ -49,5 +65,6 @@ def test_sticker_location_move_and_owner_isolation():
     assert client.get(f"/api/copies/{copy['id']}/label").status_code == 404
     assert client.get(f"/api/copies/{copy['id']}/history").status_code == 404
     assert client.patch(f"/api/copies/{copy['id']}", json.dumps({"location_id": None}), content_type="application/json").status_code == 404
+    assert client.patch(f"/api/copies/{copy['id']}/status", json.dumps({"missing": True}), content_type="application/json").status_code == 404
     assert client.post(f"/api/documents/{document.id}/copies", json.dumps({"location_id": None}), content_type="application/json").status_code == 404
     assert PhysicalCopy.objects.count() == 1

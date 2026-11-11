@@ -8,6 +8,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 from django.http import HttpResponse, JsonResponse
+from django.utils import timezone
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 
@@ -52,6 +53,7 @@ def copy_json(copy):
         "sticker_code": copy.sticker_code,
         "location_id": str(copy.location_id) if copy.location_id else None,
         "location_path": location_path(copy.location),
+        "missing_at": copy.missing_at.isoformat() if copy.missing_at else None,
         "created_at": copy.created_at.isoformat(),
     }
 
@@ -63,6 +65,14 @@ def _location(owner, raw_id):
         return Location.objects.filter(pk=UUID(str(raw_id)), owner=owner).first()
     except ValueError:
         return None
+
+
+def _locked_copy(owner, copy_id):
+    """Lock parent before copy, matching the document Trash lock order."""
+    document_id = PhysicalCopy.objects.filter(pk=copy_id, document__owner=owner).values_list("document_id", flat=True).first()
+    if document_id is None or not Document.objects.select_for_update().filter(pk=document_id, owner=owner, trashed_at__isnull=True).exists():
+        return None
+    return PhysicalCopy.objects.select_for_update(of=("self",)).filter(pk=copy_id, document_id=document_id).first()
 
 
 @require_http_methods(["GET", "POST"])
@@ -127,7 +137,7 @@ def document_copies(request, document_id):
             with transaction.atomic():
                 copy = PhysicalCopy.objects.create(document=document, sticker_code=code, location=location)
                 if location:
-                    Movement.objects.create(physical_copy=copy, to_location=location, moved_by=request.user, note="Initial placement")
+                    Movement.objects.create(physical_copy=copy, kind=Movement.Kind.PLACEMENT, to_location=location, moved_by=request.user, note="Initial placement")
             return JsonResponse(copy_json(copy), status=201)
         except IntegrityError:
             continue
@@ -149,16 +159,43 @@ def copy_detail(request, copy_id):
     if not isinstance(note, str) or len(note) > 300:
         return JsonResponse({"error": "Movement note is too long"}, status=400)
     with transaction.atomic():
-        document_id = PhysicalCopy.objects.filter(pk=copy_id, document__owner=request.user).values_list("document_id", flat=True).first()
-        if document_id is None or not Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=True).exists():
-            return JsonResponse({"error": "Physical copy not found"}, status=404)
-        copy = PhysicalCopy.objects.select_for_update(of=("self",)).filter(pk=copy_id, document__owner=request.user, document__trashed_at__isnull=True).first()
+        copy = _locked_copy(request.user, copy_id)
         if copy is None:
             return JsonResponse({"error": "Physical copy not found"}, status=404)
+        if copy.missing_at:
+            return JsonResponse({"error": "Mark this paper copy found before moving it"}, status=409)
         if copy.location_id != (location.id if location else None):
-            Movement.objects.create(physical_copy=copy, from_location=copy.location, to_location=location, moved_by=request.user, note=note.strip())
+            Movement.objects.create(physical_copy=copy, kind=Movement.Kind.MOVE, from_location=copy.location, to_location=location, moved_by=request.user, note=note.strip())
             copy.location = location
             copy.save(update_fields=["location"])
+    return JsonResponse(copy_json(copy))
+
+
+@require_http_methods(["PATCH"])
+def copy_status(request, copy_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    body = _body(request)
+    if body is None or not isinstance(body.get("missing"), bool):
+        return JsonResponse({"error": "Choose whether the copy is missing"}, status=400)
+    note = body.get("note", "")
+    if not isinstance(note, str) or len(note.strip()) > 300:
+        return JsonResponse({"error": "Status note is too long"}, status=400)
+    with transaction.atomic():
+        copy = _locked_copy(request.user, copy_id)
+        if copy is None:
+            return JsonResponse({"error": "Physical copy not found"}, status=404)
+        if bool(copy.missing_at) == body["missing"]:
+            return JsonResponse({"error": "Paper copy already has this status"}, status=409)
+        copy.missing_at = timezone.now() if body["missing"] else None
+        copy.save(update_fields=["missing_at"])
+        kind = Movement.Kind.MISSING if body["missing"] else Movement.Kind.FOUND
+        Movement.objects.create(
+            physical_copy=copy, kind=kind,
+            from_location=copy.location, to_location=copy.location,
+            moved_by=request.user, note=note.strip() or kind.label,
+        )
     return JsonResponse(copy_json(copy))
 
 
@@ -171,6 +208,7 @@ def copy_history(request, copy_id):
     if copy is None:
         return JsonResponse({"error": "Physical copy not found"}, status=404)
     return JsonResponse({"movements": [{
+        "kind": move.kind,
         "from": location_path(move.from_location),
         "to": location_path(move.to_location),
         "note": move.note,

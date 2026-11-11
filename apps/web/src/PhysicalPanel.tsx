@@ -121,9 +121,10 @@ export default function PhysicalPanel({
             <div className="sticker-result">
               <div className="sticker-code">{found.copy.sticker_code}</div>
               <h3>{found.document.title}</h3>
+              {found.copy.missing_at && <p className="copy-missing-label">This paper copy was reported missing.</p>}
               <p>
                 <MapPin size={16} />{" "}
-                {found.copy.location_path.join(" / ") ||
+                {found.copy.missing_at ? "Last known: " : ""}{found.copy.location_path.join(" / ") ||
                   "Location not assigned yet"}
               </p>
               <Button

@@ -708,3 +708,20 @@ def test_bulk_filing_is_atomic_owner_scoped_and_resists_rules():
     client.force_login(other)
     assert change("correspondent", [first.id], private_sender.id).status_code == 404
     assert Document.objects.get(pk=foreign.id).correspondent_id is None
+
+
+@pytest.mark.django_db
+def test_search_does_not_include_partial_matches_for_document_numbers():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    for number in ("AB123", "AB456"):
+        Document.objects.create(
+            owner=owner, title=f"invoice-2026-{number}",
+            original_name=f"invoice-2026-{number}.pdf",
+            original_path=f"originals/{number}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10,
+        )
+    client = Client()
+    client.force_login(owner)
+    response = client.get("/api/documents", {"q": "invoice-2026-AB123"})
+    assert response.status_code == 200
+    assert [item["title"] for item in response.json()["documents"]] == ["invoice-2026-AB123"]

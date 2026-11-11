@@ -298,7 +298,10 @@ def documents(request):
             if connection.vendor == "postgresql":
                 vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
                 search_query = SearchQuery(free_query, search_type="plain", config="simple")
-                queryset = queryset.annotate(search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField())).filter(Q(search_score__gt=0) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
+                queryset = queryset.annotate(
+                    search_vector=vector,
+                    search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField()),
+                ).filter(Q(search_vector=search_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
             else:
                 queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
         if view == "actions":

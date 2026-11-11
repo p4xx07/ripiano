@@ -58,17 +58,20 @@ const emptyLibraryFilters: LibraryFilters = {
 };
 
 function TagSummary({ tags }: { tags: Document["tags"] }) {
+  const priority = { manual: 0, model: 1, rule: 2 };
+  const visibleFirst = [...tags].sort((a, b) =>
+    priority[a.origin] - priority[b.origin] || a.name.localeCompare(b.name));
   function chips(limit: number) {
     return <>
-      {tags.slice(0, limit).map((tag) => (
+      {visibleFirst.slice(0, limit).map((tag) => (
         <span key={tag.id} title={tag.name}>
           <i style={{ background: tag.color }} />
           <span className="tag-name">{tag.name}</span>
         </span>
       ))}
-      {tags.length > limit && (
-        <span className="more-tags" title={tags.slice(limit).map((tag) => tag.name).join(", ")}>
-          +{tags.length - limit} more
+      {visibleFirst.length > limit && (
+        <span className="more-tags" title={visibleFirst.slice(limit).map((tag) => tag.name).join(", ")}>
+          +{visibleFirst.length - limit} more
         </span>
       )}
     </>;

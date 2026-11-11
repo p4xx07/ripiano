@@ -49,7 +49,8 @@ test("select documents and file tags, sender, and type together", async ({ page 
 
   const titles = ["first", "second"].map((part) => `bulk-${suffix}-${part}`);
   const search = page.getByRole("textbox", { name: "Search documents" });
-  await search.fill(`title:bulk-${suffix}`);
+  await search.fill(`bulk-${suffix}`);
+  await expect(page.locator(".document-row")).toHaveCount(2);
   const rows = titles.map((title) => page.locator(".document-row").filter({ has: page.getByRole("button", { name: title, exact: true }) }));
   for (const row of rows) await expect(row).toBeVisible();
   await page.getByRole("button", { name: "Select documents" }).click();

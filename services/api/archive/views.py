@@ -647,24 +647,34 @@ def download_archive(request, document_id):
 
 @require_http_methods(["POST"])
 def retry_document(request, document_id):
+    return _restart_document_processing(request, document_id, {Document.Status.FAILED}, "Only failed documents can be retried")
+
+
+@require_http_methods(["POST"])
+def reprocess_document(request, document_id):
+    return _restart_document_processing(request, document_id, {Document.Status.READY, Document.Status.FAILED}, "Document is already being processed")
+
+
+def _restart_document_processing(request, document_id, allowed_statuses, conflict):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user).first()
-    if document is None:
-        return JsonResponse({"error": "Document not found"}, status=404)
-    if document.status != Document.Status.FAILED:
-        return JsonResponse({"error": "Only failed documents can be retried"}, status=409)
-    document.status = Document.Status.PENDING
-    document.error = ""
-    document.processing_started_at = None
-    document.save(update_fields=["status", "error", "processing_started_at"])
+    with transaction.atomic():
+        document = Document.objects.select_for_update().filter(pk=document_id, owner=request.user).first()
+        if document is None:
+            return JsonResponse({"error": "Document not found"}, status=404)
+        if document.status not in allowed_statuses:
+            return JsonResponse({"error": conflict}, status=409)
+        document.status = Document.Status.PENDING
+        document.error = ""
+        document.processing_started_at = None
+        document.save(update_fields=["status", "error", "processing_started_at"])
     try:
         from .tasks import process_document
 
         process_document.delay(str(document.id))
     except Exception:
-        logger.exception("Retry queue unavailable; pending document will be reconciled")
+        logger.exception("Document processing queue unavailable; pending document will be reconciled")
     return JsonResponse(_document_json(document), status=202)
 
 

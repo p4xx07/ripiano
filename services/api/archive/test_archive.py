@@ -211,6 +211,35 @@ def test_failed_document_can_retry_and_archive_is_owner_only(tmp_path):
 
 
 @pytest.mark.django_db
+def test_ready_document_can_reprocess_without_changing_original_or_queuing_twice():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    document = Document.objects.create(
+        owner=owner, title="Permit", original_name="permit.pdf", original_path="originals/permit.pdf",
+        original_mime="application/pdf", original_sha256="a" * 64, original_size=10,
+        archive_path="archive/permit.pdf", extracted_text="Old OCR", status=Document.Status.READY,
+    )
+    path = f"/api/documents/{document.id}/reprocess"
+    client = Client()
+    assert client.post(path).status_code == 401
+    client.force_login(other)
+    assert client.post(path).status_code == 404
+    client.force_login(owner)
+    with patch("archive.tasks.process_document.delay") as enqueue:
+        response = client.post(path)
+        assert response.status_code == 202
+        assert response.json()["status"] == Document.Status.PENDING
+        assert client.post(path).status_code == 409
+    enqueue.assert_called_once_with(str(document.id))
+    document.refresh_from_db()
+    assert document.original_path == "originals/permit.pdf"
+    assert document.original_sha256 == "a" * 64
+    assert document.archive_path == "archive/permit.pdf"
+    assert document.extracted_text == "Old OCR"
+    assert document.status == Document.Status.PENDING
+
+
+@pytest.mark.django_db
 def test_follow_ups_are_optional_owner_scoped_and_due_ordered():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     other = get_user_model().objects.create_user("other", password="secure-password-2")

@@ -48,6 +48,10 @@ These show the running development stack with synthetic test documents. The mobi
 | --- | --- |
 | ![Desktop document panel with a dated, searchable note](qa-artifacts/20261111-document-notes/desktop/document-notes.png) | ![Mobile document panel with a dated, searchable note](qa-artifacts/20261111-document-notes/mobile/document-notes.png) |
 
+| Rebuild OCR on desktop | Rebuild OCR on mobile |
+| --- | --- |
+| ![Desktop document files section after rebuilding the searchable PDF](qa-artifacts/20261111-reprocess/desktop/reprocess.png) | ![Mobile document files section after rebuilding the searchable PDF](qa-artifacts/20261111-reprocess/mobile/reprocess.png) |
+
 ## Planning documents
 
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
@@ -63,7 +67,7 @@ These show the running development stack with synthetic test documents. The mobi
 
 ## First implementation slice
 
-The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, and tag-changing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags through that grant. Failed OCR can be retried, and the searchable PDF can be opened directly. This is the beginning of the staged implementation, not the complete Paperless feature set. Calibrated pretrained classification, automatic OAuth agent sign-in, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
+The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, and tag-changing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags through that grant. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. This is the beginning of the staged implementation, not the complete Paperless feature set. Calibrated pretrained classification, automatic OAuth agent sign-in, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
 
 ### Run locally
 

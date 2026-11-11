@@ -1730,6 +1730,14 @@ button:disabled {
 .detail-files a:hover {
   text-decoration: underline;
 }
+.detail-files .button {
+  justify-self: start;
+}
+.detail-processing {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--type-small);
+}
 .detail-notes {
   border-top: 1px solid var(--color-border);
   margin-top: var(--space-7);

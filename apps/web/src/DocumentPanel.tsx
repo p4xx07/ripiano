@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Plus,
   Printer,
+  RotateCw,
   Save,
   Tag as TagIcon,
   X,
@@ -64,6 +65,7 @@ export default function DocumentPanel({
   const [noteError, setNoteError] = useState("");
   const [noteNotice, setNoteNotice] = useState("");
   const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null);
+  const [reprocessNotice, setReprocessNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -89,6 +91,21 @@ export default function DocumentPanel({
   useEffect(() => {
     void loadNotes(0);
   }, [current.id]);
+  useEffect(() => {
+    if (current.status !== "pending" && current.status !== "processing") return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      void request<Document>(`/api/documents/${current.id}`).then((updated) => {
+        if (!active) return;
+        setCurrent(updated);
+        if (updated.status === "ready" || updated.status === "failed") {
+          onSaved(updated);
+          setReprocessNotice(updated.status === "ready" ? "Searchable PDF is ready." : "OCR failed. You can retry it here.");
+        }
+      }).catch(() => {});
+    }, 2500);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [current.id, current.status]);
 
   async function loadNotes(offset: number) {
     setNotesLoading(true);
@@ -137,6 +154,22 @@ export default function DocumentPanel({
       setNoteError(cause instanceof Error ? cause.message : "Could not delete note");
     } finally {
       setNotesBusy(false);
+    }
+  }
+
+  async function reprocess() {
+    setBusy(true);
+    setError("");
+    setReprocessNotice("");
+    try {
+      const updated = await request<Document>(`/api/documents/${current.id}/reprocess`, { method: "POST" });
+      setCurrent(updated);
+      onSaved(updated);
+      setReprocessNotice("OCR queued from the preserved original.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not queue OCR");
+    } finally {
+      setBusy(false);
     }
   }
   function toggle(id: string) {
@@ -417,6 +450,7 @@ export default function DocumentPanel({
           <h3>
             <FileText size={17} /> Files
           </h3>
+          {reprocessNotice && <p className="bulk-notice" role="status">{reprocessNotice}</p>}
           <a href={`/api/documents/${current.id}/original`}>
             <ArrowDownToLine size={17} /> Download original
           </a>
@@ -429,6 +463,13 @@ export default function DocumentPanel({
               <Eye size={17} /> Open searchable PDF
             </a>
           )}
+          {(current.status === "ready" || current.status === "failed") && (
+            <Button type="button" variant="secondary" disabled={busy} onClick={() => void reprocess()}>
+              <RotateCw size={16} /> {current.status === "failed" ? "Retry OCR" : "Run OCR again"}
+            </Button>
+          )}
+          {(current.status === "pending" || current.status === "processing") && <p className="detail-processing">OCR is being prepared. The original is available above.</p>}
+          {current.status === "failed" && current.error && <p className="inline-error">{current.error}</p>}
         </div>
         <div className="detail-files physical-copies">
           <h3>

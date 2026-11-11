@@ -313,6 +313,7 @@ function App() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("");
   const [filters, setFilters] = useState<LibraryFilters>({ ...emptyLibraryFilters });
   const [showFilters, setShowFilters] = useState(false);
   const [filterOptions, setFilterOptions] = useState<{ tags: Tag[]; correspondents: FilingItem[]; document_types: FilingItem[] }>({ tags: [], correspondents: [], document_types: [] });
@@ -370,6 +371,7 @@ function App() {
     try {
       const params = new URLSearchParams({ q: search });
       for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
+      if (sort) params.set("sort", sort);
       if (cursor) params.set("cursor", cursor);
       const result = await request<{ documents: Document[]; counts: typeof counts; next_cursor: string | null }>(
         `/api/documents?${params}`,
@@ -394,7 +396,7 @@ function App() {
       if (cursor) loadingMoreRef.current = false;
       if (requestNumber === latestSearch.current) setLoadingMore(false);
     }
-  }, [filters]);
+  }, [filters, sort]);
 
   useEffect(() => {
     request<Session>("/api/session")
@@ -777,6 +779,15 @@ function App() {
                     </button>
                   )}
                 </div>
+                <select className="library-sort" aria-label="Sort documents" value={sort} onChange={(event) => { setSort(event.target.value); setNextCursor(null); }}>
+                  <option value="">Recommended order</option>
+                  <option value="newest">Newest added</option>
+                  <option value="oldest">Oldest added</option>
+                  <option value="document_newest">Newest document date</option>
+                  <option value="document_oldest">Oldest document date</option>
+                  <option value="title_asc">Title A–Z</option>
+                  <option value="title_desc">Title Z–A</option>
+                </select>
                 <Button type="button" variant="secondary" className="filter-toggle" aria-expanded={showFilters} aria-controls="library-filters" onClick={() => setShowFilters((current) => !current)}>
                   <SlidersHorizontal size={17} /> Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
                 </Button>

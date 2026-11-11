@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 const username = process.env.RIPIANO_E2E_USERNAME;
 const password = process.env.RIPIANO_E2E_PASSWORD;
 
-test("older documents and follow-ups remain reachable after the first 50", async ({ page }) => {
+test("older documents and follow-ups remain reachable after the first 50", async ({ page }, testInfo) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
   const documents = Array.from({ length: 51 }, (_, index) => ({
     id: `fixture-${index}`,
@@ -45,6 +45,20 @@ test("older documents and follow-ups remain reachable after the first 50", async
   await page.getByRole("button", { name: "Show more documents" }).click();
   await expect(page.locator(".document-list .document-row")).toHaveCount(51);
   await expect(page.getByRole("button", { name: "Paged document 51" })).toBeVisible();
+  const sort = page.getByRole("combobox", { name: "Sort documents" });
+  const oldestRequest = page.waitForRequest((request) => new URL(request.url()).searchParams.get("sort") === "oldest");
+  await sort.selectOption("oldest");
+  await oldestRequest;
+  await expect(page.locator(".document-list .document-row")).toHaveCount(50);
+  await page.getByRole("button", { name: "Show more documents" }).click();
+  await expect(page.locator(".document-list .document-row")).toHaveCount(51);
+  const titleRequest = page.waitForRequest((request) => new URL(request.url()).searchParams.get("sort") === "title_asc");
+  await sort.selectOption("title_asc");
+  await titleRequest;
+  await expect(page.locator(".document-list .document-row")).toHaveCount(50);
+  expect(await page.locator(".toolbar").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+  await sort.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("library-sort.png") });
   documents.unshift({ ...documents[0], id: "new-arrival", title: "New arrival" });
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(page.getByRole("button", { name: "New arrival" })).toBeVisible();

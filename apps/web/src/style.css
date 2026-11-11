@@ -503,6 +503,17 @@ button:disabled {
 .filter-toggle {
   white-space: nowrap;
 }
+.library-sort {
+  min-height: 45px;
+  max-width: 220px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  padding: 0 var(--space-3);
+  font-size: var(--type-small);
+  font-weight: 700;
+}
 .search-syntax {
   margin: calc(-1 * var(--space-2)) 0 var(--space-4);
   color: var(--color-muted);
@@ -1030,6 +1041,11 @@ button:disabled {
   }
   .search-box {
     grid-column: 1 / -1;
+  }
+  .library-sort {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
   }
   .library-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));

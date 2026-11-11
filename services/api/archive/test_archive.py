@@ -420,6 +420,38 @@ def test_search_cursor_has_stable_tie_breaker_on_equal_timestamps():
 
 
 @pytest.mark.django_db
+def test_library_sort_keeps_all_results_across_signed_pages():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    for index in range(51):
+        Document.objects.create(
+            owner=owner, title=f"Receipt {index % 4}", original_name=f"receipt-{index}.pdf",
+            original_path=f"originals/receipt-{index}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10,
+            document_date=date(2026, 1, index % 28 + 1) if index % 3 else None,
+        )
+    Document.objects.filter(owner=owner).update(created_at=timezone.now())
+    client = Client()
+    client.force_login(owner)
+    for sort in ("newest", "oldest", "document_newest", "document_oldest", "title_asc", "title_desc"):
+        first = client.get("/api/documents", {"sort": sort}).json()
+        second = client.get("/api/documents", {"sort": sort, "cursor": first["next_cursor"]}).json()
+        items = first["documents"] + second["documents"]
+        assert len(items) == len({item["id"] for item in items}) == 51
+        assert first["counts"]["total"] == second["counts"]["total"] == 51
+        assert second["next_cursor"] is None
+        if sort.startswith("document_"):
+            assert items[-1]["document_date"] is None
+        if sort == "title_asc":
+            assert [item["title"] for item in items] == sorted(item["title"] for item in items)
+        if sort == "title_desc":
+            assert [item["title"] for item in items] == sorted((item["title"] for item in items), reverse=True)
+    first = client.get("/api/documents", {"sort": "title_asc"}).json()
+    assert client.get("/api/documents", {"sort": "title_desc", "cursor": first["next_cursor"]}).status_code == 400
+    assert client.get("/api/documents", {"sort": "unknown"}).status_code == 400
+    assert client.get("/api/documents", {"sort": "relevance"}).status_code == 400
+
+
+@pytest.mark.django_db
 def test_action_cursor_keeps_undated_follow_ups_after_dated_ones():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     for index in range(50):

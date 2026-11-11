@@ -8,7 +8,8 @@ The user wants exactly one feature completed per turn, then a stop so they can m
 - Saved searches have owner-scoped API and PWA controls to create, reopen, rename, update criteria, and delete. The complete feature was checkpointed at `cb857fe`; desktop/mobile evidence is in `qa-artifacts/1896f45/saved-searches`.
 - Search results now show a short match-centered excerpt from OCR text or action notes, or a matching sticker code. The unfiltered Library no longer repeats the beginning of every OCR result. Desktop/mobile screenshots and verification are in `qa-artifacts/cb857fe/search-snippets`.
 - Field-qualified Library search now accepts title, OCR text, action note, tag, sender, type, sticker, and exact document date. Quoted names with spaces and combined clauses work; an in-app help panel explains the syntax. Desktop/mobile evidence is in `qa-artifacts/93eb784/field-search`.
-- The latest API suite, production PWA build, migration check, and browser result are recorded in the field-search QA review.
+- Library sorting now offers newest/oldest added, newest/oldest document date, title A–Z/Z–A, and the recommended relevance/newest default. Signed page cursors preserve the selected order; date-less documents appear last. Desktop/mobile evidence is in `qa-artifacts/e9bb89a/library-sort`.
+- The latest API suite, production PWA build, migration check, PostgreSQL cursor checks, and browser result are recorded in the Library-sort QA review.
 
 ## Resume from here
 

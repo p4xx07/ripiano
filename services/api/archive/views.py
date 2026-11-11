@@ -13,7 +13,7 @@ from django.core import signing
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import IntegrityError, connection, transaction
 from django.db.models import BigIntegerField, Count, Exists, F, OuterRef, Q
-from django.db.models.functions import Cast
+from django.db.models.functions import Cast, Lower
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
@@ -26,8 +26,9 @@ from .storage import InvalidDocument
 from .tasks import backup_archive
 
 logger = logging.getLogger(__name__)
-CURSOR_SALT = "ripiano-document-page-v1"
+CURSOR_SALT = "ripiano-document-page-v2"
 SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date"}
+LIBRARY_SORTS = {"relevance", "newest", "oldest", "document_newest", "document_oldest", "title_asc", "title_desc"}
 
 
 def _parse_search(query):
@@ -53,33 +54,40 @@ def _parse_search(query):
     return " ".join(words), clauses
 
 
-def _read_page_cursor(raw, owner, query, view, filters):
+def _read_page_cursor(raw, owner, query, view, filters, sort):
     try:
         value = signing.loads(raw, salt=CURSOR_SALT, max_age=86400)
-        if not isinstance(value, dict) or value.get("owner") != str(owner.pk) or value.get("query") != query or value.get("view") != view or value.get("filters", {}) != filters:
+        if not isinstance(value, dict) or value.get("owner") != str(owner.pk) or value.get("query") != query or value.get("view") != view or value.get("filters", {}) != filters or value.get("sort") != sort:
             raise ValueError
         created_at = datetime.fromisoformat(value["created_at"])
         if timezone.is_naive(created_at):
             raise ValueError
         document_id = UUID(value["id"])
         due_date = date.fromisoformat(value["due_date"]) if value.get("due_date") else None
-        score = int(value["score"]) if view == "search" else None
+        score = int(value["score"]) if sort == "relevance" and view == "search" else None
         if score is not None and score < 0:
             raise ValueError
+        sort_value = value.get("sort_value")
+        if sort in {"title_asc", "title_desc"} and not isinstance(sort_value, str):
+            raise ValueError
+        if sort in {"document_newest", "document_oldest"} and sort_value is not None:
+            sort_value = date.fromisoformat(sort_value)
         counts = value["counts"]
         if not isinstance(counts, dict) or not all(isinstance(counts.get(key), int) and counts[key] >= 0 for key in ("total", "ready", "waiting")):
             raise ValueError
-        return created_at, document_id, due_date, score, counts
+        return created_at, document_id, due_date, score, sort_value, counts
     except (signing.BadSignature, KeyError, TypeError, ValueError, OverflowError) as exc:
         raise ValueError("Invalid page cursor") from exc
 
 
-def _next_page_cursor(document, owner, query, view, filters, counts):
+def _next_page_cursor(document, owner, query, view, filters, sort, counts):
+    sort_value = document.sort_title if sort in {"title_asc", "title_desc"} else document.document_date.isoformat() if sort in {"document_newest", "document_oldest"} and document.document_date else None
     return signing.dumps({
-        "owner": str(owner.pk), "query": query, "view": view, "filters": filters,
+        "owner": str(owner.pk), "query": query, "view": view, "filters": filters, "sort": sort,
         "created_at": document.created_at.isoformat(), "id": str(document.id),
         "due_date": document.action_due_date.isoformat() if document.action_due_date else None,
-        "score": int(getattr(document, "search_score", 0)) if view == "search" else None,
+        "score": int(getattr(document, "search_score", 0)) if sort == "relevance" and view == "search" else None,
+        "sort_value": sort_value,
         "counts": counts,
     }, salt=CURSOR_SALT)
 
@@ -267,6 +275,17 @@ def documents(request):
                 queryset = queryset.filter(document_date=value)
         requested_view = request.GET.get("view")
         view = "actions" if requested_view == "actions" else "exceptions" if requested_view == "exceptions" else "search" if free_query else "documents"
+        requested_sort = request.GET.get("sort", "")
+        if requested_sort and requested_sort not in LIBRARY_SORTS:
+            return JsonResponse({"error": "Invalid sort order"}, status=400)
+        if view in {"actions", "exceptions"}:
+            if requested_sort:
+                return JsonResponse({"error": "Sorting is available in the Library"}, status=400)
+            sort = "actions" if view == "actions" else "newest"
+        else:
+            sort = requested_sort or ("relevance" if free_query else "newest")
+            if sort == "relevance" and not free_query:
+                return JsonResponse({"error": "Relevance needs search text"}, status=400)
         if view == "actions":
             queryset = queryset.filter(action_status=Document.ActionStatus.OPEN)
         elif view == "exceptions":
@@ -279,30 +298,54 @@ def documents(request):
             if connection.vendor == "postgresql":
                 vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
                 search_query = SearchQuery(free_query, search_type="plain", config="simple")
-                queryset = queryset.annotate(search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField())).filter(Q(search_score__gt=0) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query)).order_by("-search_score", "-created_at", "-id")
+                queryset = queryset.annotate(search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField())).filter(Q(search_score__gt=0) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
             else:
                 queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
         if view == "actions":
             queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at", "-id")
-        elif view != "search":
-            queryset = queryset.order_by("-created_at", "-id")
-        elif connection.vendor != "postgresql":
+        elif sort == "relevance" and connection.vendor == "postgresql":
+            queryset = queryset.order_by("-search_score", "-created_at", "-id")
+        elif sort == "oldest":
+            queryset = queryset.order_by("created_at", "id")
+        elif sort == "document_newest":
+            queryset = queryset.order_by(F("document_date").desc(nulls_last=True), "-created_at", "-id")
+        elif sort == "document_oldest":
+            queryset = queryset.order_by(F("document_date").asc(nulls_last=True), "-created_at", "-id")
+        elif sort == "title_asc":
+            queryset = queryset.annotate(sort_title=Lower("title")).order_by("sort_title", "id")
+        elif sort == "title_desc":
+            queryset = queryset.annotate(sort_title=Lower("title")).order_by("-sort_title", "-id")
+        else:
             queryset = queryset.order_by("-created_at", "-id")
 
         cursor_raw = request.GET.get("cursor")
         if cursor_raw:
             try:
-                created_at, document_id, due_date, score, counts = _read_page_cursor(cursor_raw, request.user, query, view, filters)
+                created_at, document_id, due_date, score, sort_value, counts = _read_page_cursor(cursor_raw, request.user, query, view, filters, sort)
             except ValueError:
                 return JsonResponse({"error": "Invalid page cursor"}, status=400)
             older = Q(created_at__lt=created_at) | Q(created_at=created_at, id__lt=document_id)
+            newer = Q(created_at__gt=created_at) | Q(created_at=created_at, id__gt=document_id)
             if view == "actions":
                 if due_date is None:
                     queryset = queryset.filter(Q(action_due_date__isnull=True) & older)
                 else:
                     queryset = queryset.filter(Q(action_due_date__gt=due_date) | Q(action_due_date__isnull=True) | (Q(action_due_date=due_date) & older))
-            elif view == "search" and connection.vendor == "postgresql":
+            elif sort == "relevance" and connection.vendor == "postgresql":
                 queryset = queryset.filter(Q(search_score__lt=score) | (Q(search_score=score) & older))
+            elif sort == "oldest":
+                queryset = queryset.filter(newer)
+            elif sort == "title_asc":
+                queryset = queryset.filter(Q(sort_title__gt=sort_value) | Q(sort_title=sort_value, id__gt=document_id))
+            elif sort == "title_desc":
+                queryset = queryset.filter(Q(sort_title__lt=sort_value) | Q(sort_title=sort_value, id__lt=document_id))
+            elif sort in {"document_newest", "document_oldest"}:
+                if sort_value is None:
+                    queryset = queryset.filter(Q(document_date__isnull=True) & older)
+                elif sort == "document_newest":
+                    queryset = queryset.filter(Q(document_date__lt=sort_value) | Q(document_date__isnull=True) | (Q(document_date=sort_value) & older))
+                else:
+                    queryset = queryset.filter(Q(document_date__gt=sort_value) | Q(document_date__isnull=True) | (Q(document_date=sort_value) & older))
             else:
                 queryset = queryset.filter(older)
         else:
@@ -316,7 +359,7 @@ def documents(request):
         snippet_query = free_query or next((value for field, value in clauses if field in {"text", "note", "sticker"}), "")
         return JsonResponse({
             "documents": [_document_json(doc, query=snippet_query) for doc in visible],
-            "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, counts) if len(page) > 50 else None,
+            "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, sort, counts) if len(page) > 50 else None,
             "counts": counts,
         })
 

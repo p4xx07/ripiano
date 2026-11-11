@@ -56,7 +56,7 @@ type BackupRun = {
 };
 
 const emptyLibraryFilters: LibraryFilters = {
-  tag_id: "", correspondent_id: "", document_type_id: "", date_from: "", date_to: "", custom_field_id: "", custom_value: "",
+  tag_id: "", correspondent_id: "", document_type_id: "", date_from: "", date_to: "", custom_field_id: "", custom_value: "", custom_min: "", custom_max: "",
 };
 
 function TagSummary({ tags }: { tags: Document["tags"] }) {
@@ -374,7 +374,11 @@ function App() {
   }, []);
 
   function updateFilter(key: keyof LibraryFilters, value: string) {
-    setFilters((current) => ({ ...current, [key]: value, ...(key === "custom_field_id" ? { custom_value: "" } : {}) }));
+    setFilters((current) => ({ ...current, [key]: value,
+      ...(key === "custom_field_id" ? { custom_value: "", custom_min: "", custom_max: "" } : {}),
+      ...(key === "custom_value" && value ? { custom_min: "", custom_max: "" } : {}),
+      ...((key === "custom_min" || key === "custom_max") && value ? { custom_value: "" } : {}),
+    }));
     setNextCursor(null);
   }
 
@@ -610,7 +614,7 @@ function App() {
     );
 
   const isEmpty = counts.total === 0;
-  const activeFilterCount = Object.entries(filters).filter(([key, value]) => key !== "custom_value" && Boolean(value)).length;
+  const activeFilterCount = Object.entries(filters).filter(([key, value]) => !["custom_value", "custom_min", "custom_max"].includes(key) && Boolean(value)).length;
   const selectedCustomField = filterOptions.custom_fields.find((field) => field.id === filters.custom_field_id);
 
   return (
@@ -892,7 +896,11 @@ function App() {
                 <Field label="From" className="detail-label"><select value={filters.correspondent_id} onChange={(event) => updateFilter("correspondent_id", event.target.value)}><option value="">Any sender</option>{filterOptions.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
                 <Field label="Document type" className="detail-label"><select value={filters.document_type_id} onChange={(event) => updateFilter("document_type_id", event.target.value)}><option value="">Any type</option>{filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
                 <Field label="Custom detail" className="detail-label custom-filter-field"><select value={filters.custom_field_id} onChange={(event) => updateFilter("custom_field_id", event.target.value)}><option value="">Any custom detail</option>{filterOptions.custom_fields.map((field) => <option key={field.id} value={field.id}>{field.name}</option>)}</select></Field>
-                {selectedCustomField && <Field label={`${selectedCustomField.name} value`} className="detail-label custom-filter-value">{selectedCustomField.kind === "boolean" ? <select value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)}><option value="">Any value</option><option value="yes">Yes</option><option value="no">No</option></select> : <input type={selectedCustomField.kind === "text" ? "text" : selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)} placeholder={selectedCustomField.kind === "text" ? "Contains…" : undefined} />}</Field>}
+                {selectedCustomField && <Field label={["number", "date"].includes(selectedCustomField.kind) ? "Exact value" : `${selectedCustomField.name} value`} className="detail-label custom-filter-value">{selectedCustomField.kind === "boolean" ? <select value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)}><option value="">Any value</option><option value="yes">Yes</option><option value="no">No</option></select> : <input aria-label={`${selectedCustomField.name} ${["number", "date"].includes(selectedCustomField.kind) ? "exactly" : "value"}`} type={selectedCustomField.kind === "text" ? "text" : selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)} placeholder={selectedCustomField.kind === "text" ? "Contains…" : undefined} />}</Field>}
+                {selectedCustomField && (selectedCustomField.kind === "number" || selectedCustomField.kind === "date") && <>
+                  <Field label="From" className="detail-label custom-filter-value"><input aria-label={`${selectedCustomField.name} from`} type={selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_min} max={filters.custom_max || undefined} onChange={(event) => updateFilter("custom_min", event.target.value)} /></Field>
+                  <Field label="To" className="detail-label custom-filter-value"><input aria-label={`${selectedCustomField.name} to`} type={selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_max} min={filters.custom_min || undefined} onChange={(event) => updateFilter("custom_max", event.target.value)} /></Field>
+                </>}
                 <Field label="Date from" className="detail-label"><input type="date" value={filters.date_from} max={filters.date_to || undefined} onChange={(event) => updateFilter("date_from", event.target.value)} /></Field>
                 <Field label="Date to" className="detail-label"><input type="date" value={filters.date_to} min={filters.date_from || undefined} onChange={(event) => updateFilter("date_to", event.target.value)} /></Field>
                 {activeFilterCount > 0 && <button type="button" className="text-action filter-clear" onClick={() => { setFilters({ ...emptyLibraryFilters }); setNextCursor(null); }}>Clear filters</button>}

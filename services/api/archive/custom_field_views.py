@@ -53,6 +53,20 @@ def normalize_filter_value(field, value):
     return normalize_value(field.kind, value)
 
 
+def normalize_filter_range(field, lower, upper):
+    if not lower and not upper:
+        return "", ""
+    if field is None or field.kind not in {CustomField.Kind.NUMBER, CustomField.Kind.DATE}:
+        raise ValueError("Ranges need a number or date custom field")
+    low = normalize_value(field.kind, lower) if lower else ""
+    high = normalize_value(field.kind, upper) if upper else ""
+    if low and high:
+        first, last = (Decimal(low), Decimal(high)) if field.kind == CustomField.Kind.NUMBER else (low, high)
+        if first > last:
+            raise ValueError("Custom field range start must be before end")
+    return low, high
+
+
 def field_json(field, value=None, in_use=None):
     result = {"id": str(field.id), "name": field.name, "kind": field.kind,
               "value": (value == "true" if field.kind == CustomField.Kind.BOOLEAN else value) if value is not None else None}

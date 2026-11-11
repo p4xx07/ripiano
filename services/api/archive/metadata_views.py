@@ -11,7 +11,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from .models import ClassificationRule, Correspondent, CustomField, DocumentType, FilingRule, SavedView, Tag
-from .custom_field_views import normalize_filter_value
+from .custom_field_views import normalize_filter_range, normalize_filter_value
 from .tasks import reclassify_filing_candidates, reclassify_tag_candidates
 
 logger = logging.getLogger(__name__)
@@ -134,6 +134,8 @@ def _saved_view_json(view):
         "document_type_id": str(view.document_type_id) if view.document_type_id else None,
         "custom_field_id": str(view.custom_field_id) if view.custom_field_id else None,
         "custom_value": view.custom_value,
+        "custom_min": view.custom_min,
+        "custom_max": view.custom_max,
         "date_from": view.date_from.isoformat() if view.date_from else None,
         "date_to": view.date_to.isoformat() if view.date_to else None,
     }
@@ -183,6 +185,15 @@ def _saved_view_values(body, owner, current=None):
         if values["custom_field"] is None:
             raise ValueError("Choose a custom field before its value")
         normalize_filter_value(values["custom_field"], values["custom_value"])
+    bounds = []
+    for key in ("custom_min", "custom_max"):
+        raw = body.get(key, getattr(current, key) if current else "")
+        if not isinstance(raw, str) or len(raw.strip()) > 500:
+            raise ValueError("Custom field range value must be at most 500 characters")
+        bounds.append(raw.strip())
+    if values["custom_value"] and any(bounds):
+        raise ValueError("Use an exact value or a range")
+    values["custom_min"], values["custom_max"] = normalize_filter_range(values["custom_field"], *bounds)
     return values
 
 

@@ -76,6 +76,10 @@ These show the running development stack with synthetic test documents. The mobi
 | --- | --- |
 | ![Desktop Library filtering by a policy number](qa-artifacts/20261111-custom-filter/desktop/custom-filter.png) | ![Mobile Library filtering by a policy number](qa-artifacts/20261111-custom-filter/mobile/custom-filter.png) |
 
+| Number range filter on desktop | Number range filter on mobile |
+| --- | --- |
+| ![Desktop Library filtering a number field from 100 to 130](qa-artifacts/20261111-custom-range/desktop/custom-range.png) | ![Mobile Library filtering a number field from 100 to 130](qa-artifacts/20261111-custom-range/mobile/custom-range.png) |
+
 | Portable export on desktop | Portable export on mobile |
 | --- | --- |
 | ![Desktop document files section with Export document ZIP action](qa-artifacts/20261111-document-export/desktop/export-action.png) | ![Mobile document files section with Export document ZIP action](qa-artifacts/20261111-document-export/mobile/export-action.png) |
@@ -147,7 +151,7 @@ The document originals are stored under the mounted media path. OCR output is de
 
 The document panel keeps dated notes separate from follow-ups. Notes can be added or deleted, found through Library search (including `note:`), and retrieved in older pages when the history grows.
 
-Under **Custom details**, create a text, number, date, or yes/no field once and set it on any document. Only fields with values appear by default; choose an unused field when you need it. A field value is found by ordinary Library search, by a visual field and value filter, or with `field:"Policy number=PN-123"`. Save the visual filter as a search to reuse it. You can rename a field across documents and delete an unused field after removing its values and saved searches. Custom values are included in the portable document ZIP.
+Under **Custom details**, create a text, number, date, or yes/no field once and set it on any document. Only fields with values appear by default; choose an unused field when you need it. A field value is found by ordinary Library search, by a visual field and value filter, or with `field:"Policy number=PN-123"`. Number and date filters accept an exact value or inclusive from/to bounds. Save any visual filter as a search to reuse it. You can rename a field across documents and delete an unused field after removing its values and saved searches. Custom values are included in the portable document ZIP.
 
 The same panel can link related documents. Search for the other document by title or text, then choose **Link**. The connection appears on both documents, so either side opens the other. Moving one document to Trash hides the link until it is restored; its underlying relationship is retained.
 

@@ -61,6 +61,24 @@ def test_typed_custom_fields_validate_and_search_values():
     assert client.get("/api/documents", {"custom_field_id": fields["Expires"], "custom_value": "2027-04-03"}).json()["counts"]["total"] == 1
     assert client.get("/api/documents", {"custom_field_id": fields["Paid"], "custom_value": "no"}).json()["counts"]["total"] == 1
     assert client.get("/api/documents", {"custom_field_id": fields["Paid"], "custom_value": "maybe"}).status_code == 400
+    assert send(client, "put", f"/api/documents/{other.id}/custom-fields/{fields['Premium']}", {"value": "9"}).status_code == 200
+    assert send(client, "put", f"/api/documents/{other.id}/custom-fields/{fields['Expires']}", {"value": "2026-12-31"}).status_code == 200
+    def ranged(name, lower="", upper=""):
+        return client.get("/api/documents", {"custom_field_id": fields[name], "custom_min": lower, "custom_max": upper})
+    assert [item["id"] for item in ranged("Premium", "100", "130").json()["documents"]] == [str(policy.id)]
+    assert [item["id"] for item in ranged("Premium", upper="10").json()["documents"]] == [str(other.id)]
+    assert [item["id"] for item in ranged("Expires", "2027-01-01", "2027-12-31").json()["documents"]] == [str(policy.id)]
+    assert ranged("Premium", "130", "100").status_code == 400
+    assert ranged("Expires", "2027-02-30").status_code == 400
+    assert ranged("Policy no", "A-100").status_code == 400
+    assert client.get("/api/documents", {"custom_min": "10"}).status_code == 400
+    assert client.get("/api/documents", {"custom_field_id": fields["Premium"], "custom_value": "125.5", "custom_min": "100"}).status_code == 400
+    saved = send(client, "post", "/api/saved-views", {"name": "Premium range", "custom_field_id": fields["Premium"], "custom_min": "100.00", "custom_max": "130"})
+    assert saved.status_code == 201
+    assert (saved.json()["custom_min"], saved.json()["custom_max"]) == ("100", "130")
+    assert client.get("/api/saved-views").json()["views"][0]["custom_min"] == "100"
+    assert send(client, "post", "/api/saved-views", {"name": "Bad range", "custom_field_id": fields["Expires"], "custom_min": "2027-12-31", "custom_max": "2027-01-01"}).status_code == 400
+    assert client.delete(f"/api/saved-views/{saved.json()['id']}").status_code == 200
     assert client.get("/api/documents", {"q": 'field:"Premium=125"'}).json()["documents"] == []
     assert client.get("/api/documents", {"q": 'field:"Policy no"'}).status_code == 400
     assert client.get("/api/documents", {"q": 'field:"Unknown=A-123"'}).json()["documents"] == []
@@ -71,7 +89,9 @@ def test_typed_custom_fields_validate_and_search_values():
     assert client.delete(path("Policy no")).status_code == 200
     assert client.delete(f"/api/custom-fields/{fields['Policy no']}").status_code == 200
     assert CustomField.objects.count() == 3
-    assert client.get(f"/api/documents/{other.id}/custom-fields").json()["fields"][0]["value"] is None
+    other_values = {item["name"]: item["value"] for item in client.get(f"/api/documents/{other.id}/custom-fields").json()["fields"]}
+    assert other_values["Paid"] is None
+    assert other_values["Premium"] == "9"
 
 
 @pytest.mark.django_db

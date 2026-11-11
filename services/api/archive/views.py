@@ -12,7 +12,7 @@ from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.core import signing
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import IntegrityError, connection, transaction
-from django.db.models import BigIntegerField, Count, Exists, F, OuterRef, Prefetch, Q, prefetch_related_objects
+from django.db.models import BigIntegerField, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, prefetch_related_objects
 from django.db.models.functions import Cast, Lower
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
@@ -20,7 +20,7 @@ from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
 from .models import BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, Tag, TagOverride
-from .custom_field_views import normalize_filter_value
+from .custom_field_views import normalize_filter_range, normalize_filter_value
 from .physical_views import copy_json
 from .ingestion import ingest_document
 from .storage import InvalidDocument
@@ -264,15 +264,19 @@ def documents(request):
         if filters.get("date_from") and filters.get("date_to") and filters["date_from"] > filters["date_to"]:
             return JsonResponse({"error": "Start date must be before end date"}, status=400)
         custom_value = request.GET.get("custom_value", "").strip()
-        if custom_value and not filters.get("custom_field_id"):
+        custom_min = request.GET.get("custom_min", "").strip()
+        custom_max = request.GET.get("custom_max", "").strip()
+        if any((custom_value, custom_min, custom_max)) and not filters.get("custom_field_id"):
             return JsonResponse({"error": "Choose a custom field before its value"}, status=400)
-        if len(custom_value) > 500:
+        if max(map(len, (custom_value, custom_min, custom_max))) > 500:
             return JsonResponse({"error": "Custom field value is too long"}, status=400)
+        if custom_value and (custom_min or custom_max):
+            return JsonResponse({"error": "Use an exact value or a range"}, status=400)
         if filters.get("custom_field_id"):
             definition = CustomField.objects.filter(pk=filters["custom_field_id"], owner=request.user).first()
             if definition is None:
                 return JsonResponse({"error": "Custom field not found"}, status=400)
-            filters["custom_value"] = custom_value
+            filters.update(custom_value=custom_value, custom_min=custom_min, custom_max=custom_max)
             matches = CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field=definition)
             if custom_value:
                 try:
@@ -280,6 +284,22 @@ def documents(request):
                 except ValueError as exc:
                     return JsonResponse({"error": str(exc)}, status=400)
                 matches = matches.filter(value__icontains=normalized) if definition.kind == CustomField.Kind.TEXT else matches.filter(value=normalized)
+            try:
+                custom_min, custom_max = normalize_filter_range(definition, custom_min, custom_max)
+            except ValueError as exc:
+                return JsonResponse({"error": str(exc)}, status=400)
+            if custom_min or custom_max:
+                if definition.kind == CustomField.Kind.NUMBER:
+                    matches = matches.annotate(number_value=Cast("value", DecimalField(max_digits=24, decimal_places=6)))
+                    if custom_min:
+                        matches = matches.filter(number_value__gte=custom_min)
+                    if custom_max:
+                        matches = matches.filter(number_value__lte=custom_max)
+                else:
+                    if custom_min:
+                        matches = matches.filter(value__gte=custom_min)
+                    if custom_max:
+                        matches = matches.filter(value__lte=custom_max)
             queryset = queryset.filter(Exists(matches))
         if "tag_id" in filters:
             queryset = queryset.filter(tag_links__tag_id=filters["tag_id"])

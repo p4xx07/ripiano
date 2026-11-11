@@ -19,6 +19,8 @@ function criteria(query: string, filters: LibraryFilters) {
     date_to: filters.date_to || null,
     custom_field_id: filters.custom_field_id || null,
     custom_value: filters.custom_value,
+    custom_min: filters.custom_min,
+    custom_max: filters.custom_max,
   };
 }
 
@@ -31,6 +33,8 @@ function viewFilters(view: SavedView): LibraryFilters {
     date_to: view.date_to ?? "",
     custom_field_id: view.custom_field_id ?? "",
     custom_value: view.custom_value ?? "",
+    custom_min: view.custom_min ?? "",
+    custom_max: view.custom_max ?? "",
   };
 }
 

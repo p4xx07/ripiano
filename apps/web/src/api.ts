@@ -32,6 +32,8 @@ export type LibraryFilters = {
   date_to: string;
   custom_field_id: string;
   custom_value: string;
+  custom_min: string;
+  custom_max: string;
 };
 
 export type SavedView = {
@@ -45,6 +47,8 @@ export type SavedView = {
   date_to: string | null;
   custom_field_id: string | null;
   custom_value: string;
+  custom_min: string;
+  custom_max: string;
 };
 
 export type FilingRule = {

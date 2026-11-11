@@ -79,7 +79,7 @@ For a batch of files, Ripiano continues after an unsupported file and names each
 2. Run `docker compose up --build -d` from this directory.
 3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account.
 
-For a NAS deployment, use the [complete Portainer Compose example](deploy/compose.portainer.yaml) and the [example environment values](deploy/portainer.env.example). The example maps the database, media, and backup folders to persistent Synology paths and publishes only the web port; the API, worker, scheduler, broker, and MCP stay inside the stack. Portainer should receive the complete Compose file and the environment variables, with real secrets and released image digests. A short excerpt shows the important mounts:
+For a NAS deployment, use the [complete Portainer Compose example](deploy/compose.portainer.yaml) and the [example environment values](deploy/portainer.env.example). The example maps the database, media, and backup folders to persistent Synology paths and publishes only the web port; the API, OCR worker, maintenance worker, scheduler, broker, and MCP stay inside the stack. OCR work has its own queue so a long rule recheck or backup does not hold new uploads. Portainer should receive the complete Compose file and the environment variables, with real secrets and released image digests. A short excerpt shows the important mounts:
 
 ```yaml
 services:
@@ -93,6 +93,9 @@ services:
   worker:
     volumes:
       - ${RIPIANO_MEDIA_PATH}:/data
+  maintenance_worker:
+    volumes:
+      - ${RIPIANO_MEDIA_PATH}:/data:ro
       - ${RIPIANO_BACKUP_PATH}:/backup
   web:
     ports:

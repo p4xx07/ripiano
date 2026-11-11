@@ -8,6 +8,19 @@ from django.test import Client
 from archive.classification import apply_rules
 from archive.models import ClassificationRule, Correspondent, Document, DocumentTag, DocumentType, FilingRule, Tag
 from archive.tasks import reclassify_filing_candidates, reclassify_owner, reclassify_tag_candidates
+from ripiano.celery import app as celery_app
+
+
+def test_reclassification_and_backups_do_not_block_document_processing_queue():
+    route = celery_app.amqp.router.route
+    assert route({}, "archive.tasks.process_document")["queue"].name == "celery"
+    for name in (
+        "archive.tasks.reclassify_owner",
+        "archive.tasks.reclassify_filing_candidates",
+        "archive.tasks.reclassify_tag_candidates",
+        "archive.tasks.backup_archive",
+    ):
+        assert route({}, name)["queue"].name == "maintenance"
 
 
 def ready_document(owner, text="Invoice for electricity"):

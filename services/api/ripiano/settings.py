@@ -96,6 +96,13 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 3600
 CELERY_TIMEZONE = "Europe/Rome"
+CELERY_TASK_DEFAULT_QUEUE = "celery"
+CELERY_TASK_ROUTES = {
+    "archive.tasks.reclassify_owner": {"queue": "maintenance"},
+    "archive.tasks.reclassify_filing_candidates": {"queue": "maintenance"},
+    "archive.tasks.reclassify_tag_candidates": {"queue": "maintenance"},
+    "archive.tasks.backup_archive": {"queue": "maintenance"},
+}
 
 RIPIANO_BACKUP_ROOT = Path(os.environ.get("RIPIANO_BACKUP_ROOT", "/backup"))
 RIPIANO_BACKUP_HOUR = int(os.environ.get("RIPIANO_BACKUP_HOUR", "2"))

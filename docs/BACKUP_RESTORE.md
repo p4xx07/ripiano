@@ -4,7 +4,7 @@ Ripiano writes daily snapshots to a mounted backup volume. The default schedule 
 
 ## NAS volume
 
-Set `RIPIANO_BACKUP_PATH` to a persistent Synology folder in Portainer, for example `/volume1/ripiano-backups`. Give container UID 10001 write access to it. The worker publishes snapshots only after validating the PostgreSQL dump and every copied media checksum:
+Set `RIPIANO_BACKUP_PATH` to a persistent Synology folder in Portainer, for example `/volume1/ripiano-backups`. Give container UID 10001 write access to it. The maintenance worker publishes snapshots only after validating the PostgreSQL dump and every copied media checksum:
 
 ```text
 /volume1/ripiano-backups/
@@ -28,7 +28,7 @@ The `.env` or Portainer secrets are deliberately outside the snapshot. Keep a se
 3. From the Compose project directory, run:
 
    ```sh
-   docker compose stop web worker scheduler mcp api
+   docker compose stop web worker maintenance_worker scheduler mcp api
    docker compose run --rm --no-deps api .venv/bin/python manage.py restore_snapshot <snapshot-name> --yes
    docker compose up -d
    ```

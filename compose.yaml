@@ -68,10 +68,16 @@ services:
       retries: 15
   worker:
     <<: *api-base
+    command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "celery"]
+    depends_on:
+      api:
+        condition: service_healthy
+  maintenance_worker:
+    <<: *api-base
     volumes:
-      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data:ro
       - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup
-    command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1"]
+    command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "maintenance"]
     depends_on:
       api:
         condition: service_healthy

@@ -6,15 +6,23 @@ Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability
 
 ## Screenshots
 
-These show the running development stack with synthetic test documents. The mobile capture menu is from the PWA; the Android client adds a native multi-page scanner.
+The first three pairs show the running development stack with three fictional PDF documents in a separate demo archive. Mobile captures use browser emulation of the PWA; the Android client adds a native multi-page scanner. The later screenshots show specific test journeys.
 
-| Searchable Library on desktop | Quick capture in the mobile PWA |
+| Library on desktop | Library on mobile |
 | --- | --- |
-| ![Desktop Library with search, document status, and document cards](qa-artifacts/65d544b/visual/desktop/library.png) | ![Mobile add-document menu with camera, gallery, and file choices](qa-artifacts/65d544b/visual/mobile/add-dialog.png) |
+| ![Desktop Ripiano Library with three filed documents and paper locations](qa-artifacts/20261111-showcase/desktop/library-full.png) | ![Mobile Ripiano Library with three filed documents](qa-artifacts/20261111-showcase/mobile/library-full.png) |
 
-| Paper archive on mobile | Exception-only Inbox on mobile |
+| Add a document on desktop | Add a document on mobile |
 | --- | --- |
-| ![Mobile paper archive with sticker lookup and locations](qa-artifacts/65d544b/visual/mobile/paper-archive.png) | ![Mobile Inbox showing a failed OCR document and retry action](qa-artifacts/5252d3e/inbox/mobile/failed-ocr.png) |
+| ![Desktop Add dialog with camera, photos, and files](qa-artifacts/20261111-showcase/desktop/add.png) | ![Mobile Add dialog with camera, photos, and files](qa-artifacts/20261111-showcase/mobile/add.png) |
+
+| Paper binder on desktop | Paper binder on mobile |
+| --- | --- |
+| ![Desktop paper archive showing two documents in a binder](qa-artifacts/20261111-showcase/desktop/paper-contents.png) | ![Mobile paper archive showing two documents in a binder](qa-artifacts/20261111-showcase/mobile/paper-contents-full.png) |
+
+| Exception-only Inbox on mobile |
+| --- |
+| ![Mobile Inbox showing a failed OCR document and retry action](qa-artifacts/5252d3e/inbox/mobile/failed-ocr.png) |
 
 | Saved searches on desktop | Saved searches on mobile |
 | --- | --- |

@@ -1021,7 +1021,7 @@ function App() {
                           </button>
                         </h3>
                         <div className="document-meta">
-                          {formatDate(doc.created_at)} <span>·</span>{" "}
+                          {doc.document_date ? `Dated ${formatDate(doc.document_date)}` : `Added ${formatDate(doc.created_at)}`} <span>·</span>{" "}
                           {doc.original_name}
                           {doc.correspondent && <>{" "}<span>·</span> From: {doc.correspondent.name}</>}
                           {doc.document_type && <>{" "}<span>·</span> Type: {doc.document_type.name}</>}

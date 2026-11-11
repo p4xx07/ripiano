@@ -103,6 +103,44 @@ def test_tags_and_rules_are_owner_isolated():
 
 
 @pytest.mark.django_db
+def test_nested_tags_can_be_moved_without_cycles_and_parent_filter_finds_children():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    foreign = Tag.objects.create(owner=other, name="Foreign")
+    document = ready_document(owner)
+    client = Client()
+    client.force_login(owner)
+
+    def create(name, parent_id=None):
+        return client.post("/api/tags", json.dumps({"name": name, "parent_id": parent_id}), content_type="application/json")
+
+    root = create("Home")
+    assert root.status_code == 201
+    child = create("Insurance", root.json()["id"])
+    assert child.status_code == 201
+    grandchild = create("Policies", child.json()["id"])
+    assert grandchild.status_code == 201
+    assert grandchild.json()["parent_id"] == child.json()["id"]
+    assert create("Wrong", str(foreign.id)).status_code == 400
+    assert client.patch(f"/api/tags/{root.json()['id']}", json.dumps({"parent_id": str(foreign.id)}), content_type="application/json").status_code == 400
+    assert client.patch(f"/api/tags/{root.json()['id']}", json.dumps({"parent_id": grandchild.json()["id"]}), content_type="application/json").status_code == 400
+    assert client.patch(f"/api/tags/{child.json()['id']}", json.dumps({"parent_id": child.json()["id"]}), content_type="application/json").status_code == 400
+    assert client.delete(f"/api/tags/{root.json()['id']}").status_code == 409
+
+    DocumentTag.objects.create(document=document, tag_id=grandchild.json()["id"], origin=DocumentTag.Origin.MANUAL)
+    for tag in (root, child, grandchild):
+        result = client.get("/api/documents", {"tag_id": tag.json()["id"]}).json()
+        assert result["counts"]["total"] == 1
+        assert [item["id"] for item in result["documents"]] == [str(document.id)]
+    DocumentTag.objects.create(document=document, tag_id=root.json()["id"], origin=DocumentTag.Origin.MANUAL)
+    assert client.get("/api/documents", {"tag_id": root.json()["id"]}).json()["counts"]["total"] == 1
+    moved = client.patch(f"/api/tags/{grandchild.json()['id']}", json.dumps({"parent_id": None}), content_type="application/json")
+    assert moved.status_code == 200 and moved.json()["parent_id"] is None
+    assert client.get("/api/documents", {"tag_id": child.json()["id"]}).json()["counts"]["total"] == 0
+    assert client.get("/api/documents", {"tag_id": root.json()["id"]}).json()["counts"]["total"] == 1
+
+
+@pytest.mark.django_db
 def test_filing_phrases_choose_specific_match_and_preserve_manual_corrections():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     other = get_user_model().objects.create_user("other", password="secure-password-2")

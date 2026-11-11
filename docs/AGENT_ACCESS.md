@@ -10,7 +10,7 @@ Permissions are checked on every call:
 | Read OCR text | `get_document_text` | Text of a selected document in 20,000-character pages. Also enables full-text search in `search_documents` when that tool is granted. |
 | Add or remove tags | `list_tags`, `change_document_tags` | Tag names and explicit changes to selected documents. Other tags stay in place. |
 
-Optionally restrict the grant to documents carrying one tag. The restriction is checked on every tool call. Grants expire after 1–365 days and can be revoked immediately in Ripiano. The activity list records agent name, action, document ID, outcome, and time; it does not store document text. A revoked token cannot be recovered or reused.
+Optionally restrict the grant to documents carrying one exact tag. Nested child tags do not broaden an agent grant when someone moves a tag in the hierarchy. The restriction is checked on every tool call. Grants expire after 1–365 days and can be revoked immediately in Ripiano. The activity list records agent name, action, document ID, outcome, and time; it does not store document text. A revoked token cannot be recovered or reused.
 
 The MCP transport uses the [official Python SDK's Streamable HTTP and bearer authentication](https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/docs/run/authorization.md). Ripiano stores a SHA-256 hash of each high-entropy token. The MCP container has read-only access to the media volume and only the web service is published by Compose. Use HTTPS through the NAS reverse proxy or Tailscale to reach it from a Mac or Pi. The local test origin can use HTTP; production settings require HTTPS.
 

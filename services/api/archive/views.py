@@ -32,6 +32,20 @@ SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "d
 LIBRARY_SORTS = {"relevance", "newest", "oldest", "document_newest", "document_oldest", "title_asc", "title_desc"}
 
 
+def _tag_subtree_ids(owner, root_id):
+    children = {}
+    for tag_id, parent_id in Tag.objects.filter(owner=owner).values_list("id", "parent_id"):
+        children.setdefault(str(parent_id) if parent_id else None, []).append(str(tag_id))
+    result = {str(root_id)}
+    pending = [str(root_id)]
+    while pending:
+        for child in children.get(pending.pop(), []):
+            if child not in result:
+                result.add(child)
+                pending.append(child)
+    return result
+
+
 def _parse_search(query):
     try:
         tokens = shlex.split(query)
@@ -302,7 +316,10 @@ def documents(request):
                         matches = matches.filter(value__lte=custom_max)
             queryset = queryset.filter(Exists(matches))
         if "tag_id" in filters:
-            queryset = queryset.filter(tag_links__tag_id=filters["tag_id"])
+            tag_ids = _tag_subtree_ids(request.user, filters["tag_id"])
+            queryset = queryset.filter(Exists(
+                DocumentTag.objects.filter(document_id=OuterRef("pk"), tag_id__in=tag_ids)
+            ))
         if "correspondent_id" in filters:
             queryset = queryset.filter(correspondent_id=filters["correspondent_id"])
         if "document_type_id" in filters:

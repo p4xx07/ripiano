@@ -54,6 +54,25 @@ def _tag_json(tag):
     }
 
 
+def _tag_parent(owner, raw, tag_id=None):
+    if raw in (None, ""):
+        return None
+    try:
+        parent = Tag.objects.filter(pk=UUID(str(raw)), owner=owner).first()
+    except (TypeError, ValueError):
+        parent = None
+    if parent is None:
+        raise ValueError("Parent tag not found")
+    seen = set()
+    ancestor = parent
+    while ancestor is not None:
+        if ancestor.pk == tag_id or ancestor.pk in seen:
+            raise ValueError("A tag cannot be inside itself or one of its children")
+        seen.add(ancestor.pk)
+        ancestor = ancestor.parent
+    return parent
+
+
 def _vocabulary_json(item):
     return {"id": str(item.id), "name": item.name}
 
@@ -337,14 +356,10 @@ def tags(request):
         return JsonResponse({"error": "Invalid tag name, color, or description"}, status=400)
     if not isinstance(keywords, list) or len(keywords) > 20 or any(not isinstance(value, str) or not value.strip() or len(value.strip()) > 200 for value in keywords):
         return JsonResponse({"error": "Keywords must be a list of up to 20 short phrases"}, status=400)
-    parent = None
-    if body.get("parent_id"):
-        try:
-            parent = Tag.objects.filter(pk=UUID(str(body["parent_id"])), owner=request.user).first()
-        except ValueError:
-            pass
-        if parent is None:
-            return JsonResponse({"error": "Parent tag not found"}, status=400)
+    try:
+        parent = _tag_parent(request.user, body.get("parent_id"))
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
     if Tag.objects.filter(owner=request.user, name__iexact=name).exists():
         return JsonResponse({"error": "A tag with that name already exists"}, status=409)
     try:
@@ -365,10 +380,10 @@ def tag_detail(request, tag_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    tag = Tag.objects.filter(pk=tag_id, owner=request.user).first()
-    if tag is None:
-        return JsonResponse({"error": "Tag not found"}, status=404)
     if request.method == "DELETE":
+        tag = Tag.objects.filter(pk=tag_id, owner=request.user).first()
+        if tag is None:
+            return JsonResponse({"error": "Tag not found"}, status=404)
         try:
             with transaction.atomic():
                 get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
@@ -379,26 +394,37 @@ def tag_detail(request, tag_id):
     body = _body(request)
     if body is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    changes = []
-    if "name" in body:
-        name = str(body["name"]).strip()
-        if not name or len(name) > 100 or Tag.objects.filter(owner=request.user, name__iexact=name).exclude(pk=tag.id).exists():
-            return JsonResponse({"error": "Invalid or duplicate tag name"}, status=400)
-        tag.name = name
-        changes.append("name")
-    if "color" in body:
-        if not isinstance(body["color"], str) or not COLOR.fullmatch(body["color"]):
-            return JsonResponse({"error": "Invalid tag color"}, status=400)
-        tag.color = body["color"]
-        changes.append("color")
-    if "description" in body:
-        if not isinstance(body["description"], str) or len(body["description"]) > 500:
-            return JsonResponse({"error": "Invalid tag description"}, status=400)
-        tag.description = body["description"].strip()
-        changes.append("description")
     try:
-        if changes:
-            tag.save(update_fields=changes)
+        with transaction.atomic():
+            get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+            tag = Tag.objects.select_for_update().filter(pk=tag_id, owner=request.user).first()
+            if tag is None:
+                return JsonResponse({"error": "Tag not found"}, status=404)
+            changes = []
+            if "name" in body:
+                name = str(body["name"]).strip()
+                if not name or len(name) > 100 or Tag.objects.filter(owner=request.user, name__iexact=name).exclude(pk=tag.id).exists():
+                    return JsonResponse({"error": "Invalid or duplicate tag name"}, status=400)
+                tag.name = name
+                changes.append("name")
+            if "color" in body:
+                if not isinstance(body["color"], str) or not COLOR.fullmatch(body["color"]):
+                    return JsonResponse({"error": "Invalid tag color"}, status=400)
+                tag.color = body["color"]
+                changes.append("color")
+            if "description" in body:
+                if not isinstance(body["description"], str) or len(body["description"]) > 500:
+                    return JsonResponse({"error": "Invalid tag description"}, status=400)
+                tag.description = body["description"].strip()
+                changes.append("description")
+            if "parent_id" in body:
+                try:
+                    tag.parent = _tag_parent(request.user, body["parent_id"], tag.id)
+                except ValueError as exc:
+                    return JsonResponse({"error": str(exc)}, status=400)
+                changes.append("parent")
+            if changes:
+                tag.save(update_fields=changes)
     except IntegrityError:
         return JsonResponse({"error": "Duplicate tag name"}, status=409)
     return JsonResponse(_tag_json(tag))

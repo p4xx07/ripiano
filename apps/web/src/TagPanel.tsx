@@ -8,13 +8,43 @@ export default function TagPanel() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [name, setName] = useState("");
+  const [parentId, setParentId] = useState("");
   const [description, setDescription] = useState("");
   const [keywords, setKeywords] = useState("");
   const [color, setColor] = useState("#5d8b66");
   const [newRuleTag, setNewRuleTag] = useState<string | null>(null);
   const [newRuleText, setNewRuleText] = useState("");
+  const [movingTagId, setMovingTagId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const tagById = new Map(tags.map((tag) => [tag.id, tag]));
+  const pathCache = new Map<string, string>();
+  function tagPath(tag: Tag) {
+    const cached = pathCache.get(tag.id);
+    if (cached) return cached;
+    const names: string[] = [];
+    const seen = new Set<string>();
+    let current: Tag | undefined = tag;
+    while (current && !seen.has(current.id)) {
+      names.unshift(current.name);
+      seen.add(current.id);
+      current = current.parent_id ? tagById.get(current.parent_id) : undefined;
+    }
+    const path = names.join(" / ");
+    pathCache.set(tag.id, path);
+    return path;
+  }
+  function isInBranch(candidate: Tag, rootId: string) {
+    const seen = new Set<string>();
+    let current: Tag | undefined = candidate;
+    while (current && !seen.has(current.id)) {
+      if (current.id === rootId) return true;
+      seen.add(current.id);
+      current = current.parent_id ? tagById.get(current.parent_id) : undefined;
+    }
+    return false;
+  }
+  const sortedTags = [...tags].sort((a, b) => tagPath(a).localeCompare(tagPath(b)));
 
   const load = useCallback(async () => {
     try {
@@ -42,6 +72,7 @@ export default function TagPanel() {
         method: "POST",
         body: JSON.stringify({
           name,
+          parent_id: parentId || null,
           description,
           color,
           keywords: keywords
@@ -51,6 +82,7 @@ export default function TagPanel() {
         }),
       });
       setName("");
+      setParentId("");
       setDescription("");
       setKeywords("");
       await load();
@@ -113,6 +145,23 @@ export default function TagPanel() {
     }
   }
 
+  async function moveTag(tag: Tag, nextParentId: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await request(`/api/tags/${tag.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ parent_id: nextParentId || null }),
+      });
+      await load();
+      setMovingTagId(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not move tag");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="page-heading">
@@ -142,12 +191,12 @@ export default function TagPanel() {
           <div className="section-heading">
             <div>
               <h2>Your tags</h2>
-              <p>Change a tag on any document whenever you need to.</p>
+              <p>Group related tags here. Filtering by a parent includes its nested tags.</p>
             </div>
           </div>
           {tags.length ? (
             <div className="tag-list">
-              {tags.map((tag) => (
+              {sortedTags.map((tag) => (
                 <article className="tag-card" key={tag.id}>
                   <div className="tag-card-head">
                     <span
@@ -156,6 +205,7 @@ export default function TagPanel() {
                     />
                     <div>
                       <h3>{tag.name}</h3>
+                      {tag.parent_id && <p className="tag-path">{tagPath(tag)}</p>}
                       {tag.description && <p>{tag.description}</p>}
                     </div>
                     <button
@@ -167,6 +217,31 @@ export default function TagPanel() {
                       <Trash2 size={16} />
                     </button>
                   </div>
+                  {movingTagId === tag.id ? (
+                    <div className="tag-parent-editor">
+                      <label className="tag-parent-control">
+                        Under
+                        <select
+                          aria-label={`Parent for ${tag.name}`}
+                          value={tag.parent_id ?? ""}
+                          disabled={busy}
+                          onChange={(event) => void moveTag(tag, event.target.value)}
+                        >
+                          <option value="">Top level</option>
+                          {sortedTags.filter((candidate) => !isInBranch(candidate, tag.id)).map((candidate) => (
+                            <option key={candidate.id} value={candidate.id}>{tagPath(candidate)}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button type="button" className="tag-icon-button" aria-label="Cancel move" onClick={() => setMovingTagId(null)}>
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" className="tag-move-button" aria-label={`Move ${tag.name}`} onClick={() => setMovingTagId(tag.id)}>
+                      {tag.parent_id ? "Change group" : "Put under another tag"}
+                    </button>
+                  )}
                   <div className="rule-list">
                     {rules
                       .filter((rule) => rule.tag_id === tag.id)
@@ -249,6 +324,15 @@ export default function TagPanel() {
                 placeholder="e.g. Bills"
                 required
               />
+            </label>
+            <label>
+              Under <small>Optional</small>
+              <select aria-label="Parent tag" value={parentId} onChange={(event) => setParentId(event.target.value)}>
+                <option value="">Top level</option>
+                {sortedTags.map((tag) => (
+                  <option key={tag.id} value={tag.id}>{tagPath(tag)}</option>
+                ))}
+              </select>
             </label>
             <label>
               Matching phrases <small>Optional · separate with commas</small>

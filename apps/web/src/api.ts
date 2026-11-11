@@ -81,6 +81,7 @@ export type Document = {
   archive_available: boolean;
   error: string;
   created_at: string;
+  trashed_at: string | null;
   document_date: string | null;
   correspondent: FilingItem | null;
   document_type: FilingItem | null;

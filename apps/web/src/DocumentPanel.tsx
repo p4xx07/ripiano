@@ -12,6 +12,7 @@ import {
   RotateCw,
   Save,
   Tag as TagIcon,
+  Trash2,
   X,
 } from "lucide-react";
 import { Document, DocumentNote, FilingItem, Location, PhysicalCopy, request, Tag } from "./api";
@@ -24,6 +25,7 @@ export default function DocumentPanel({
   onOpenTags,
   onOpenLocations,
   onOpenDuplicate,
+  onTrashed,
 }: {
   initial: Document;
   onClose: () => void;
@@ -31,6 +33,7 @@ export default function DocumentPanel({
   onOpenTags: () => void;
   onOpenLocations: () => void;
   onOpenDuplicate: (id: string) => void;
+  onTrashed: () => void;
 }) {
   const [current, setCurrent] = useState(initial);
   const [title, setTitle] = useState(initial.title);
@@ -66,6 +69,7 @@ export default function DocumentPanel({
   const [noteNotice, setNoteNotice] = useState("");
   const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null);
   const [reprocessNotice, setReprocessNotice] = useState("");
+  const [confirmTrash, setConfirmTrash] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -168,6 +172,19 @@ export default function DocumentPanel({
       setReprocessNotice("OCR queued from the preserved original.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not queue OCR");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function moveToTrash() {
+    setBusy(true);
+    setError("");
+    try {
+      await request(`/api/documents/${current.id}/trash`, { method: "POST" });
+      onTrashed();
+      onClose();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not move document to Trash");
     } finally {
       setBusy(false);
     }
@@ -559,6 +576,16 @@ export default function DocumentPanel({
               Create a location first <Plus size={15} />
             </button>
           )}
+        </div>
+        <div className="detail-files trash-action">
+          <h3><Trash2 size={17} /> Move to Trash</h3>
+          <p>The original, notes, and sticker history stay available for restore. This document will disappear from search and agent access.</p>
+          {confirmTrash ? <div className="trash-confirm">
+            <strong>Move “{current.title}” to Trash?</strong>
+            {copies.length > 0 && <p>{copies.length} paper {copies.length === 1 ? "copy has" : "copies have"} a sticker. Its QR code will show a restore notice until this document is restored.</p>}
+            <Button type="button" disabled={busy} onClick={() => void moveToTrash()}><Trash2 size={16} /> Confirm move</Button>
+            <Button type="button" variant="secondary" disabled={busy} onClick={() => setConfirmTrash(false)}>Cancel</Button>
+          </div> : <Button type="button" variant="secondary" disabled={busy} onClick={() => setConfirmTrash(true)}><Trash2 size={16} /> Move to Trash</Button>}
         </div>
     </Modal>
   );

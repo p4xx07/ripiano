@@ -31,6 +31,7 @@ import {
   Search,
   SlidersHorizontal,
   Tag as TagIcon,
+  Trash2,
   UploadCloud,
   X,
 } from "lucide-react";
@@ -42,6 +43,7 @@ import AgentPanel from "./AgentPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
 import SavedSearchBar from "./SavedSearchBar";
+import TrashPanel from "./TrashPanel";
 import { Button, Field, Modal } from "./ui";
 
 type BackupRun = {
@@ -341,13 +343,14 @@ function App() {
   const initialSticker =
     new URLSearchParams(window.location.search).get("sticker") ?? "";
   const [view, setView] = useState<
-    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents"
+    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash"
   >(initialSticker ? "physical" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
   );
   const [actionRefresh, setActionRefresh] = useState(0);
   const [inboxRefresh, setInboxRefresh] = useState(0);
+  const [trashRefresh, setTrashRefresh] = useState(0);
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -668,6 +671,9 @@ function App() {
         >
           <MapPin size={18} /> Paper archive
         </button>
+        <button className={`nav-link ${view === "trash" ? "active" : ""}`} onClick={() => { setView("trash"); setMenuOpen(false); }}>
+          <Trash2 size={18} /> Trash
+        </button>
         {session.owner && (
           <button
             className={`nav-link ${view === "agents" ? "active" : ""}`}
@@ -729,6 +735,8 @@ function App() {
                 ? "Inbox"
               : view === "actions"
                 ? "Needs action"
+              : view === "trash"
+                ? "Trash"
               : view === "tags"
                 ? "Tags & filing"
                 : view === "physical"
@@ -748,6 +756,8 @@ function App() {
             <InboxPanel refreshKey={inboxRefresh} onOpenDocument={setSelectedDocument} />
           ) : view === "actions" ? (
             <ActionPanel refreshKey={actionRefresh} onOpenDocument={setSelectedDocument} />
+          ) : view === "trash" ? (
+            <TrashPanel refreshKey={trashRefresh} onRestored={() => { void loadDocuments(query); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }} />
           ) : view === "agents" ? (
             <AgentPanel />
           ) : view === "tags" ? (
@@ -1196,6 +1206,7 @@ function App() {
           initial={selectedDocument}
           onClose={() => setSelectedDocument(null)}
           onSaved={() => { void loadDocuments(query); void loadFilterOptions(); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }}
+          onTrashed={() => { void loadDocuments(query); setTrashRefresh((value) => value + 1); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }}
           onOpenTags={() => {
             setSelectedDocument(null);
             setView("tags");

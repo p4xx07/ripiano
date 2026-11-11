@@ -84,7 +84,7 @@ def _next_page_cursor(document, owner, query, view, filters, sort, counts):
     sort_value = document.sort_title if sort in {"title_asc", "title_desc"} else document.document_date.isoformat() if sort in {"document_newest", "document_oldest"} and document.document_date else None
     return signing.dumps({
         "owner": str(owner.pk), "query": query, "view": view, "filters": filters, "sort": sort,
-        "created_at": document.created_at.isoformat(), "id": str(document.id),
+        "created_at": (document.trashed_at if view == "trash" else document.created_at).isoformat(), "id": str(document.id),
         "due_date": document.action_due_date.isoformat() if document.action_due_date else None,
         "score": int(getattr(document, "search_score", 0)) if sort == "relevance" and view == "search" else None,
         "sort_value": sort_value,
@@ -147,13 +147,14 @@ def _document_json(document, query=""):
         "id": str(document.id),
         "title": document.title,
         "original_name": document.original_name,
-        "duplicate_of": {"id": str(document.duplicate_of_id), "title": document.duplicate_of.title} if document.duplicate_of_id else None,
+        "duplicate_of": {"id": str(document.duplicate_of_id), "title": document.duplicate_of.title} if document.duplicate_of_id and not document.duplicate_of.trashed_at else None,
         "duplicate_reviewed_at": document.duplicate_reviewed_at.isoformat() if document.duplicate_reviewed_at else None,
         "source": document.source,
         "status": document.status,
         "archive_available": bool(document.archive_path) and document.status == Document.Status.READY,
         "error": document.error,
         "created_at": document.created_at.isoformat(),
+        "trashed_at": document.trashed_at.isoformat() if document.trashed_at else None,
         "document_date": document.document_date.isoformat() if document.document_date else None,
         "correspondent": {"id": str(document.correspondent_id), "name": document.correspondent.name} if document.correspondent_id else None,
         "document_type": {"id": str(document.document_type_id), "name": document.document_type.name} if document.document_type_id else None,
@@ -231,7 +232,10 @@ def documents(request):
     if request.method == "GET":
         if "offset" in request.GET:
             return JsonResponse({"error": "Use a page cursor"}, status=400)
-        queryset = Document.objects.filter(owner=request.user).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location")
+        requested_view = request.GET.get("view")
+        if requested_view not in (None, "documents", "actions", "exceptions", "trash"):
+            return JsonResponse({"error": "Invalid document view"}, status=400)
+        queryset = Document.objects.filter(owner=request.user, trashed_at__isnull=requested_view != "trash").select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
         try:
             free_query, clauses = _parse_search(query)
@@ -281,12 +285,11 @@ def documents(request):
                 queryset = queryset.filter(Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=value)))
             else:
                 queryset = queryset.filter(document_date=value)
-        requested_view = request.GET.get("view")
-        view = "actions" if requested_view == "actions" else "exceptions" if requested_view == "exceptions" else "search" if free_query else "documents"
+        view = "trash" if requested_view == "trash" else "actions" if requested_view == "actions" else "exceptions" if requested_view == "exceptions" else "search" if free_query else "documents"
         requested_sort = request.GET.get("sort", "")
         if requested_sort and requested_sort not in LIBRARY_SORTS:
             return JsonResponse({"error": "Invalid sort order"}, status=400)
-        if view in {"actions", "exceptions"}:
+        if view in {"actions", "exceptions", "trash"}:
             if requested_sort:
                 return JsonResponse({"error": "Sorting is available in the Library"}, status=400)
             sort = "actions" if view == "actions" else "newest"
@@ -297,7 +300,7 @@ def documents(request):
         if view == "actions":
             queryset = queryset.filter(action_status=Document.ActionStatus.OPEN)
         elif view == "exceptions":
-            queryset = queryset.filter(Q(status=Document.Status.FAILED) | Q(duplicate_of__isnull=False, duplicate_reviewed_at__isnull=True))
+            queryset = queryset.filter(Q(status=Document.Status.FAILED) | Q(duplicate_of__isnull=False, duplicate_of__trashed_at__isnull=True, duplicate_reviewed_at__isnull=True))
         if free_query:
             queryset = queryset.annotate(
                 tag_match=Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=free_query)),
@@ -327,6 +330,8 @@ def documents(request):
             queryset = queryset.annotate(sort_title=Lower("title")).order_by("sort_title", "id")
         elif sort == "title_desc":
             queryset = queryset.annotate(sort_title=Lower("title")).order_by("-sort_title", "-id")
+        elif view == "trash":
+            queryset = queryset.order_by("-trashed_at", "-id")
         else:
             queryset = queryset.order_by("-created_at", "-id")
 
@@ -358,6 +363,8 @@ def documents(request):
                     queryset = queryset.filter(Q(document_date__lt=sort_value) | Q(document_date__isnull=True) | (Q(document_date=sort_value) & older))
                 else:
                     queryset = queryset.filter(Q(document_date__gt=sort_value) | Q(document_date__isnull=True) | (Q(document_date=sort_value) & older))
+            elif view == "trash":
+                queryset = queryset.filter(Q(trashed_at__lt=created_at) | Q(trashed_at=created_at, id__lt=document_id))
             else:
                 queryset = queryset.filter(older)
         else:
@@ -388,6 +395,8 @@ def documents(request):
             return JsonResponse({"error": "Invalid scan ID"}, status=400)
         existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").first()
         if existing:
+            if existing.trashed_at:
+                return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
             return JsonResponse(_document_json(existing), status=200)
     try:
         document = ingest_document(request.user, upload, source=Document.Source.ANDROID if scan_id else Document.Source.WEB, source_ref=scan_id)
@@ -395,6 +404,8 @@ def documents(request):
         if scan_id:
             existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").first()
             if existing:
+                if existing.trashed_at:
+                    return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
                 return JsonResponse(_document_json(existing), status=200)
         raise
     except InvalidDocument as exc:
@@ -425,7 +436,7 @@ def bulk_document_tags(request):
         return JsonResponse({"error": "Choose add or remove"}, status=400)
     with transaction.atomic():
         tag = Tag.objects.filter(pk=tag_id, owner=request.user).first()
-        documents_to_change = list(Document.objects.select_for_update().filter(owner=request.user, pk__in=document_ids).order_by("pk"))
+        documents_to_change = list(Document.objects.select_for_update().filter(owner=request.user, trashed_at__isnull=True, pk__in=document_ids).order_by("pk"))
         if tag is None or len(documents_to_change) != len(document_ids):
             return JsonResponse({"error": "Document or tag not found"}, status=404)
         if action == "add":
@@ -473,7 +484,7 @@ def bulk_document_filing(request):
     model = Correspondent if field == "correspondent" else DocumentType
     with transaction.atomic():
         item = model.objects.filter(pk=value_id, owner=request.user).first() if value_id else None
-        documents_to_change = list(Document.objects.select_for_update().filter(owner=request.user, pk__in=document_ids).order_by("pk"))
+        documents_to_change = list(Document.objects.select_for_update().filter(owner=request.user, trashed_at__isnull=True, pk__in=document_ids).order_by("pk"))
         if len(documents_to_change) != len(document_ids) or (value_id and item is None):
             return JsonResponse({"error": "Document or filing choice not found"}, status=404)
         for document in documents_to_change:
@@ -483,12 +494,16 @@ def bulk_document_filing(request):
     return JsonResponse({"updated": len(documents_to_change), "field": field, "value_id": str(value_id) if value_id else None})
 
 
+@transaction.atomic
 @require_http_methods(["GET", "PATCH"])
 def document_detail(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").first()
+    queryset = Document.objects
+    if request.method == "PATCH":
+        queryset = queryset.select_for_update(of=("self",))
+    document = queryset.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if request.method == "PATCH":
@@ -576,12 +591,14 @@ def document_detail(request, document_id):
     return JsonResponse(_document_json(document))
 
 
+@transaction.atomic
 @require_http_methods(["GET", "POST"])
 def document_notes(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user).first()
+    queryset = Document.objects.select_for_update() if request.method == "POST" else Document.objects
+    document = queryset.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if request.method == "GET":
@@ -600,12 +617,15 @@ def document_notes(request, document_id):
     return JsonResponse(_note_json(note), status=201)
 
 
+@transaction.atomic
 @require_http_methods(["DELETE"])
 def document_note_detail(request, document_id, note_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    note = DocumentNote.objects.filter(pk=note_id, document_id=document_id, document__owner=request.user).first()
+    if not Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=True).exists():
+        return JsonResponse({"error": "Note not found"}, status=404)
+    note = DocumentNote.objects.filter(pk=note_id, document_id=document_id).first()
     if note is None:
         return JsonResponse({"error": "Note not found"}, status=404)
     note.delete()
@@ -617,7 +637,7 @@ def download_original(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user).first()
+    document = Document.objects.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     return FileResponse(
@@ -633,7 +653,7 @@ def download_archive(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user).first()
+    document = Document.objects.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if document.status != Document.Status.READY or not document.archive_path:
@@ -655,12 +675,44 @@ def reprocess_document(request, document_id):
     return _restart_document_processing(request, document_id, {Document.Status.READY, Document.Status.FAILED}, "Document is already being processed")
 
 
-def _restart_document_processing(request, document_id, allowed_statuses, conflict):
+@require_http_methods(["POST"])
+def trash_document(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
     with transaction.atomic():
         document = Document.objects.select_for_update().filter(pk=document_id, owner=request.user).first()
+        if document is None:
+            return JsonResponse({"error": "Document not found"}, status=404)
+        if document.trashed_at:
+            return JsonResponse({"error": "Document is already in Trash"}, status=409)
+        if document.status in {Document.Status.PENDING, Document.Status.PROCESSING}:
+            return JsonResponse({"error": "Wait for processing to finish before moving this document to Trash"}, status=409)
+        document.trashed_at = timezone.now()
+        document.save(update_fields=["trashed_at"])
+    return JsonResponse({"id": str(document.id), "trashed_at": document.trashed_at.isoformat()})
+
+
+@require_http_methods(["POST"])
+def restore_document(request, document_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    with transaction.atomic():
+        document = Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=False).first()
+        if document is None:
+            return JsonResponse({"error": "Document not found in Trash"}, status=404)
+        document.trashed_at = None
+        document.save(update_fields=["trashed_at"])
+    return JsonResponse({"id": str(document.id), "restored": True})
+
+
+def _restart_document_processing(request, document_id, allowed_statuses, conflict):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    with transaction.atomic():
+        document = Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
         if document is None:
             return JsonResponse({"error": "Document not found"}, status=404)
         if document.status not in allowed_statuses:

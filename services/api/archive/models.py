@@ -48,6 +48,7 @@ class Document(models.Model):
     error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
+    trashed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     document_date = models.DateField(null=True, blank=True)
     correspondent = models.ForeignKey("Correspondent", null=True, blank=True, on_delete=models.PROTECT, related_name="documents")
     document_type = models.ForeignKey("DocumentType", null=True, blank=True, on_delete=models.PROTECT, related_name="documents")

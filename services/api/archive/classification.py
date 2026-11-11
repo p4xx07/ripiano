@@ -21,6 +21,8 @@ def apply_rules(document):
         # commit a rule snapshot after that rule has been deleted.
         get_user_model().objects.select_for_update(no_key=True).get(pk=document.owner_id)
         locked = Document.objects.select_for_update().get(pk=document.pk)
+        if locked.trashed_at:
+            return 0
         title = locked.title.casefold()
         text = locked.extracted_text.casefold()
         matching = [rule.tag for rule in ClassificationRule.objects.filter(owner_id=document.owner_id, enabled=True).select_related("tag") if _matches(rule, title, text)]

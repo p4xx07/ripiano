@@ -15,6 +15,8 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>/archive", views.download_archive),
     path("api/documents/<uuid:document_id>/retry", views.retry_document),
     path("api/documents/<uuid:document_id>/reprocess", views.reprocess_document),
+    path("api/documents/<uuid:document_id>/trash", views.trash_document),
+    path("api/documents/<uuid:document_id>/restore", views.restore_document),
     path("api/documents/<uuid:document_id>/notes", views.document_notes),
     path("api/documents/<uuid:document_id>/notes/<uuid:note_id>", views.document_note_detail),
     path("api/backups", views.backups),

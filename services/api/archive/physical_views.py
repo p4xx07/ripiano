@@ -103,12 +103,14 @@ def location_detail(request, location_id):
     return JsonResponse({"deleted": True})
 
 
+@transaction.atomic
 @require_http_methods(["GET", "POST"])
 def document_copies(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user).first()
+    queryset = Document.objects.select_for_update() if request.method == "POST" else Document.objects
+    document = queryset.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if request.method == "GET":
@@ -147,7 +149,10 @@ def copy_detail(request, copy_id):
     if not isinstance(note, str) or len(note) > 300:
         return JsonResponse({"error": "Movement note is too long"}, status=400)
     with transaction.atomic():
-        copy = PhysicalCopy.objects.select_for_update(of=("self",)).filter(pk=copy_id, document__owner=request.user).first()
+        document_id = PhysicalCopy.objects.filter(pk=copy_id, document__owner=request.user).values_list("document_id", flat=True).first()
+        if document_id is None or not Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=True).exists():
+            return JsonResponse({"error": "Physical copy not found"}, status=404)
+        copy = PhysicalCopy.objects.select_for_update(of=("self",)).filter(pk=copy_id, document__owner=request.user, document__trashed_at__isnull=True).first()
         if copy is None:
             return JsonResponse({"error": "Physical copy not found"}, status=404)
         if copy.location_id != (location.id if location else None):
@@ -162,7 +167,7 @@ def copy_history(request, copy_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    copy = PhysicalCopy.objects.filter(pk=copy_id, document__owner=request.user).first()
+    copy = PhysicalCopy.objects.filter(pk=copy_id, document__owner=request.user, document__trashed_at__isnull=True).first()
     if copy is None:
         return JsonResponse({"error": "Physical copy not found"}, status=404)
     return JsonResponse({"movements": [{
@@ -181,6 +186,8 @@ def sticker_lookup(request, sticker_code):
     copy = PhysicalCopy.objects.filter(sticker_code__iexact=sticker_code, document__owner=request.user).select_related("document", "location__parent__parent").first()
     if copy is None:
         return JsonResponse({"error": "Sticker not found"}, status=404)
+    if copy.document.trashed_at:
+        return JsonResponse({"error": "This sticker belongs to a document in Trash. Restore the document to use it again."}, status=410)
     return JsonResponse({"copy": copy_json(copy), "document": {"id": str(copy.document_id), "title": copy.document.title}})
 
 
@@ -189,7 +196,7 @@ def printable_label(request, copy_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    copy = PhysicalCopy.objects.filter(pk=copy_id, document__owner=request.user).select_related("document", "location__parent__parent").first()
+    copy = PhysicalCopy.objects.filter(pk=copy_id, document__owner=request.user, document__trashed_at__isnull=True).select_related("document", "location__parent__parent").first()
     if copy is None:
         return JsonResponse({"error": "Physical copy not found"}, status=404)
     address = f"{settings.PUBLIC_ORIGIN.rstrip('/')}/?sticker={copy.sticker_code}"

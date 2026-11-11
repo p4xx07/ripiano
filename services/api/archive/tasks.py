@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 def process_document(document_id):
     with transaction.atomic():
         document = Document.objects.select_for_update().get(pk=document_id)
-        if document.status != Document.Status.PENDING:
+        if document.status != Document.Status.PENDING or document.trashed_at:
             return
         document.status = Document.Status.PROCESSING
         document.processing_started_at = timezone.now()
@@ -86,10 +86,11 @@ def process_document(document_id):
 def reconcile_pending_documents():
     stale_before = timezone.now() - timedelta(hours=1)
     Document.objects.filter(
+        trashed_at__isnull=True,
         status=Document.Status.PROCESSING,
         processing_started_at__lt=stale_before,
     ).update(status=Document.Status.PENDING, processing_started_at=None)
-    for document_id in Document.objects.filter(status=Document.Status.PENDING).values_list("id", flat=True)[:100]:
+    for document_id in Document.objects.filter(status=Document.Status.PENDING, trashed_at__isnull=True).values_list("id", flat=True)[:100]:
         process_document.delay(str(document_id))
 
 
@@ -115,7 +116,7 @@ def backup_archive(run_id=None):
 
 @shared_task(name="archive.tasks.reclassify_owner")
 def reclassify_owner(owner_id):
-    for document in Document.objects.filter(owner_id=owner_id, status=Document.Status.READY).iterator():
+    for document in Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True).iterator():
         try:
             apply_rules(document)
         except Exception:
@@ -124,7 +125,7 @@ def reclassify_owner(owner_id):
 
 @shared_task(name="archive.tasks.reclassify_filing_candidates")
 def reclassify_filing_candidates(owner_id, kind, target_id, pattern, field="either", deleted=False):
-    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY)
+    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True)
     if deleted:
         field = "correspondent" if kind == FilingRule.Kind.CORRESPONDENT else "document_type"
         documents = documents.filter(**{f"{field}_id": target_id, f"{field}_origin": Document.FilingOrigin.RULE})
@@ -143,7 +144,7 @@ def reclassify_filing_candidates(owner_id, kind, target_id, pattern, field="eith
 
 @shared_task(name="archive.tasks.reclassify_tag_candidates")
 def reclassify_tag_candidates(owner_id, tag_id, phrases, deleted=False):
-    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY)
+    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True)
     if deleted:
         documents = documents.filter(tag_links__tag_id=tag_id, tag_links__origin=DocumentTag.Origin.RULE)
     compiled = [(entry["pattern"].casefold(), entry["field"]) for entry in phrases]

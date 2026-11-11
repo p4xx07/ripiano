@@ -30,7 +30,7 @@ def ingest_document(owner, upload, *, source=Document.Source.WEB, source_ref="")
         (Path(settings.MEDIA_ROOT) / original_path).unlink(missing_ok=True)
         raise
     first_copy = Document.objects.filter(
-        owner=owner, original_sha256=digest,
+        owner=owner, original_sha256=digest, trashed_at__isnull=True,
     ).exclude(pk=document.id).order_by("created_at", "id").first()
     if first_copy and (first_copy.created_at, first_copy.id) < (document.created_at, document.id):
         document.duplicate_of = first_copy

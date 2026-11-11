@@ -11,6 +11,7 @@ import android.os.Environment;
 import android.view.Gravity;
 import android.view.MenuItem;
 import android.view.ViewGroup;
+import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.ValueCallback;
@@ -62,6 +63,8 @@ public final class MainActivity extends ComponentActivity {
     private final ExecutorService uploads = Executors.newSingleThreadExecutor();
     private final AtomicBoolean retryQueued = new AtomicBoolean(false);
     private WebView webView;
+    private LinearLayout shell;
+    private LinearLayout toolbar;
     private String origin;
     private String scanOrigin;
     private ValueCallback<Uri[]> fileChoice;
@@ -149,9 +152,10 @@ public final class MainActivity extends ComponentActivity {
         origin = address;
         if (webView != null) webView.destroy();
         LinearLayout root = new LinearLayout(this);
+        shell = root;
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(245, 248, 243));
-        LinearLayout toolbar = new LinearLayout(this);
+        toolbar = new LinearLayout(this);
         toolbar.setPadding(18, 0, 10, 0);
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
         toolbar.setBackgroundColor(Color.rgb(34, 79, 55));
@@ -163,6 +167,8 @@ public final class MainActivity extends ComponentActivity {
         Button menu = new Button(this);
         menu.setText("⋮");
         menu.setContentDescription("More options");
+        menu.setTextColor(Color.WHITE);
+        menu.setBackgroundColor(Color.TRANSPARENT);
         toolbar.addView(menu, new LinearLayout.LayoutParams(48 * density(), 48 * density()));
         menu.setOnClickListener(view -> {
             PopupMenu popup = new PopupMenu(this, menu);
@@ -223,12 +229,36 @@ public final class MainActivity extends ComponentActivity {
                         if (isMainFrame && origin.equals(Origin.originOfUrl(sourceOrigin.toString()))) {
                             if ("scan".equals(message.getData())) startScan();
                             if ("retry".equals(message.getData())) retryPending();
+                            if (message.getData().startsWith("theme:")) {
+                                String theme = message.getData().substring(6);
+                                if ("light".equals(theme) || "dark".equals(theme) || "amoled".equals(theme)) {
+                                    runOnUiThread(() -> {
+                                        getPreferences(MODE_PRIVATE).edit().putString("display_theme", theme).apply();
+                                        applyTheme(theme);
+                                    });
+                                }
+                            }
                         }
                     });
         }
         root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(root);
+        applyTheme(getPreferences(MODE_PRIVATE).getString("display_theme", "light"));
         webView.loadUrl(origin + "/");
+    }
+
+    private void applyTheme(String theme) {
+        boolean light = "light".equals(theme);
+        int chrome = "amoled".equals(theme) ? Color.BLACK
+                : light ? Color.rgb(23, 59, 48) : Color.rgb(20, 37, 27);
+        int canvas = "amoled".equals(theme) ? Color.BLACK
+                : light ? Color.rgb(248, 247, 242) : Color.rgb(16, 26, 20);
+        if (shell != null) shell.setBackgroundColor(canvas);
+        if (toolbar != null) toolbar.setBackgroundColor(chrome);
+        if (webView != null) webView.setBackgroundColor(canvas);
+        getWindow().setStatusBarColor(chrome);
+        getWindow().setNavigationBarColor(canvas);
+        getWindow().getDecorView().setSystemUiVisibility(light ? View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
     }
 
     private int density() { return (int) getResources().getDisplayMetrics().density; }

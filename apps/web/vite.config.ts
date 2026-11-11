@@ -11,8 +11,9 @@ export default defineConfig({
       manifest: {
         name: "Ripiano",
         short_name: "Ripiano",
+        id: "/",
         description: "Your documents, in place.",
-        theme_color: "#183e32",
+        theme_color: "#173b30",
         background_color: "#f8f7f2",
         display: "standalone",
         start_url: "/",

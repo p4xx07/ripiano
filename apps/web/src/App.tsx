@@ -45,6 +45,24 @@ import TagPanel from "./TagPanel";
 import SavedSearchBar from "./SavedSearchBar";
 import TrashPanel from "./TrashPanel";
 import { Button, Field, Modal } from "./ui";
+import { applyTheme, readThemePreference, saveThemePreference, ThemePreference } from "./theme";
+
+function AppearanceControl({ preference, onChange }: {
+  preference: ThemePreference;
+  onChange: (preference: ThemePreference) => void;
+}) {
+  return (
+    <label className="appearance-control">
+      <span>Appearance</span>
+      <select value={preference} onChange={(event) => onChange(event.target.value as ThemePreference)}>
+        <option value="system">Use device setting</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="amoled">AMOLED black</option>
+      </select>
+    </label>
+  );
+}
 
 type BackupRun = {
   id: string;
@@ -93,9 +111,13 @@ declare global {
 function AuthScreen({
   setup,
   onAuthenticated,
+  appearance,
+  onAppearanceChange,
 }: {
   setup: boolean;
   onAuthenticated: (value: Session) => void;
+  appearance: ThemePreference;
+  onAppearanceChange: (preference: ThemePreference) => void;
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -185,6 +207,7 @@ function AuthScreen({
       <div className="auth-foot">
         <LockKeyhole size={14} /> Stored on your own server
       </div>
+      <AppearanceControl preference={appearance} onChange={onAppearanceChange} />
     </main>
   );
 }
@@ -312,6 +335,18 @@ function BackupPanel() {
 }
 
 function App() {
+  const [appearance, setAppearance] = useState<ThemePreference>(readThemePreference);
+  useEffect(() => {
+    applyTheme(appearance);
+    const media = matchMedia("(prefers-color-scheme: dark)");
+    const update = () => { if (appearance === "system") applyTheme(appearance); };
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [appearance]);
+  function changeAppearance(preference: ThemePreference) {
+    setAppearance(preference);
+    saveThemePreference(preference);
+  }
   const [session, setSession] = useState<Session | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [counts, setCounts] = useState({ total: 0, ready: 0, waiting: 0 });
@@ -610,7 +645,8 @@ function App() {
     );
   if (!session.authenticated)
     return (
-      <AuthScreen setup={session.setup_required} onAuthenticated={setSession} />
+      <AuthScreen setup={session.setup_required} onAuthenticated={setSession}
+        appearance={appearance} onAppearanceChange={changeAppearance} />
     );
 
   const isEmpty = counts.total === 0;
@@ -636,6 +672,9 @@ function App() {
             <FolderOpen size={22} strokeWidth={2.1} />
           </span>
           <span>ripiano</span>
+          <button className="sidebar-close" aria-label="Dismiss navigation" onClick={() => setMenuOpen(false)}>
+            <X size={19} />
+          </button>
         </div>
         <div className="sidebar-label">YOUR SPACE</div>
         <button
@@ -705,6 +744,7 @@ function App() {
           </button>
         )}
         <div className="sidebar-spacer" />
+        <AppearanceControl preference={appearance} onChange={changeAppearance} />
         <div className="sidebar-note">
           <div className="sidebar-note-icon">
             <LockKeyhole size={17} />

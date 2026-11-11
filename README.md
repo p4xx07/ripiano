@@ -12,6 +12,16 @@ The first three pairs show the running development stack with three fictional PD
 | --- | --- |
 | ![Desktop Ripiano Library with three filed documents and paper locations](qa-artifacts/20261111-showcase/desktop/library-full.png) | ![Mobile Ripiano Library with three filed documents](qa-artifacts/20261111-showcase/mobile/library-full.png) |
 
+The Appearance menu offers device setting, Light, Dark, and AMOLED black. The preference stays on the device; AMOLED uses a true black canvas and sidebar. These are browser captures of the same fictional archive.
+
+| AMOLED on desktop | AMOLED on mobile |
+| --- | --- |
+| ![AMOLED Ripiano Library on desktop](qa-artifacts/20261111-appearance/amoled/desktop/library.png) | ![AMOLED Ripiano Library on mobile](qa-artifacts/20261111-appearance/amoled/mobile/library.png) |
+
+| Dark on desktop | Dark on mobile |
+| --- | --- |
+| ![Dark Ripiano Library on desktop](qa-artifacts/20261111-appearance/dark/desktop/library.png) | ![Dark Ripiano Library on mobile](qa-artifacts/20261111-appearance/dark/mobile/library.png) |
+
 | Add a document on desktop | Add a document on mobile |
 | --- | --- |
 | ![Desktop Add dialog with camera, photos, and files](qa-artifacts/20261111-showcase/desktop/add.png) | ![Mobile Add dialog with camera, photos, and files](qa-artifacts/20261111-showcase/mobile/add.png) |

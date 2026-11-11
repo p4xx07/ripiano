@@ -15,7 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Document, DocumentNote, FilingItem, Location, PhysicalCopy, request, Tag } from "./api";
+import { Document, DocumentNote, FilingItem, Location, PhysicalCopy, request, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 import CustomFieldsPanel from "./CustomFieldsPanel";
@@ -55,6 +55,9 @@ export default function DocumentPanel({
     initial.tags.map((tag) => tag.id),
   );
   const [available, setAvailable] = useState<Tag[]>([]);
+  const availableById = new Map(available.map((tag) => [tag.id, tag]));
+  const sortedAvailable = [...available].sort((a, b) =>
+    tagPathLabel(a, availableById).localeCompare(tagPathLabel(b, availableById)));
   const [locations, setLocations] = useState<Location[]>([]);
   const [copies, setCopies] = useState<PhysicalCopy[]>(initial.physical_copies);
   const [newLocation, setNewLocation] = useState("");
@@ -427,7 +430,7 @@ export default function DocumentPanel({
           </div>
           {available.length ? (
             <div className="tag-choices">
-              {available.map((tag) => (
+              {sortedAvailable.map((tag) => (
                 <label className="tag-choice" key={tag.id}>
                   <input
                     type="checkbox"
@@ -438,7 +441,7 @@ export default function DocumentPanel({
                     className="tag-color"
                     style={{ background: tag.color }}
                   />
-                  {tag.name}
+                  {tagPathLabel(tag, availableById)}
                   {current.tags.find((item) => item.id === tag.id)?.origin ===
                     "rule" && <small>Rule</small>}
                   {current.tags.find((item) => item.id === tag.id)?.origin ===

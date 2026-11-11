@@ -131,6 +131,8 @@ Tags can be grouped under other tags. Create a nested tag from the **Under** pic
 
 For a batch of files, Ripiano continues after an unsupported file and names each rejected file in the result. Accepted files appear in the Library without another filing step.
 
+With a hardware keyboard, press **/** to focus Library search from any archive screen, or **N** to open Add. These shortcuts stay inactive while typing or using a dialog.
+
 1. Copy `.env.example` to `.env` and replace the three example secrets with strong unique values.
 2. Run `docker compose up --build -d` from this directory.
 3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account.

@@ -35,7 +35,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { CustomField, Document, FilingItem, formatDate, LibraryFilters, request, Session, Tag } from "./api";
+import { CustomField, Document, FilingItem, formatDate, LibraryFilters, request, Session, Tag, tagPathLabel } from "./api";
 import DocumentPanel from "./DocumentPanel";
 import ActionPanel from "./ActionPanel";
 import InboxPanel from "./InboxPanel";
@@ -393,6 +393,42 @@ function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const latestSearch = useRef(0);
   const loadingMoreRef = useRef(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const focusSearchOnView = useRef(false);
+
+  useEffect(() => {
+    if (view === "documents" && focusSearchOnView.current) {
+      focusSearchOnView.current = false;
+      searchRef.current?.focus();
+    }
+  }, [view]);
+
+  useEffect(() => {
+    if (!session?.authenticated) return;
+    function shortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.repeat || event.isComposing ||
+          event.altKey || event.ctrlKey || event.metaKey ||
+          document.querySelector('[role="dialog"]')) return;
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement &&
+          (focused.isContentEditable || focused.matches("input, textarea, select"))) return;
+      if (event.key === "/") {
+        event.preventDefault();
+        setMenuOpen(false);
+        if (view === "documents") searchRef.current?.focus();
+        else {
+          focusSearchOnView.current = true;
+          setView("documents");
+        }
+      } else if (event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        setMenuOpen(false);
+        setShowAdd(true);
+      }
+    }
+    document.addEventListener("keydown", shortcut);
+    return () => document.removeEventListener("keydown", shortcut);
+  }, [session?.authenticated, view]);
 
   const loadFilterOptions = useCallback(async () => {
     try {
@@ -652,6 +688,9 @@ function App() {
   const isEmpty = counts.total === 0;
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => !["custom_value", "custom_min", "custom_max"].includes(key) && Boolean(value)).length;
   const selectedCustomField = filterOptions.custom_fields.find((field) => field.id === filters.custom_field_id);
+  const tagById = new Map(filterOptions.tags.map((tag) => [tag.id, tag]));
+  const tagOptions = [...filterOptions.tags].sort((a, b) =>
+    tagPathLabel(a, tagById).localeCompare(tagPathLabel(b, tagById)));
 
   return (
     <div
@@ -893,11 +932,13 @@ function App() {
                 <div className="search-box">
                   <Search size={19} />
                   <input
+                    ref={searchRef}
                     value={query}
                     onChange={(event) => { setQuery(event.target.value); setNextCursor(null); }}
                     placeholder="Search text, sender, type, tag…"
                     aria-label="Search documents by text, sender, type, tag, or sticker"
                   />
+                  {!query && <kbd className="search-shortcut" aria-hidden="true">/</kbd>}
                   {query && (
                     <button
                       onClick={() => setQuery("")}
@@ -929,10 +970,10 @@ function App() {
               </div>
               <details className="search-syntax">
                 <summary>More precise search</summary>
-                <p>Use <code>tag:tax</code>, <code>sender:"City office"</code>, or <code>date:2026-04-15</code>. You can also search by <code>title:</code>, <code>text:</code>, <code>note:</code>, <code>type:</code>, and <code>sticker:</code>. Combine fields and ordinary words to narrow results.</p>
+                <p>Use <code>tag:tax</code>, <code>sender:"City office"</code>, or <code>date:2026-04-15</code>. You can also search by <code>title:</code>, <code>text:</code>, <code>note:</code>, <code>type:</code>, and <code>sticker:</code>. Combine fields and ordinary words to narrow results. Press <kbd>/</kbd> to search and <kbd>N</kbd> to add a document from anywhere in your archive.</p>
               </details>
               {showFilters && <div className="library-filters" id="library-filters">
-                <Field label="Tag" className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">Any tag</option>{filterOptions.tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></Field>
+                <Field label="Tag" className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">Any tag</option>{tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}</select></Field>
                 <Field label="From" className="detail-label"><select value={filters.correspondent_id} onChange={(event) => updateFilter("correspondent_id", event.target.value)}><option value="">Any sender</option>{filterOptions.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
                 <Field label="Document type" className="detail-label"><select value={filters.document_type_id} onChange={(event) => updateFilter("document_type_id", event.target.value)}><option value="">Any type</option>{filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
                 <Field label="Custom detail" className="detail-label custom-filter-field"><select value={filters.custom_field_id} onChange={(event) => updateFilter("custom_field_id", event.target.value)}><option value="">Any custom detail</option>{filterOptions.custom_fields.map((field) => <option key={field.id} value={field.id}>{field.name}</option>)}</select></Field>
@@ -993,7 +1034,7 @@ function App() {
                   {selectedIds.length > 0 && <button type="button" className="text-action" disabled={bulkBusy} onClick={() => setSelectedIds([])}>Clear selection</button>}
                   <select aria-label="Tag for selected documents" value={bulkTagId} disabled={bulkBusy || !filterOptions.tags.length} onChange={(event) => setBulkTagId(event.target.value)}>
                     <option value="">Choose a tag</option>
-                    {filterOptions.tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                    {tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}
                   </select>
                   <Button type="button" disabled={bulkBusy || !selectedIds.length || !bulkTagId} onClick={() => void applyBulkTag("add")}>Add tag</Button>
                   <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTagId} onClick={() => void applyBulkTag("remove")}>Remove tag</Button>

@@ -667,6 +667,14 @@ button:disabled {
 .search-box input::placeholder {
   color: var(--color-faint);
 }
+.search-shortcut {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-tight);
+  color: var(--color-muted);
+  font-size: var(--type-caption);
+  line-height: 1;
+  padding: var(--space-1) var(--space-tight);
+}
 .search-box button,
 .inline-error button {
   background: transparent;

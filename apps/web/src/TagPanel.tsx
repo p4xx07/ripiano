@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowRight, Plus, Tag as TagIcon, Trash2, X } from "lucide-react";
-import { request, Rule, Tag } from "./api";
+import { request, Rule, Tag, tagPathLabel } from "./api";
 import { Button } from "./ui";
 import FilingVocabularyPanel from "./FilingVocabularyPanel";
 
@@ -22,15 +22,7 @@ export default function TagPanel() {
   function tagPath(tag: Tag) {
     const cached = pathCache.get(tag.id);
     if (cached) return cached;
-    const names: string[] = [];
-    const seen = new Set<string>();
-    let current: Tag | undefined = tag;
-    while (current && !seen.has(current.id)) {
-      names.unshift(current.name);
-      seen.add(current.id);
-      current = current.parent_id ? tagById.get(current.parent_id) : undefined;
-    }
-    const path = names.join(" / ");
+    const path = tagPathLabel(tag, tagById);
     pathCache.set(tag.id, path);
     return path;
   }

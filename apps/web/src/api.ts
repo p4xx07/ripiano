@@ -13,6 +13,18 @@ export type Tag = {
   parent_id: string | null;
 };
 
+export function tagPathLabel(tag: Tag, byId: ReadonlyMap<string, Tag>): string {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  let current: Tag | undefined = tag;
+  while (current && !seen.has(current.id)) {
+    names.unshift(current.name);
+    seen.add(current.id);
+    current = current.parent_id ? byId.get(current.parent_id) : undefined;
+  }
+  return names.join(" / ");
+}
+
 export type Rule = {
   id: string;
   tag_id: string;

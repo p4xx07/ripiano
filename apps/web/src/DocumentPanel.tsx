@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Document, DocumentNote, FilingItem, Location, PhysicalCopy, request, Tag } from "./api";
 import { Button, Field, Modal } from "./ui";
+import DocumentLinks from "./DocumentLinks";
 
 export default function DocumentPanel({
   initial,
@@ -483,6 +484,7 @@ export default function DocumentPanel({
           </ol>}
           {nextNoteOffset !== null && <button type="button" className="text-action" disabled={notesLoading} onClick={() => void loadNotes(nextNoteOffset)}>Show older notes</button>}
         </section>
+        <DocumentLinks documentId={current.id} onOpenDocument={onOpenDuplicate} />
         <div className="detail-files">
           <h3>
             <FileText size={17} /> Files

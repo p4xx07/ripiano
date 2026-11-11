@@ -84,6 +84,21 @@ class DocumentNote(models.Model):
         indexes = [models.Index(fields=["document", "-created_at"], name="document_note_recent_idx")]
 
 
+class DocumentLink(models.Model):
+    """One reciprocal relationship, stored in stable UUID order."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    left = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="links_from")
+    right = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="links_to")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["left", "right"], name="unique_document_link_pair"),
+            models.CheckConstraint(condition=~Q(left=models.F("right")), name="document_link_no_self"),
+        ]
+
+
 class InputCursor(models.Model):
     source = models.CharField(max_length=30, unique=True)
     next_offset = models.BigIntegerField(default=0)

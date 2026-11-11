@@ -2187,6 +2187,46 @@ button:disabled {
   background: var(--color-surface);
   color: var(--color-heading);
   font-size: var(--type-body);
+  flex-wrap: wrap;
+}
+.location-path {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.location-result > strong {
+  color: var(--color-heading);
+  font-size: var(--type-small);
+}
+.location-contents {
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+.location-contents li {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft);
+  background: var(--color-surface);
+}
+.location-contents button {
+  border: 0;
+  background: transparent;
+  color: var(--color-accent-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+.location-contents small {
+  display: block;
+  color: var(--color-muted);
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
 }
 .location-marker {
   width: 30px;

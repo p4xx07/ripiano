@@ -342,9 +342,11 @@ function App() {
   const [loading, setLoading] = useState(true);
   const initialSticker =
     new URLSearchParams(window.location.search).get("sticker") ?? "";
+  const initialLocation =
+    new URLSearchParams(window.location.search).get("location") ?? "";
   const [view, setView] = useState<
     "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash"
-  >(initialSticker ? "physical" : "documents");
+  >(initialSticker || initialLocation ? "physical" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
   );
@@ -765,6 +767,7 @@ function App() {
           ) : view === "physical" ? (
             <PhysicalPanel
               initialSticker={initialSticker}
+              initialLocation={initialLocation}
               onOpenDocument={(id) => {
                 void request<Document>(`/api/documents/${id}`)
                   .then((doc) => {

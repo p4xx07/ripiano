@@ -1,24 +1,29 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { ArrowRight, Boxes, MapPin, Plus, ScanLine, X } from "lucide-react";
+import { ArrowRight, Boxes, MapPin, Plus, Printer, ScanLine, X } from "lucide-react";
 import { Location, PhysicalCopy, request } from "./api";
 import { Button } from "./ui";
 
 type Lookup = { copy: PhysicalCopy; document: { id: string; title: string } };
+type LocationLookup = { location: Location; copies: Lookup[]; total: number; next_cursor: string | null };
 
 export default function PhysicalPanel({
   initialSticker,
+  initialLocation,
   onOpenDocument,
 }: {
   initialSticker: string;
+  initialLocation: string;
   onOpenDocument: (id: string) => void;
 }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [name, setName] = useState("");
   const [parent, setParent] = useState("");
-  const [code, setCode] = useState(initialSticker);
+  const [code, setCode] = useState(initialSticker || initialLocation);
   const [found, setFound] = useState<Lookup | null>(null);
+  const [foundLocation, setFoundLocation] = useState<LocationLookup | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingContents, setLoadingContents] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -35,18 +40,20 @@ export default function PhysicalPanel({
     void load();
   }, [load]);
   useEffect(() => {
-    if (initialSticker) void findSticker(initialSticker);
-  }, [initialSticker]);
+    if (initialLocation || initialSticker) void findSticker(initialLocation || initialSticker);
+  }, [initialSticker, initialLocation]);
 
   async function findSticker(value: string) {
     setError("");
     setFound(null);
+    setFoundLocation(null);
     try {
-      setFound(
-        await request<Lookup>(
-          `/api/stickers/${encodeURIComponent(value.trim())}`,
-        ),
-      );
+      const normalized = value.trim().toUpperCase();
+      if (normalized.startsWith("L-")) {
+        setFoundLocation(await request<LocationLookup>(`/api/locations/lookup/${encodeURIComponent(normalized)}`));
+      } else {
+        setFound(await request<Lookup>(`/api/stickers/${encodeURIComponent(normalized)}`));
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sticker not found");
     }
@@ -72,6 +79,25 @@ export default function PhysicalPanel({
     }
   }
 
+  async function loadMoreContents() {
+    if (!foundLocation?.next_cursor || loadingContents) return;
+    setLoadingContents(true);
+    setError("");
+    try {
+      const code = foundLocation.location.sticker_code;
+      const next = await request<LocationLookup>(`/api/locations/lookup/${code}?cursor=${encodeURIComponent(foundLocation.next_cursor)}`);
+      setFoundLocation((current) => current?.location.sticker_code === code ? {
+        ...current,
+        copies: [...current.copies, ...next.copies],
+        next_cursor: next.next_cursor,
+      } : current);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load more contents");
+    } finally {
+      setLoadingContents(false);
+    }
+  }
+
   return (
     <>
       <div className="page-heading">
@@ -82,7 +108,7 @@ export default function PhysicalPanel({
           <h1>
             Your paper archive<span className="heading-period">.</span>
           </h1>
-          <p>Give paper a place, then find it by its sticker.</p>
+          <p>Give paper a place, then find a copy or box by its sticker.</p>
         </div>
       </div>
       {error && (
@@ -100,7 +126,7 @@ export default function PhysicalPanel({
               <ScanLine size={22} />
             </div>
             <h2>Find a sticker</h2>
-            <p>Scan the QR code or type the code printed on a paper copy.</p>
+            <p>Scan a QR code or type the code printed on a paper copy, shelf, or box.</p>
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -110,7 +136,7 @@ export default function PhysicalPanel({
               <input
                 value={code}
                 onChange={(event) => setCode(event.target.value.toUpperCase())}
-                placeholder="R-XXXXXXXX"
+                placeholder="R-XXXXXXXX or L-XXXXXXXX"
                 aria-label="Sticker code"
                 required
               />
@@ -135,6 +161,17 @@ export default function PhysicalPanel({
               </Button>
             </div>
           )}
+          {foundLocation && <div className="sticker-result location-result">
+            <div className="sticker-code">{foundLocation.location.sticker_code}</div>
+            <h3>{foundLocation.location.name}</h3>
+            <p><MapPin size={16} /> {foundLocation.location.path.join(" / ")}</p>
+            <strong>{foundLocation.total} {foundLocation.total === 1 ? "paper copy" : "paper copies"} recorded here or inside nested locations</strong>
+            {foundLocation.copies.length > 0 && <ul className="location-contents">{foundLocation.copies.map((item) => <li key={item.copy.id}>
+              <button type="button" onClick={() => onOpenDocument(item.document.id)}>{item.document.title} <ArrowRight size={15} /></button>
+              <small>{item.copy.sticker_code} · {item.copy.location_path.join(" / ")}{item.copy.missing_at ? " · Reported missing" : ""}</small>
+            </li>)}</ul>}
+            {foundLocation.next_cursor && <Button type="button" variant="secondary" disabled={loadingContents} onClick={() => void loadMoreContents()}>{loadingContents ? "Loading…" : "Show more copies"}</Button>}
+          </div>}
           <div className="section-heading location-heading">
             <div>
               <h2>Locations</h2>
@@ -148,7 +185,9 @@ export default function PhysicalPanel({
                   <span className="location-marker">
                     <Boxes size={18} />
                   </span>
-                  <span>{location.path.join(" / ")}</span>
+                  <span className="location-path">{location.path.join(" / ")}</span>
+                  <button type="button" className="text-action" onClick={() => { setCode(location.sticker_code); void findSticker(location.sticker_code); }}>View contents</button>
+                  <a className="text-action" href={`/api/locations/${location.id}/label`} target="_blank" rel="noreferrer"><Printer size={15} /> Print label</a>
                 </div>
               ))}
             </div>

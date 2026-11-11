@@ -56,6 +56,7 @@ export type FilingRule = {
 export type Location = {
   id: string;
   name: string;
+  sticker_code: string;
   parent_id: string | null;
   path: string[];
   description: string;

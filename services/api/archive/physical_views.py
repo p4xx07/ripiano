@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import secrets
 from uuid import UUID
 
@@ -42,6 +43,7 @@ def location_path(location):
 def location_json(location):
     return {
         "id": str(location.id), "name": location.name,
+        "sticker_code": location.sticker_code,
         "parent_id": str(location.parent_id) if location.parent_id else None,
         "path": location_path(location), "description": location.description,
     }
@@ -111,6 +113,66 @@ def location_detail(request, location_id):
     except ProtectedError:
         return JsonResponse({"error": "Move copies or child locations first"}, status=409)
     return JsonResponse({"deleted": True})
+
+
+@require_http_methods(["GET"])
+def location_lookup(request, sticker_code):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    location = Location.objects.filter(sticker_code__iexact=sticker_code, owner=request.user).select_related("parent__parent").first()
+    if location is None:
+        return JsonResponse({"error": "Location sticker not found"}, status=404)
+    children = {}
+    for child_id, parent_id in Location.objects.filter(owner=request.user).values_list("id", "parent_id"):
+        children.setdefault(parent_id, []).append(child_id)
+    ids = set()
+    pending = [location.id]
+    while pending:
+        current = pending.pop()
+        if current in ids:
+            continue
+        ids.add(current)
+        pending.extend(children.get(current, []))
+    copies = PhysicalCopy.objects.filter(location_id__in=ids, document__owner=request.user, document__trashed_at__isnull=True).select_related("document", "location__parent__parent").order_by("sticker_code")
+    total = copies.count()
+    cursor = request.GET.get("cursor", "")
+    if cursor:
+        if not re.fullmatch(r"R-[A-Z0-9]{8}", cursor):
+            return JsonResponse({"error": "Invalid container page cursor"}, status=400)
+        copies = copies.filter(sticker_code__gt=cursor)
+    page = list(copies[:51])
+    visible = page[:50]
+    return JsonResponse({
+        "location": location_json(location),
+        "copies": [{"copy": copy_json(copy), "document": {"id": str(copy.document_id), "title": copy.document.title}} for copy in visible],
+        "next_cursor": visible[-1].sticker_code if len(page) > 50 else None,
+        "total": total,
+    })
+
+
+@require_http_methods(["GET"])
+def location_label(request, location_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    location = Location.objects.filter(pk=location_id, owner=request.user).select_related("parent__parent").first()
+    if location is None:
+        return JsonResponse({"error": "Location not found"}, status=404)
+    address = f"{settings.PUBLIC_ORIGIN.rstrip('/')}/?location={location.sticker_code}"
+    qr = segno.make_qr(address, error="m")
+    output = io.BytesIO()
+    qr.save(output, kind="svg", scale=3, border=2, dark="#183e32")
+    svg = output.getvalue().decode("utf-8")
+    name = escape(location.name[:70])
+    code = escape(location.sticker_code)
+    path = escape(" / ".join(location_path(location))[:100])
+    html = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>Ripiano location {code}</title>
+<style>@page{{size:70mm 40mm;margin:0}}body{{margin:0;font-family:Arial,sans-serif;color:#183e32}}.label{{box-sizing:border-box;width:70mm;height:40mm;padding:3mm;display:flex;gap:3mm;border:1px solid #bbb}}svg{{width:30mm;height:30mm;flex:none}}.text{{overflow:hidden}}.brand{{font-size:8pt;font-weight:bold}}h1{{font-size:11pt;margin:2mm 0 1mm;overflow:hidden}}.code{{font-size:13pt;font-weight:bold;letter-spacing:1px}}.path{{font-size:7pt;margin-top:2mm}}</style>
+<div class="label">{svg}<div class="text"><div class="brand">ripiano · location</div><h1>{name}</h1><div class="code">{code}</div><div class="path">{path}</div></div></div></html>"""
+    response = HttpResponse(html, content_type="text/html; charset=utf-8")
+    response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+    return response
 
 
 @transaction.atomic

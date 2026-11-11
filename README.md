@@ -60,6 +60,10 @@ These show the running development stack with synthetic test documents. The mobi
 | --- | --- |
 | ![Desktop paper-copy card marked missing with last known location and history](qa-artifacts/20261111-physical-missing/desktop/missing-paper-copy.png) | ![Mobile sticker lookup warning that a paper copy is missing](qa-artifacts/20261111-physical-missing/mobile/missing-sticker-lookup.png) |
 
+| Shelf contents on desktop | Shelf contents on mobile |
+| --- | --- |
+| ![Desktop shelf-label lookup showing a paper copy in a nested box](qa-artifacts/20261111-location-label/desktop/shelf-contents.png) | ![Mobile shelf-label lookup showing a paper copy in a nested box](qa-artifacts/20261111-location-label/mobile/shelf-contents.png) |
+
 ## Planning documents
 
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
@@ -130,6 +134,8 @@ The document panel keeps dated notes separate from follow-ups. Notes can be adde
 Move a completed document to **Trash** from its detail panel and restore it later with its original, notes, tags, and sticker history intact. Trashed documents disappear from Library search, Needs action, downloads, and agent tools. A sticker scan explains that its document is in Trash. Processing must finish before a document can be moved. Trash does not erase files automatically; permanent deletion and retention controls are still future work.
 
 If a paper copy is missing, mark its sticker **Missing** from the document panel. Ripiano keeps the last known location, shows a warning when the sticker is scanned, and records the report in its history. Mark it **Found** before assigning a new location; the sticker identity stays the same.
+
+Each shelf or box also has a stable `L-` code and a printable QR label. Scan it to see the paper copies stored there, including copies in nested locations, or type the code in **Your paper archive**. Large locations load their contents in pages of 50. Missing copies remain listed at their last known location with a warning.
 
 ### Optional Telegram input
 

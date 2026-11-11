@@ -1,9 +1,15 @@
 import uuid
+import secrets
 
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Lower
+
+
+def new_location_code():
+    alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+    return "L-" + "".join(secrets.choice(alphabet) for _ in range(8))
 
 
 class Document(models.Model):
@@ -233,6 +239,7 @@ class Location(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="physical_locations")
     name = models.CharField(max_length=100)
+    sticker_code = models.CharField(max_length=10, unique=True, default=new_location_code)
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="children")
     description = models.CharField(max_length=500, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

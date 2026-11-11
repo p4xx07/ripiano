@@ -388,6 +388,47 @@ def documents(request):
     return JsonResponse(_document_json(document), status=202)
 
 
+@require_http_methods(["POST"])
+def bulk_document_tags(request):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    body = _payload(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    raw_ids = body.get("document_ids")
+    if not isinstance(raw_ids, list) or not 1 <= len(raw_ids) <= 100:
+        return JsonResponse({"error": "Choose 1–100 documents"}, status=400)
+    try:
+        document_ids = {UUID(str(value)) for value in raw_ids}
+        tag_id = UUID(str(body.get("tag_id")))
+    except ValueError:
+        return JsonResponse({"error": "Invalid document or tag ID"}, status=400)
+    if len(document_ids) != len(raw_ids):
+        return JsonResponse({"error": "Document IDs must be unique"}, status=400)
+    action = body.get("action")
+    if action not in {"add", "remove"}:
+        return JsonResponse({"error": "Choose add or remove"}, status=400)
+    with transaction.atomic():
+        tag = Tag.objects.filter(pk=tag_id, owner=request.user).first()
+        documents_to_change = list(Document.objects.select_for_update().filter(owner=request.user, pk__in=document_ids).order_by("pk"))
+        if tag is None or len(documents_to_change) != len(document_ids):
+            return JsonResponse({"error": "Document or tag not found"}, status=404)
+        if action == "add":
+            counts = dict(DocumentTag.objects.filter(document_id__in=document_ids).values("document_id").annotate(total=Count("id")).values_list("document_id", "total"))
+            already_tagged = set(DocumentTag.objects.filter(document_id__in=document_ids, tag=tag).values_list("document_id", flat=True))
+            if any(counts.get(document.id, 0) >= 100 and document.id not in already_tagged for document in documents_to_change):
+                return JsonResponse({"error": "A document already has 100 tags"}, status=400)
+        for document in documents_to_change:
+            if action == "add":
+                TagOverride.objects.filter(document=document, tag=tag).delete()
+                DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
+            else:
+                DocumentTag.objects.filter(document=document, tag=tag).delete()
+                TagOverride.objects.get_or_create(document=document, tag=tag)
+    return JsonResponse({"updated": len(documents_to_change), "action": action})
+
+
 @require_http_methods(["GET", "PATCH"])
 def document_detail(request, document_id):
     unauthorized = _unauthorized(request)

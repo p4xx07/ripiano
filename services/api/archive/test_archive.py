@@ -11,7 +11,7 @@ from django.test import Client, override_settings
 from django.utils import timezone
 from PIL import Image
 
-from archive.models import Correspondent, Document, DocumentTag, DocumentType, PhysicalCopy, SavedView, Tag
+from archive.models import Correspondent, Document, DocumentTag, DocumentType, PhysicalCopy, SavedView, Tag, TagOverride
 from archive.tasks import reconcile_pending_documents
 
 
@@ -608,3 +608,48 @@ def test_field_search_combines_owned_metadata_text_and_dates():
     assert client.get("/api/documents", {"q": "date:2026-99-99"}).status_code == 400
     assert client.get("/api/documents", {"q": "date:20260415"}).status_code == 400
     assert client.get("/api/documents", {"q": "sender:City", "date_from": "2026-04-16"}).json()["documents"] == []
+
+
+@pytest.mark.django_db
+def test_bulk_tagging_is_atomic_owner_scoped_and_preserves_manual_corrections():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    tag = Tag.objects.create(owner=owner, name="Taxes")
+    foreign_tag = Tag.objects.create(owner=other, name="Private")
+
+    def make_document(user, title):
+        return Document.objects.create(
+            owner=user, title=title, original_name=f"{title}.pdf",
+            original_path=f"originals/{title}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10,
+        )
+
+    first = make_document(owner, "First")
+    second = make_document(owner, "Second")
+    foreign = make_document(other, "Foreign")
+    DocumentTag.objects.create(document=first, tag=tag, origin=DocumentTag.Origin.RULE)
+    client = Client()
+    client.force_login(owner)
+
+    def change(action, ids, tag_id=tag.id):
+        return client.post("/api/documents/bulk-tags", json.dumps({
+            "action": action, "document_ids": [str(value) for value in ids], "tag_id": str(tag_id),
+        }), content_type="application/json")
+
+    assert change("remove", [first.id, second.id]).json()["updated"] == 2
+    assert not DocumentTag.objects.filter(document_id__in=[first.id, second.id], tag=tag).exists()
+    assert TagOverride.objects.filter(document_id__in=[first.id, second.id], tag=tag).count() == 2
+    assert change("add", [first.id, second.id]).json()["updated"] == 2
+    assert set(DocumentTag.objects.filter(tag=tag).values_list("document_id", flat=True)) == {first.id, second.id}
+    assert set(DocumentTag.objects.filter(tag=tag).values_list("origin", flat=True)) == {DocumentTag.Origin.MANUAL}
+    assert not TagOverride.objects.filter(document_id__in=[first.id, second.id], tag=tag).exists()
+
+    assert change("remove", [first.id, foreign.id]).status_code == 404
+    assert DocumentTag.objects.filter(document=first, tag=tag).exists()
+    assert change("add", [first.id], foreign_tag.id).status_code == 404
+    assert change("add", [first.id, first.id]).status_code == 400
+    assert change("add", []).status_code == 400
+    assert change("add", [first.id], "not-a-uuid").status_code == 400
+    client.force_login(other)
+    assert change("add", [first.id], foreign_tag.id).status_code == 404
+    assert not DocumentTag.objects.filter(document=foreign, tag=foreign_tag).exists()

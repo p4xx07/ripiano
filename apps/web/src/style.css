@@ -659,6 +659,21 @@ button:disabled {
   color: var(--color-heading);
   background: var(--color-surface);
 }
+.bulk-filing-details {
+  flex-basis: 100%;
+}
+.bulk-filing-details summary {
+  color: var(--color-accent-strong);
+  cursor: pointer;
+  font-size: var(--type-small);
+}
+.bulk-filing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
 .bulk-controls .inline-error,
 .bulk-notice {
   flex-basis: 100%;
@@ -1089,6 +1104,9 @@ button:disabled {
   }
   .bulk-actions select {
     flex: 1 1 100%;
+  }
+  .bulk-filing .button {
+    flex: 1 1 auto;
   }
   .toolbar {
     display: grid;

@@ -653,3 +653,58 @@ def test_bulk_tagging_is_atomic_owner_scoped_and_preserves_manual_corrections():
     client.force_login(other)
     assert change("add", [first.id], foreign_tag.id).status_code == 404
     assert not DocumentTag.objects.filter(document=foreign, tag=foreign_tag).exists()
+
+
+@pytest.mark.django_db
+def test_bulk_filing_is_atomic_owner_scoped_and_resists_rules():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    sender = Correspondent.objects.create(owner=owner, name="City office")
+    private_sender = Correspondent.objects.create(owner=other, name="Private office")
+    kind = DocumentType.objects.create(owner=owner, name="Permit")
+
+    def make_document(user, title):
+        return Document.objects.create(
+            owner=user, title=title, original_name=f"{title}.pdf",
+            original_path=f"originals/{title}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10, status=Document.Status.READY,
+        )
+
+    first = make_document(owner, "First")
+    second = make_document(owner, "Second")
+    foreign = make_document(other, "Foreign")
+    client = Client()
+    client.force_login(owner)
+
+    def change(field, ids, value_id):
+        return client.post("/api/documents/bulk-filing", json.dumps({
+            "field": field, "document_ids": [str(value) for value in ids],
+            "value_id": str(value_id) if value_id is not None else None,
+        }), content_type="application/json")
+
+    assert change("correspondent", [first.id, second.id], sender.id).json()["updated"] == 2
+    assert change("document_type", [first.id, second.id], kind.id).json()["updated"] == 2
+    for document in (first, second):
+        document.refresh_from_db()
+        assert document.correspondent == sender
+        assert document.document_type == kind
+        assert document.correspondent_origin == Document.FilingOrigin.MANUAL
+        assert document.document_type_origin == Document.FilingOrigin.MANUAL
+
+    assert change("correspondent", [first.id, foreign.id], sender.id).status_code == 404
+    assert change("correspondent", [first.id], private_sender.id).status_code == 404
+    first.refresh_from_db()
+    assert first.correspondent == sender
+    assert change("document_type", [first.id], None).status_code == 200
+    from archive.classification import apply_rules
+    apply_rules(first)
+    first.refresh_from_db()
+    assert first.document_type is None
+    assert first.document_type_origin == Document.FilingOrigin.MANUAL
+    assert change("document_type", [first.id, first.id], kind.id).status_code == 400
+    assert change("correspondent", [], sender.id).status_code == 400
+    assert change("correspondent", [first.id], "bad").status_code == 400
+    assert change("unknown", [first.id], sender.id).status_code == 400
+    client.force_login(other)
+    assert change("correspondent", [first.id], private_sender.id).status_code == 404
+    assert Document.objects.get(pk=foreign.id).correspondent_id is None

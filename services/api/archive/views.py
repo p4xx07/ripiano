@@ -429,6 +429,46 @@ def bulk_document_tags(request):
     return JsonResponse({"updated": len(documents_to_change), "action": action})
 
 
+@require_http_methods(["POST"])
+def bulk_document_filing(request):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    body = _payload(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    raw_ids = body.get("document_ids")
+    if not isinstance(raw_ids, list) or not 1 <= len(raw_ids) <= 100:
+        return JsonResponse({"error": "Choose 1–100 documents"}, status=400)
+    try:
+        document_ids = {UUID(str(value)) for value in raw_ids}
+    except ValueError:
+        return JsonResponse({"error": "Invalid document ID"}, status=400)
+    if len(document_ids) != len(raw_ids):
+        return JsonResponse({"error": "Document IDs must be unique"}, status=400)
+    field = body.get("field")
+    if field not in {"correspondent", "document_type"}:
+        return JsonResponse({"error": "Choose sender or document type"}, status=400)
+    if "value_id" not in body:
+        return JsonResponse({"error": "Choose a filing value or clear it"}, status=400)
+    raw_value = body.get("value_id")
+    try:
+        value_id = UUID(str(raw_value)) if raw_value is not None else None
+    except ValueError:
+        return JsonResponse({"error": "Invalid filing ID"}, status=400)
+    model = Correspondent if field == "correspondent" else DocumentType
+    with transaction.atomic():
+        item = model.objects.filter(pk=value_id, owner=request.user).first() if value_id else None
+        documents_to_change = list(Document.objects.select_for_update().filter(owner=request.user, pk__in=document_ids).order_by("pk"))
+        if len(documents_to_change) != len(document_ids) or (value_id and item is None):
+            return JsonResponse({"error": "Document or filing choice not found"}, status=404)
+        for document in documents_to_change:
+            setattr(document, field, item)
+            setattr(document, f"{field}_origin", Document.FilingOrigin.MANUAL)
+            document.save(update_fields=[field, f"{field}_origin"])
+    return JsonResponse({"updated": len(documents_to_change), "field": field, "value_id": str(value_id) if value_id else None})
+
+
 @require_http_methods(["GET", "PATCH"])
 def document_detail(request, document_id):
     unauthorized = _unauthorized(request)

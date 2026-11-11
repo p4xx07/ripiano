@@ -319,6 +319,8 @@ function App() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkTagId, setBulkTagId] = useState("");
+  const [bulkSenderId, setBulkSenderId] = useState("");
+  const [bulkTypeId, setBulkTypeId] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkError, setBulkError] = useState("");
   const [bulkNotice, setBulkNotice] = useState("");
@@ -385,6 +387,30 @@ function App() {
       });
       const tagName = filterOptions.tags.find((tag) => tag.id === bulkTagId)?.name ?? "tag";
       setBulkNotice(`${action === "add" ? "Added" : "Removed"} ${tagName} ${action === "add" ? "to" : "from"} ${result.updated} documents.`);
+      setSelectedIds([]);
+      await loadDocuments(query);
+    } catch (cause) {
+      setBulkError(cause instanceof Error ? cause.message : "Could not update selected documents");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function applyBulkFiling(field: "correspondent" | "document_type") {
+    const choice = field === "correspondent" ? bulkSenderId : bulkTypeId;
+    if (!selectedIds.length || !choice) return;
+    setBulkBusy(true);
+    setBulkError("");
+    setBulkNotice("");
+    try {
+      const result = await request<{ updated: number }>("/api/documents/bulk-filing", {
+        method: "POST",
+        body: JSON.stringify({ field, document_ids: selectedIds, value_id: choice === "none" ? null : choice }),
+      });
+      const label = field === "correspondent" ? "sender" : "document type";
+      const options = field === "correspondent" ? filterOptions.correspondents : filterOptions.document_types;
+      const name = options.find((item) => item.id === choice)?.name;
+      setBulkNotice(`${choice === "none" ? `Cleared ${label}` : `Set ${label} to ${name ?? "the selected value"}`} for ${result.updated} documents.`);
       setSelectedIds([]);
       await loadDocuments(query);
     } catch (cause) {
@@ -903,6 +929,23 @@ function App() {
                   </select>
                   <Button type="button" disabled={bulkBusy || !selectedIds.length || !bulkTagId} onClick={() => void applyBulkTag("add")}>Add tag</Button>
                   <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTagId} onClick={() => void applyBulkTag("remove")}>Remove tag</Button>
+                  <details className="bulk-filing-details">
+                    <summary>Change sender or document type</summary>
+                    <div className="bulk-filing">
+                    <select aria-label="Sender for selected documents" value={bulkSenderId} disabled={bulkBusy} onChange={(event) => setBulkSenderId(event.target.value)}>
+                      <option value="">Choose sender</option>
+                      <option value="none">Clear sender</option>
+                      {filterOptions.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                    <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkSenderId} onClick={() => void applyBulkFiling("correspondent")}>Set sender</Button>
+                    <select aria-label="Document type for selected documents" value={bulkTypeId} disabled={bulkBusy} onChange={(event) => setBulkTypeId(event.target.value)}>
+                      <option value="">Choose type</option>
+                      <option value="none">Clear type</option>
+                      {filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                    <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTypeId} onClick={() => void applyBulkFiling("document_type")}>Set type</Button>
+                    </div>
+                  </details>
                 </div>}
                 {bulkError && <p className="inline-error" role="alert">{bulkError}</p>}
                 {bulkNotice && <p className="bulk-notice" role="status">{bulkNotice}</p>}

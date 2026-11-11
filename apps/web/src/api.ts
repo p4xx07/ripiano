@@ -101,6 +101,13 @@ export type Document = {
   snippet_source: "document" | "note" | "sticker" | null;
 };
 
+export type DocumentNote = {
+  id: string;
+  body: string;
+  author: string;
+  created_at: string;
+};
+
 function csrfToken() {
   return decodeURIComponent(
     document.cookie

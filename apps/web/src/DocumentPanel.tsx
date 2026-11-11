@@ -6,13 +6,14 @@ import {
   FileText,
   History,
   MapPin,
+  MessageSquare,
   Plus,
   Printer,
   Save,
   Tag as TagIcon,
   X,
 } from "lucide-react";
-import { Document, FilingItem, Location, PhysicalCopy, request, Tag } from "./api";
+import { Document, DocumentNote, FilingItem, Location, PhysicalCopy, request, Tag } from "./api";
 import { Button, Field, Modal } from "./ui";
 
 export default function DocumentPanel({
@@ -55,6 +56,14 @@ export default function DocumentPanel({
   const [histories, setHistories] = useState<
     Record<string, { from: string[]; to: string[]; note: string; at: string }[]>
   >({});
+  const [notes, setNotes] = useState<DocumentNote[]>([]);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [nextNoteOffset, setNextNoteOffset] = useState<number | null>(null);
+  const [notesBusy, setNotesBusy] = useState(false);
+  const [notesLoading, setNotesLoading] = useState(true);
+  const [noteError, setNoteError] = useState("");
+  const [noteNotice, setNoteNotice] = useState("");
+  const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -77,6 +86,59 @@ export default function DocumentPanel({
       setDocumentTypes(types.document_types);
     }).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load filing details"));
   }, []);
+  useEffect(() => {
+    void loadNotes(0);
+  }, [current.id]);
+
+  async function loadNotes(offset: number) {
+    setNotesLoading(true);
+    try {
+      const result = await request<{ notes: DocumentNote[]; next_offset: number | null }>(`/api/documents/${current.id}/notes?offset=${offset}`);
+      setNotes((existing) => offset ? [...existing, ...result.notes] : result.notes);
+      setNextNoteOffset(result.next_offset);
+      setNoteError("");
+    } catch (cause) {
+      setNoteError(cause instanceof Error ? cause.message : "Could not load notes");
+    } finally {
+      setNotesLoading(false);
+    }
+  }
+
+  async function addNote(event: FormEvent) {
+    event.preventDefault();
+    if (!noteDraft.trim()) return;
+    setNotesBusy(true);
+    setNoteError("");
+    setNoteNotice("");
+    try {
+      await request(`/api/documents/${current.id}/notes`, { method: "POST", body: JSON.stringify({ body: noteDraft }) });
+      setNoteDraft("");
+      await loadNotes(0);
+      onSaved(current);
+      setNoteNotice("Note added.");
+    } catch (cause) {
+      setNoteError(cause instanceof Error ? cause.message : "Could not add note");
+    } finally {
+      setNotesBusy(false);
+    }
+  }
+
+  async function deleteNote(id: string) {
+    setNotesBusy(true);
+    setNoteError("");
+    setNoteNotice("");
+    try {
+      await request(`/api/documents/${current.id}/notes/${id}`, { method: "DELETE" });
+      setDeleteNoteId(null);
+      await loadNotes(0);
+      onSaved(current);
+      setNoteNotice("Note deleted.");
+    } catch (cause) {
+      setNoteError(cause instanceof Error ? cause.message : "Could not delete note");
+    } finally {
+      setNotesBusy(false);
+    }
+  }
   function toggle(id: string) {
     setSelected((value) =>
       value.includes(id) ? value.filter((item) => item !== id) : [...value, id],
@@ -325,6 +387,32 @@ export default function DocumentPanel({
             <Save size={17} /> {busy ? "Saving…" : "Save changes"}
           </Button>
         </form>
+        <section className="detail-notes" aria-labelledby="document-notes-heading">
+          <h3 id="document-notes-heading"><MessageSquare size={17} /> Notes</h3>
+          <p>Keep context here without creating a follow-up.</p>
+          {noteError && <div className="inline-error" role="alert">{noteError}</div>}
+          {noteNotice && <p className="bulk-notice" role="status">{noteNotice}</p>}
+          <form className="note-form" onSubmit={(event) => void addNote(event)}>
+            <Field label="New note">
+              <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} maxLength={2000} rows={3} placeholder="For example, original received in person" />
+            </Field>
+            <Button disabled={notesBusy || !noteDraft.trim()}><Plus size={16} /> Add note</Button>
+          </form>
+          {notesLoading && <p>Loading notes…</p>}
+          {!notesLoading && !notes.length && <p>No notes yet.</p>}
+          {notes.length > 0 && <ol className="note-list">
+            {notes.map((note) => <li key={note.id}>
+              <p>{note.body}</p>
+              <div className="note-meta"><span>{note.author} · <time dateTime={note.created_at}>{new Date(note.created_at).toLocaleString()}</time></span>
+                {deleteNoteId === note.id ? <span className="note-actions">
+                  <button type="button" disabled={notesBusy} onClick={() => void deleteNote(note.id)}>Confirm delete</button>
+                  <button type="button" disabled={notesBusy} onClick={() => setDeleteNoteId(null)}>Cancel</button>
+                </span> : <button type="button" disabled={notesBusy} aria-label={`Delete note ${note.id}`} onClick={() => setDeleteNoteId(note.id)}>Delete</button>}
+              </div>
+            </li>)}
+          </ol>}
+          {nextNoteOffset !== null && <button type="button" className="text-action" disabled={notesLoading} onClick={() => void loadNotes(nextNoteOffset)}>Show older notes</button>}
+        </section>
         <div className="detail-files">
           <h3>
             <FileText size={17} /> Files

@@ -65,6 +65,18 @@ class Document(models.Model):
         indexes = [models.Index(fields=["owner", "original_sha256"], name="document_owner_sha_idx")]
 
 
+class DocumentNote(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="notes")
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["document", "-created_at"], name="document_note_recent_idx")]
+
+
 class InputCursor(models.Model):
     source = models.CharField(max_length=30, unique=True)
     next_offset = models.BigIntegerField(default=0)

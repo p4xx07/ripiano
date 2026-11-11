@@ -12,14 +12,14 @@ from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.core import signing
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import IntegrityError, connection, transaction
-from django.db.models import BigIntegerField, Count, Exists, F, OuterRef, Q
+from django.db.models import BigIntegerField, Count, Exists, F, OuterRef, Prefetch, Q, prefetch_related_objects
 from django.db.models.functions import Cast, Lower
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
-from .models import BackupRun, Correspondent, Document, DocumentTag, DocumentType, PhysicalCopy, Tag, TagOverride
+from .models import BackupRun, Correspondent, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, Tag, TagOverride
 from .physical_views import copy_json
 from .ingestion import ingest_document
 from .storage import InvalidDocument
@@ -127,10 +127,18 @@ def _search_snippet(document, query):
         excerpt = _excerpt(text, query)
         if excerpt:
             return excerpt, source
+    for note in getattr(document, "matching_notes", ()):
+        excerpt = _excerpt(note.body, query)
+        if excerpt:
+            return excerpt, "note"
     for copy in document.physical_copies.all():
         if query.casefold() in copy.sticker_code.casefold():
             return copy.sticker_code, "sticker"
     return "", None
+
+
+def _note_json(note):
+    return {"id": str(note.id), "body": note.body, "author": note.author.get_username(), "created_at": note.created_at.isoformat()}
 
 
 def _document_json(document, query=""):
@@ -262,7 +270,7 @@ def documents(request):
             elif field == "text":
                 queryset = queryset.filter(extracted_text__icontains=value)
             elif field == "note":
-                queryset = queryset.filter(action_note__icontains=value)
+                queryset = queryset.filter(Q(action_note__icontains=value) | Q(Exists(DocumentNote.objects.filter(document_id=OuterRef("pk"), body__icontains=value))))
             elif field == "tag":
                 queryset = queryset.filter(Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=value)))
             elif field == "sender":
@@ -294,6 +302,7 @@ def documents(request):
             queryset = queryset.annotate(
                 tag_match=Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=free_query)),
                 sticker_match=Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=free_query)),
+                note_match=Exists(DocumentNote.objects.filter(document_id=OuterRef("pk"), body__icontains=free_query)),
             )
             if connection.vendor == "postgresql":
                 vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
@@ -301,9 +310,9 @@ def documents(request):
                 queryset = queryset.annotate(
                     search_vector=vector,
                     search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField()),
-                ).filter(Q(search_vector=search_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
+                ).filter(Q(search_vector=search_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
             else:
-                queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
+                queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
         if view == "actions":
             queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at", "-id")
         elif sort == "relevance" and connection.vendor == "postgresql":
@@ -360,6 +369,8 @@ def documents(request):
         page = list(queryset[:51])
         visible = page[:50]
         snippet_query = free_query or next((value for field, value in clauses if field in {"text", "note", "sticker"}), "")
+        if snippet_query:
+            prefetch_related_objects(visible, Prefetch("notes", queryset=DocumentNote.objects.filter(body__icontains=snippet_query), to_attr="matching_notes"))
         return JsonResponse({
             "documents": [_document_json(doc, query=snippet_query) for doc in visible],
             "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, sort, counts) if len(page) > 50 else None,
@@ -563,6 +574,42 @@ def document_detail(request, document_id):
                     DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
         document = Document.objects.filter(pk=document.id).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").get()
     return JsonResponse(_document_json(document))
+
+
+@require_http_methods(["GET", "POST"])
+def document_notes(request, document_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    document = Document.objects.filter(pk=document_id, owner=request.user).first()
+    if document is None:
+        return JsonResponse({"error": "Document not found"}, status=404)
+    if request.method == "GET":
+        try:
+            offset = int(request.GET.get("offset", "0"))
+        except ValueError:
+            return JsonResponse({"error": "Invalid note offset"}, status=400)
+        if offset < 0:
+            return JsonResponse({"error": "Invalid note offset"}, status=400)
+        page = list(DocumentNote.objects.filter(document=document).select_related("author")[offset:offset + 51])
+        return JsonResponse({"notes": [_note_json(note) for note in page[:50]], "next_offset": offset + 50 if len(page) > 50 else None})
+    body = _payload(request)
+    if body is None or not isinstance(body.get("body"), str) or not 1 <= len(body["body"].strip()) <= 2000:
+        return JsonResponse({"error": "Note must be 1–2000 characters"}, status=400)
+    note = DocumentNote.objects.create(document=document, author=request.user, body=body["body"].strip())
+    return JsonResponse(_note_json(note), status=201)
+
+
+@require_http_methods(["DELETE"])
+def document_note_detail(request, document_id, note_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    note = DocumentNote.objects.filter(pk=note_id, document_id=document_id, document__owner=request.user).first()
+    if note is None:
+        return JsonResponse({"error": "Note not found"}, status=404)
+    note.delete()
+    return JsonResponse({"deleted": True})
 
 
 @require_http_methods(["GET"])

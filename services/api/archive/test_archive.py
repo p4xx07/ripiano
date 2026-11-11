@@ -11,7 +11,7 @@ from django.test import Client, override_settings
 from django.utils import timezone
 from PIL import Image
 
-from archive.models import Correspondent, Document, DocumentTag, DocumentType, PhysicalCopy, SavedView, Tag, TagOverride
+from archive.models import Correspondent, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, SavedView, Tag, TagOverride
 from archive.tasks import reconcile_pending_documents
 
 
@@ -725,3 +725,63 @@ def test_search_does_not_include_partial_matches_for_document_numbers():
     response = client.get("/api/documents", {"q": "invoice-2026-AB123"})
     assert response.status_code == 200
     assert [item["title"] for item in response.json()["documents"]] == ["invoice-2026-AB123"]
+
+
+@pytest.mark.django_db
+def test_document_notes_are_owned_searchable_and_reversible():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+
+    def make_document(user, title):
+        return Document.objects.create(
+            owner=user, title=title, original_name=f"{title}.pdf",
+            original_path=f"originals/{title}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10,
+        )
+
+    own = make_document(owner, "Permit")
+    foreign = make_document(other, "Private")
+    DocumentNote.objects.create(document=foreign, author=other, body="Private inspection details")
+    client = Client()
+    client.force_login(owner)
+    path = f"/api/documents/{own.id}/notes"
+    response = client.post(path, json.dumps({"body": "  Inspection booked for Tuesday  "}), content_type="application/json")
+    assert response.status_code == 201
+    note_id = response.json()["id"]
+    assert response.json()["body"] == "Inspection booked for Tuesday"
+    assert response.json()["author"] == owner.get_username()
+    assert client.get(path).json()["notes"][0]["id"] == note_id
+    for query in ("Inspection", "note:Inspection"):
+        result = client.get("/api/documents", {"q": query}).json()["documents"]
+        assert [item["id"] for item in result] == [str(own.id)]
+        assert result[0]["snippet_source"] == "note"
+        assert "Inspection" in result[0]["snippet"]
+    assert client.post(path, json.dumps({"body": "   "}), content_type="application/json").status_code == 400
+    assert client.post(path, json.dumps({"body": "x" * 2001}), content_type="application/json").status_code == 400
+    assert client.get(f"/api/documents/{foreign.id}/notes").status_code == 404
+    assert client.delete(f"/api/documents/{foreign.id}/notes/{note_id}").status_code == 404
+    assert client.delete(f"{path}/{note_id}").status_code == 200
+    assert client.get("/api/documents", {"q": "Inspection"}).json()["documents"] == []
+    client.force_login(other)
+    assert client.get(path).status_code == 404
+
+
+@pytest.mark.django_db
+def test_document_notes_keep_older_pages_reachable():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    document = Document.objects.create(
+        owner=owner, title="Notebook", original_name="notebook.pdf",
+        original_path="originals/notebook.pdf", original_mime="application/pdf",
+        original_sha256="a" * 64, original_size=10,
+    )
+    DocumentNote.objects.bulk_create([DocumentNote(document=document, author=owner, body=f"Note {index}") for index in range(51)])
+    client = Client()
+    client.force_login(owner)
+    path = f"/api/documents/{document.id}/notes"
+    first = client.get(path).json()
+    second = client.get(path, {"offset": first["next_offset"]}).json()
+    assert len(first["notes"]) == 50
+    assert len(second["notes"]) == 1
+    assert second["next_offset"] is None
+    assert len({note["id"] for note in first["notes"] + second["notes"]}) == 51
+    assert client.get(path, {"offset": "-1"}).status_code == 400

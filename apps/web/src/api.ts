@@ -101,7 +101,7 @@ export type Document = {
   }[];
   physical_copies: PhysicalCopy[];
   snippet: string;
-  snippet_source: "document" | "note" | "sticker" | null;
+  snippet_source: "document" | "note" | "sticker" | "field" | null;
 };
 
 export type DocumentNote = {
@@ -109,6 +109,13 @@ export type DocumentNote = {
   body: string;
   author: string;
   created_at: string;
+};
+
+export type CustomField = {
+  id: string;
+  name: string;
+  kind: "text" | "number" | "date" | "boolean";
+  value: string | boolean | null;
 };
 
 function csrfToken() {

@@ -1034,7 +1034,7 @@ function App() {
                         </div>
                         {doc.snippet && (
                           <p className="document-snippet">
-                            <strong>{doc.snippet_source === "note" ? "Note" : doc.snippet_source === "sticker" ? "Sticker" : "Document text"}:</strong> {doc.snippet}
+                            <strong>{doc.snippet_source === "note" ? "Note" : doc.snippet_source === "sticker" ? "Sticker" : doc.snippet_source === "field" ? "Custom field" : "Document text"}:</strong> {doc.snippet}
                           </p>
                         )}
                         {doc.tags.length > 0 && <TagSummary tags={doc.tags} />}

@@ -11,7 +11,7 @@ from django.conf import settings
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from .models import Document, DocumentLink, DocumentNote, Movement
+from .models import CustomFieldValue, Document, DocumentLink, DocumentNote, Movement
 from .physical_views import location_path
 
 
@@ -70,6 +70,11 @@ def _metadata(document):
         "action": {"status": document.action_status, "due_date": document.action_due_date.isoformat() if document.action_due_date else None, "note": document.action_note},
         "duplicate_of": str(document.duplicate_of_id) if document.duplicate_of_id else None,
         "physical_copies": copies, "related_documents": sorted(related, key=lambda item: item["id"]),
+        "custom_fields": [
+            {"name": item.field.name, "kind": item.field.kind,
+             "value": item.value == "true" if item.field.kind == "boolean" else item.value}
+            for item in CustomFieldValue.objects.filter(document=document, field__owner=document.owner).select_related("field").order_by("field__name")
+        ],
     }
 
 

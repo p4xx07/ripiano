@@ -18,6 +18,7 @@ import {
 import { Document, DocumentNote, FilingItem, Location, PhysicalCopy, request, Tag } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
+import CustomFieldsPanel from "./CustomFieldsPanel";
 
 export default function DocumentPanel({
   initial,
@@ -458,6 +459,7 @@ export default function DocumentPanel({
             <Save size={17} /> {busy ? "Saving…" : "Save changes"}
           </Button>
         </form>
+        <CustomFieldsPanel documentId={current.id} onChanged={() => onSaved(current)} />
         <section className="detail-notes" aria-labelledby="document-notes-heading">
           <h3 id="document-notes-heading"><MessageSquare size={17} /> Notes</h3>
           <p>Keep context here without creating a follow-up.</p>

@@ -7,7 +7,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client, override_settings
 
-from archive.models import Document, DocumentLink, DocumentNote, DocumentTag, Location, PhysicalCopy, Tag
+from archive.models import CustomField, CustomFieldValue, Document, DocumentLink, DocumentNote, DocumentTag, Location, PhysicalCopy, Tag
 
 
 @pytest.mark.django_db
@@ -40,6 +40,8 @@ def test_document_export_contains_verified_original_and_readable_metadata(tmp_pa
     PhysicalCopy.objects.create(document=policy, sticker_code="R-POLICY1", location=shelf)
     left, right = sorted((policy.id, renewal.id))
     DocumentLink.objects.create(left_id=left, right_id=right)
+    field = CustomField.objects.create(owner=owner, name="Policy number", kind=CustomField.Kind.TEXT)
+    CustomFieldValue.objects.create(document=policy, field=field, value="POL-2026")
     client = Client()
     client.force_login(owner)
     with override_settings(MEDIA_ROOT=media):
@@ -60,6 +62,7 @@ def test_document_export_contains_verified_original_and_readable_metadata(tmp_pa
     assert manifest["document"]["notes"][0]["body"] == "Keep the paper original"
     assert manifest["document"]["physical_copies"][0]["location"] == ["Home shelf"]
     assert manifest["document"]["related_documents"] == [{"id": str(renewal.id), "title": "Renewal"}]
+    assert manifest["document"]["custom_fields"] == [{"name": "Policy number", "kind": "text", "value": "POL-2026"}]
     assert manifest["files"]["original"]["sha256"] == hashlib.sha256(original).hexdigest()
     assert manifest["files"]["searchable_pdf"]["sha256"] == hashlib.sha256(derived).hexdigest()
     client.force_login(other)

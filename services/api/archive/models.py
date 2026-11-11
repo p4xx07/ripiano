@@ -99,6 +99,33 @@ class DocumentLink(models.Model):
         ]
 
 
+class CustomField(models.Model):
+    class Kind(models.TextChoices):
+        TEXT = "text", "Text"
+        NUMBER = "number", "Number"
+        DATE = "date", "Date"
+        BOOLEAN = "boolean", "Yes or no"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="custom_fields")
+    name = models.CharField(max_length=100)
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        constraints = [models.UniqueConstraint(Lower("name"), "owner", name="unique_custom_field_owner_name_ci")]
+
+
+class CustomFieldValue(models.Model):
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="custom_values")
+    field = models.ForeignKey(CustomField, on_delete=models.PROTECT, related_name="values")
+    value = models.CharField(max_length=500)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["document", "field"], name="unique_document_custom_field")]
+
+
 class InputCursor(models.Model):
     source = models.CharField(max_length=30, unique=True)
     next_offset = models.BigIntegerField(default=0)

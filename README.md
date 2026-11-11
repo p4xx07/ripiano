@@ -68,6 +68,10 @@ These show the running development stack with synthetic test documents. The mobi
 | --- | --- |
 | ![Desktop document panel linking a renewal to its policy](qa-artifacts/20261111-document-links/desktop/related-documents.png) | ![Mobile document panel linking a renewal to its policy](qa-artifacts/20261111-document-links/mobile/related-documents.png) |
 
+| Custom details on desktop | Custom details on mobile |
+| --- | --- |
+| ![Desktop policy number saved as a custom detail](qa-artifacts/20261111-custom-fields/desktop/custom-field.png) | ![Mobile policy number saved as a custom detail](qa-artifacts/20261111-custom-fields/mobile/custom-field.png) |
+
 | Portable export on desktop | Portable export on mobile |
 | --- | --- |
 | ![Desktop document files section with Export document ZIP action](qa-artifacts/20261111-document-export/desktop/export-action.png) | ![Mobile document files section with Export document ZIP action](qa-artifacts/20261111-document-export/mobile/export-action.png) |
@@ -138,6 +142,8 @@ This excerpt illustrates storage and exposure; use the linked full stack for dep
 The document originals are stored under the mounted media path. OCR output is derived and can be rebuilt. Simple search finds titles, OCR text, tag names, correspondent names, document types, action notes, and sticker codes. Full-text terms must match the query together; a partial rank alone does not pull an unrelated document into results. Search results show the matching passage from OCR text or action notes, or the matching sticker code; the unfiltered Library stays compact. To narrow search by field, use `title:`, `text:`, `note:`, `tag:`, `sender:`, `type:`, `sticker:`, or `date:YYYY-MM-DD`; quote values containing spaces, such as `sender:"City office"`. Multiple field terms and ordinary text combine. The Library can also narrow results with the visual tag, sender, type, and date filters. Save a search to reopen it in one tap; rename it, update its criteria, or delete it from the Library. Sort the Library by relevance, date added, document date, or title; date-less documents stay at the end of document-date sorts. Select up to 100 loaded documents to add or remove a tag, set or clear the sender, or set or clear the document type together; those changes count as manual corrections for future automatic filing. The Library and Needs action lists load additional results in cursor-based pages of 50; Refresh shows new arrivals. Boolean and range query syntax remain future work.
 
 The document panel keeps dated notes separate from follow-ups. Notes can be added or deleted, found through Library search (including `note:`), and retrieved in older pages when the history grows.
+
+Under **Custom details**, create a text, number, date, or yes/no field once and set it on any document. Only fields with values appear by default; choose an unused field when you need it. A field value is found by ordinary Library search, or narrow to one field with `field:"Policy number=PN-123"`. Custom values are included in the portable document ZIP. This is the first custom-field slice; field-specific visual filters and advanced field management remain planned.
 
 The same panel can link related documents. Search for the other document by title or text, then choose **Link**. The connection appears on both documents, so either side opens the other. Moving one document to Trash hides the link until it is restored; its underlying relationship is retained.
 

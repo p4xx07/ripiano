@@ -19,7 +19,8 @@ from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
-from .models import BackupRun, Correspondent, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, Tag, TagOverride
+from .models import BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, Tag, TagOverride
+from .custom_field_views import normalize_value
 from .physical_views import copy_json
 from .ingestion import ingest_document
 from .storage import InvalidDocument
@@ -27,7 +28,7 @@ from .tasks import backup_archive
 
 logger = logging.getLogger(__name__)
 CURSOR_SALT = "ripiano-document-page-v2"
-SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date"}
+SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date", "field"}
 LIBRARY_SORTS = {"relevance", "newest", "oldest", "document_newest", "document_oldest", "title_asc", "title_desc"}
 
 
@@ -48,6 +49,8 @@ def _parse_search(query):
                     value = date.fromisoformat(value).isoformat()
                 except ValueError as exc:
                     raise ValueError("Use YYYY-MM-DD after date:") from exc
+            if field == "field" and ("=" not in value or not all(part.strip() for part in value.split("=", 1))):
+                raise ValueError('Use field:"Name=value" to search a custom field')
             clauses.append((field, value))
         else:
             words.append(token)
@@ -131,6 +134,8 @@ def _search_snippet(document, query):
         excerpt = _excerpt(note.body, query)
         if excerpt:
             return excerpt, "note"
+    for value in getattr(document, "matching_custom_fields", ()):
+        return f"{value.field.name}: {value.value}", "field"
     for copy in document.physical_copies.all():
         if query.casefold() in copy.sticker_code.casefold():
             return copy.sticker_code, "sticker"
@@ -283,6 +288,25 @@ def documents(request):
                 queryset = queryset.filter(document_type__name__icontains=value)
             elif field == "sticker":
                 queryset = queryset.filter(Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=value)))
+            elif field == "field":
+                name, raw_value = (part.strip() for part in value.split("=", 1))
+                definition = CustomField.objects.filter(owner=request.user, name__iexact=name).first()
+                if definition is None:
+                    queryset = queryset.none()
+                elif definition.kind == CustomField.Kind.TEXT:
+                    queryset = queryset.filter(Exists(CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field=definition, value__icontains=raw_value)))
+                else:
+                    try:
+                        if definition.kind == CustomField.Kind.BOOLEAN:
+                            if raw_value.casefold() not in {"true", "false", "yes", "no"}:
+                                raise ValueError("Use yes or no for this field")
+                            typed_value = raw_value.casefold() in {"true", "yes"}
+                        else:
+                            typed_value = raw_value
+                        normalized = normalize_value(definition.kind, typed_value)
+                    except ValueError as exc:
+                        return JsonResponse({"error": str(exc)}, status=400)
+                    queryset = queryset.filter(Exists(CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field=definition, value=normalized)))
             else:
                 queryset = queryset.filter(document_date=value)
         view = "trash" if requested_view == "trash" else "actions" if requested_view == "actions" else "exceptions" if requested_view == "exceptions" else "search" if free_query else "documents"
@@ -306,6 +330,7 @@ def documents(request):
                 tag_match=Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=free_query)),
                 sticker_match=Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=free_query)),
                 note_match=Exists(DocumentNote.objects.filter(document_id=OuterRef("pk"), body__icontains=free_query)),
+                field_match=Exists(CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field__owner=request.user, value__icontains=free_query)),
             )
             if connection.vendor == "postgresql":
                 vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
@@ -313,9 +338,9 @@ def documents(request):
                 queryset = queryset.annotate(
                     search_vector=vector,
                     search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField()),
-                ).filter(Q(search_vector=search_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
+                ).filter(Q(search_vector=search_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
             else:
-                queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
+                queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
         if view == "actions":
             queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at", "-id")
         elif sort == "relevance" and connection.vendor == "postgresql":
@@ -375,9 +400,10 @@ def documents(request):
             )
         page = list(queryset[:51])
         visible = page[:50]
-        snippet_query = free_query or next((value for field, value in clauses if field in {"text", "note", "sticker"}), "")
+        snippet_query = free_query or next((value.split("=", 1)[1] if field == "field" else value for field, value in clauses if field in {"text", "note", "sticker", "field"}), "")
         if snippet_query:
             prefetch_related_objects(visible, Prefetch("notes", queryset=DocumentNote.objects.filter(body__icontains=snippet_query), to_attr="matching_notes"))
+            prefetch_related_objects(visible, Prefetch("custom_values", queryset=CustomFieldValue.objects.filter(field__owner=request.user, value__icontains=snippet_query).select_related("field"), to_attr="matching_custom_fields"))
         return JsonResponse({
             "documents": [_document_json(doc, query=snippet_query) for doc in visible],
             "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, sort, counts) if len(page) > 50 else None,

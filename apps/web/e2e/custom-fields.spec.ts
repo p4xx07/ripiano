@@ -1,0 +1,54 @@
+import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+const username = process.env.RIPIANO_E2E_USERNAME;
+const password = process.env.RIPIANO_E2E_PASSWORD;
+const fixture = path.resolve(process.cwd(), "e2e/fixtures/judge.png");
+
+test("create a typed detail, find it by value, and clear it", async ({ page }, testInfo) => {
+  test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
+  await page.goto("/");
+  await page.getByLabel("Username").fill(username!);
+  await page.getByLabel("Password").fill(password!);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
+  const stamp = `${Date.now()}-${testInfo.project.name}`;
+  const name = `policy-${stamp}`;
+  const field = `Policy number ${stamp}`;
+  const reference = `PN-${stamp}`;
+  const add = page.getByRole("button", { name: "Add document", exact: true });
+  if (await add.isVisible()) await add.click();
+  else await page.getByRole("button", { name: "Add", exact: true }).click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: /Browse files/ }).click();
+  await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
+  await page.getByRole("button", { name, exact: true }).click();
+  let dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const custom = dialog.locator(".custom-fields");
+  await custom.getByText("Add a custom field").click();
+  await custom.getByRole("textbox", { name: "Field name" }).fill(field);
+  await custom.getByRole("button", { name: "Add field" }).click();
+  const row = custom.locator(".custom-field-row").filter({ hasText: field });
+  await row.getByRole("textbox", { name: field }).fill(reference);
+  await row.getByRole("button", { name: "Save" }).click();
+  await expect(custom.getByRole("status")).toContainText(`${field} saved.`);
+  await custom.screenshot({ path: testInfo.outputPath("custom-field.png") });
+  await dialog.getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("textbox", { name: "Search documents" }).fill(reference);
+  await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(page.locator(".document-row").filter({ has: page.getByRole("button", { name, exact: true }) }).locator(".document-snippet")).toContainText(`Custom field: ${field}: ${reference}`);
+  await page.getByRole("textbox", { name: "Search documents" }).fill(`field:"${field}=${reference}"`);
+  await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  const result = page.locator(".document-row").filter({ has: page.getByRole("button", { name, exact: true }) });
+  await expect(result.locator(".document-snippet")).toContainText(`Custom field: ${field}: ${reference}`);
+  await page.getByRole("button", { name, exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const reopened = dialog.locator(".custom-fields .custom-field-row").filter({ hasText: field });
+  await expect(reopened.getByRole("textbox", { name: field })).toHaveValue(reference);
+  await reopened.getByRole("button", { name: "Clear" }).click();
+  await expect(dialog.locator(".custom-fields").getByRole("status")).toContainText(`${field} cleared.`);
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("heading", { name: "Nothing found yet" })).toBeVisible();
+});

@@ -68,6 +68,10 @@ These show the running development stack with synthetic test documents. The mobi
 | --- | --- |
 | ![Desktop document panel linking a renewal to its policy](qa-artifacts/20261111-document-links/desktop/related-documents.png) | ![Mobile document panel linking a renewal to its policy](qa-artifacts/20261111-document-links/mobile/related-documents.png) |
 
+| Portable export on desktop | Portable export on mobile |
+| --- | --- |
+| ![Desktop document files section with Export document ZIP action](qa-artifacts/20261111-document-export/desktop/export-action.png) | ![Mobile document files section with Export document ZIP action](qa-artifacts/20261111-document-export/mobile/export-action.png) |
+
 ## Planning documents
 
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
@@ -136,6 +140,8 @@ The document originals are stored under the mounted media path. OCR output is de
 The document panel keeps dated notes separate from follow-ups. Notes can be added or deleted, found through Library search (including `note:`), and retrieved in older pages when the history grows.
 
 The same panel can link related documents. Search for the other document by title or text, then choose **Link**. The connection appears on both documents, so either side opens the other. Moving one document to Trash hides the link until it is restored; its underlying relationship is retained.
+
+Use **Export document ZIP** under Files to download the preserved original, the searchable PDF and OCR text when available, and a readable `manifest.json` with tags, notes, related documents, and paper-copy history. Each file has a SHA-256 checksum in the manifest. This is a single-document portable export; a complete archive export/import tool is still planned.
 
 Move a completed document to **Trash** from its detail panel and restore it later with its original, notes, tags, and sticker history intact. Trashed documents disappear from Library search, Needs action, downloads, and agent tools. A sticker scan explains that its document is in Trash. Processing must finish before a document can be moved. Trash does not erase files automatically; permanent deletion and retention controls are still future work.
 

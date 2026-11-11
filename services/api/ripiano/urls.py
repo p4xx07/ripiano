@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path
 
-from archive import agent_views, link_views, metadata_views, physical_views, views
+from archive import agent_views, export_views, link_views, metadata_views, physical_views, views
 
 urlpatterns = [
     path("healthz", views.health),
@@ -13,6 +13,7 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>", views.document_detail),
     path("api/documents/<uuid:document_id>/original", views.download_original),
     path("api/documents/<uuid:document_id>/archive", views.download_archive),
+    path("api/documents/<uuid:document_id>/export", export_views.export_document),
     path("api/documents/<uuid:document_id>/retry", views.retry_document),
     path("api/documents/<uuid:document_id>/reprocess", views.reprocess_document),
     path("api/documents/<uuid:document_id>/trash", views.trash_document),

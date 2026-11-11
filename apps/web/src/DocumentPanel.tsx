@@ -493,6 +493,9 @@ export default function DocumentPanel({
           <a href={`/api/documents/${current.id}/original`}>
             <ArrowDownToLine size={17} /> Download original
           </a>
+          <a href={`/api/documents/${current.id}/export`}>
+            <ArrowDownToLine size={17} /> Export document ZIP
+          </a>
           {current.archive_available && (
             <a
               href={`/api/documents/${current.id}/archive`}

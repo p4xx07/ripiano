@@ -9,6 +9,7 @@ Set `RIPIANO_BACKUP_PATH` to a persistent Synology folder in Portainer, for exam
 ```text
 /volume1/ripiano-backups/
   staging/              temporary work; never use for recovery
+  browse/               disposable human-readable copies; not a restore source
   complete/             validated snapshots for Synology Hyper Backup
     <timestamp-id>/
       database.dump
@@ -40,3 +41,7 @@ The restore command verifies all checksums and the migration set before writing.
 Originals and archive outputs are immutable until an owner confirms permanent deletion from Trash or explicitly enables automatic Trash cleanup. Automatic cleanup is off by default; the owner chooses 30–3650 days in Trash, previews the number currently eligible, and confirms before the daily 03:00 Europe/Rome task may act. The maintenance worker holds the same backup lock while removing live files, so a snapshot in progress finishes before cleanup starts. A pending cleanup is retried by the scheduler after a busy backup; a failed cleanup appears in Trash with a Retry action. Completed snapshots keep their existing copies until snapshot retention removes them. Ripiano cannot erase copies already transferred by Synology Hyper Backup to Backblaze B2; configure that retention separately in Synology.
 
 Trash retention settings live in the database and return with a restored snapshot. If you restore an older archive, inspect the setting before starting the scheduler: documents that have already exceeded the chosen age can be queued at its next daily run. Snapshot retention and Synology Hyper Backup retention are separate from this Trash setting.
+
+## NAS browse copies
+
+The on-demand **Build browse copy** action writes ordinary files under `<RIPIANO_BACKUP_PATH>/browse/owners/<owner-id>/complete/<run-id>`. These copies are separate from checksum-verified restore snapshots under `<RIPIANO_BACKUP_PATH>/complete`. Keep Synology Hyper Backup pointed at the snapshot `complete` folder. Browse copies can be rebuilt from the managed archive and are not a restore source. Give the browse folder the same NAS access controls as the archive because it contains originals, OCR text, and metadata.

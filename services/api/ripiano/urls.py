@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path
 
-from archive import agent_views, custom_field_views, export_views, link_views, metadata_views, physical_views, purge_views, share_views, views
+from archive import agent_views, browse_views, custom_field_views, export_views, link_views, metadata_views, physical_views, purge_views, share_views, views
 
 urlpatterns = [
     path("healthz", views.health),
@@ -39,6 +39,7 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>/custom-fields", custom_field_views.document_custom_fields),
     path("api/documents/<uuid:document_id>/custom-fields/<uuid:field_id>", custom_field_views.document_custom_field_detail),
     path("api/backups", views.backups),
+    path("api/browse-exports", browse_views.browse_exports),
     path("api/tags", metadata_views.tags),
     path("api/tags/<uuid:tag_id>", metadata_views.tag_detail),
     path("api/correspondents", metadata_views.correspondents),

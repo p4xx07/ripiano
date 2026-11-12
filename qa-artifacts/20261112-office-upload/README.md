@@ -7,6 +7,6 @@ Synthetic `.docx`, `.xlsx`, and `.pptx` fixtures only; no personal documents. Th
 - Focused API tests: 3 passed. Full local API suite: 72 passed, 1 PostgreSQL-only test skipped. Full PWA browser suite: 64 passed, 2 retention tests skipped because dedicated retention credentials were not supplied.
 - The converter route was smoke-tested inside Docker with the same fixture. Before choosing normal PDF output for Office, the PDF/A step altered extracted letters; normal PDF retained the exact text.
 
-The code judge was unavailable due to an agent usage limit. This is working implementation evidence, not a full parity or R4 release approval.
+The scoped code and gate judges later completed read-only reviews and approved the Office slice. Their verdicts are recorded in `.omo/evidence`. This is working implementation evidence, not a full parity or R4 release approval.
 
 A second desktop/mobile browser journey batch-uploaded the synthetic Excel and PowerPoint files, waited for both PDFs, checked each preserved original byte-for-byte, and searched for each document's converted text. The full three-format browser suite now has four journeys.

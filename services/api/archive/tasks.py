@@ -15,8 +15,9 @@ from PIL import Image
 from pypdf import PdfReader
 
 from .backup import BackupError, backup_media_lock, create_snapshot
+from .browse_export import build_browse_tree, prune_old_browse_trees
 from .classification import apply_rules
-from .models import BackupRun, Document, DocumentTag, FilingRule, PurgeJob, TrashRetentionPolicy
+from .models import BackupRun, BrowseExportRun, Document, DocumentTag, FilingRule, PurgeJob, TrashRetentionPolicy
 from .office import OFFICE_EXTENSIONS, convert_office
 from .purge import record_purge, remove_job_media
 
@@ -121,6 +122,47 @@ def backup_archive(run_id=None):
         run.completed_at = timezone.now()
         run.error = str(exc)[:500]
     run.save(update_fields=["status", "snapshot_name", "completed_at", "error"])
+
+
+@shared_task(name="archive.tasks.build_browse_export", time_limit=6 * 3600)
+def build_browse_export(run_id):
+    with transaction.atomic():
+        run = BrowseExportRun.objects.select_for_update().filter(pk=run_id).first()
+        if run is None or run.status != BrowseExportRun.Status.PENDING:
+            return
+        run.status = BrowseExportRun.Status.RUNNING
+        run.started_at = timezone.now()
+        run.error = ""
+        run.save(update_fields=["status", "started_at", "error"])
+    try:
+        folder_name, count = build_browse_tree(run)
+    except Exception as exc:
+        logger.exception("NAS browse export failed: %s", run_id)
+        run.status = BrowseExportRun.Status.FAILED
+        run.error = str(exc)[:500]
+        run.completed_at = timezone.now()
+        run.save(update_fields=["status", "error", "completed_at"])
+        return
+    run.status = BrowseExportRun.Status.COMPLETE
+    run.folder_name = folder_name
+    run.document_count = count
+    run.completed_at = timezone.now()
+    run.save(update_fields=["status", "folder_name", "document_count", "completed_at"])
+    prune_old_browse_trees(run)
+
+
+@shared_task(name="archive.tasks.reconcile_browse_exports")
+def reconcile_browse_exports():
+    stale_before = timezone.now() - timedelta(hours=7)
+    BrowseExportRun.objects.filter(status=BrowseExportRun.Status.RUNNING, started_at__lt=stale_before).update(
+        status=BrowseExportRun.Status.PENDING, started_at=None,
+    )
+    for run_id in BrowseExportRun.objects.filter(status=BrowseExportRun.Status.PENDING).values_list("id", flat=True)[:20]:
+        try:
+            build_browse_export.delay(str(run_id))
+        except Exception:
+            logger.exception("NAS browse export queue unavailable: %s", run_id)
+            return
 
 
 @shared_task(name="archive.tasks.purge_document")

@@ -73,6 +73,15 @@ type BackupRun = {
   created_at: string;
 };
 
+type BrowseExportRun = {
+  id: string;
+  status: "pending" | "running" | "complete" | "failed";
+  document_count: number;
+  folder: string | null;
+  error: string;
+  created_at: string;
+};
+
 const emptyLibraryFilters: LibraryFilters = {
   tag_id: "", correspondent_id: "", document_type_id: "", date_from: "", date_to: "", custom_field_id: "", custom_value: "", custom_min: "", custom_max: "",
 };
@@ -214,15 +223,19 @@ function AuthScreen({
 
 function BackupPanel() {
   const [runs, setRuns] = useState<BackupRun[]>([]);
+  const [browseRuns, setBrowseRuns] = useState<BrowseExportRun[]>([]);
   const [schedule, setSchedule] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [browseBusy, setBrowseBusy] = useState(false);
   const load = useCallback(async () => {
     try {
-      const result = await request<{ schedule: string; runs: BackupRun[] }>(
-        "/api/backups",
-      );
+      const [result, browse] = await Promise.all([
+        request<{ schedule: string; runs: BackupRun[] }>("/api/backups"),
+        request<{ runs: BrowseExportRun[] }>("/api/browse-exports"),
+      ]);
       setRuns(result.runs);
+      setBrowseRuns(browse.runs);
       setSchedule(result.schedule);
     } catch (cause) {
       setError(
@@ -250,6 +263,21 @@ function BackupPanel() {
       setBusy(false);
     }
   }
+
+  async function startBrowse() {
+    setBrowseBusy(true);
+    setError("");
+    try {
+      await request("/api/browse-exports", { method: "POST" });
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not build the NAS browse copy");
+    } finally {
+      setBrowseBusy(false);
+    }
+  }
+
+  const browseActive = browseRuns.some((run) => run.status === "pending" || run.status === "running");
 
   return (
     <>
@@ -285,6 +313,41 @@ function BackupPanel() {
           {error}
         </div>
       )}
+      <section className="browse-section" aria-label="NAS browse copies">
+        <div className="section-heading browse-heading">
+          <div>
+            <h2>Browse on your NAS</h2>
+            <p>Create a separate, readable copy grouped by year and tag. Your Ripiano originals stay protected.</p>
+          </div>
+          <Button variant="secondary" onClick={startBrowse} disabled={browseBusy || browseActive}>
+            <FolderOpen size={18} /> {browseBusy ? "Starting…" : browseActive ? "Building copy…" : "Build browse copy"}
+          </Button>
+        </div>
+        {browseRuns.length ? (
+          <div className="document-list backup-list">
+            {browseRuns.map((run) => (
+              <div className="document-row" key={run.id}>
+                <div className="document-icon"><FolderOpen size={20} /></div>
+                <div className="document-info">
+                  <h3>{run.folder ? `${run.document_count} ${run.document_count === 1 ? "document" : "documents"} ready on NAS` : `Browse copy ${formatDate(run.created_at)}`}</h3>
+                  <div className="document-meta">Created {formatDate(run.created_at)}</div>
+                  {run.folder && <p className="browse-folder"><code>{run.folder}</code></p>}
+                  {run.error && <p className="doc-error">{run.error}</p>}
+                </div>
+                <span className={`status status-${run.status === "complete" ? "ready" : run.status === "failed" ? "failed" : "pending"}`}>
+                  {run.status === "complete" && !run.folder ? "Removed" : run.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state browse-empty">
+            <div className="empty-icon"><FolderOpen size={32} /></div>
+            <h3>No browse copy yet</h3>
+            <p>Build one when you want ordinary files and tag folders on the mounted NAS volume.</p>
+          </div>
+        )}
+      </section>
       <div className="section-heading">
         <div>
           <h2>Recent snapshots</h2>

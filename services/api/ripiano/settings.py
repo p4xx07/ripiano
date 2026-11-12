@@ -103,12 +103,15 @@ CELERY_TASK_ROUTES = {
     "archive.tasks.reclassify_filing_candidates": {"queue": "maintenance"},
     "archive.tasks.reclassify_tag_candidates": {"queue": "maintenance"},
     "archive.tasks.backup_archive": {"queue": "maintenance"},
+    "archive.tasks.build_browse_export": {"queue": "maintenance"},
+    "archive.tasks.reconcile_browse_exports": {"queue": "maintenance"},
     "archive.tasks.purge_document": {"queue": "maintenance"},
     "archive.tasks.reconcile_purge_jobs": {"queue": "maintenance"},
     "archive.tasks.purge_expired_trash": {"queue": "maintenance"},
 }
 
 RIPIANO_BACKUP_ROOT = Path(os.environ.get("RIPIANO_BACKUP_ROOT", "/backup"))
+RIPIANO_BROWSE_RETENTION = max(1, int(os.environ.get("RIPIANO_BROWSE_RETENTION", "2")))
 RIPIANO_BACKUP_HOUR = int(os.environ.get("RIPIANO_BACKUP_HOUR", "2"))
 RIPIANO_BACKUP_MINUTE = int(os.environ.get("RIPIANO_BACKUP_MINUTE", "0"))
 RIPIANO_BACKUP_RETENTION = max(1, int(os.environ.get("RIPIANO_BACKUP_RETENTION", "7")))

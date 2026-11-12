@@ -118,6 +118,10 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 | --- | --- |
 | ![Desktop Library finding text from a Word document](qa-artifacts/20261112-office-upload/desktop/search.png) | ![Mobile Library finding text from a Word document](qa-artifacts/20261112-office-upload/mobile/search.png) |
 
+| NAS browse copy on desktop | NAS browse copy on mobile |
+| --- | --- |
+| ![Desktop Backups section showing a readable NAS copy](qa-artifacts/20261112-nas-browse/desktop/backups.png) | ![Mobile Backups section showing a readable NAS copy](qa-artifacts/20261112-nas-browse/mobile/backups.png) |
+
 | Collection export on desktop | Collection export on mobile |
 | --- | --- |
 | ![Desktop Library with two selected documents and a collection ZIP download](qa-artifacts/20261112-collection-export/desktop/selected.png) | ![Mobile Library with two selected documents and a collection ZIP download](qa-artifacts/20261112-collection-export/mobile/selected.png) |
@@ -162,6 +166,8 @@ With a hardware keyboard, press **/** to focus Library search from any archive s
 1. Copy `.env.example` to `.env` and replace the three example secrets with strong unique values.
 2. Run `docker compose up --build -d` from this directory.
 3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account.
+
+In **Backups**, **Build browse copy** writes a human-readable, owner-scoped year/tag tree to the mounted NAS backup volume under `browse/owners/.../complete`. It includes the preserved original, available searchable PDF, OCR text, and metadata for each active document. This is an on-demand copy for NAS browsing; the checksum-verified restore snapshots remain separately under `complete`. Rebuild after changing titles or tags.
 
 For a NAS deployment, use the [complete Portainer Compose example](deploy/compose.portainer.yaml) and the [example environment values](deploy/portainer.env.example). The example maps the database, media, and backup folders to persistent Synology paths and publishes only the web port; the API, OCR worker, maintenance worker, scheduler, broker, and MCP stay inside the stack. OCR work has its own queue so a long rule recheck or backup does not hold new uploads. Portainer should receive the complete Compose file and the environment variables, with real secrets and released image digests. A short excerpt shows the important mounts:
 

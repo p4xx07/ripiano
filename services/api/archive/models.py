@@ -167,6 +167,29 @@ class BackupRun(models.Model):
         ordering = ["-created_at"]
 
 
+class BrowseExportRun(models.Model):
+    """One owner-scoped, rebuildable NAS browse copy."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        RUNNING = "running", "Running"
+        COMPLETE = "complete", "Complete"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="browse_exports")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    folder_name = models.CharField(max_length=100, blank=True)
+    document_count = models.PositiveIntegerField(default=0)
+    error = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+
 class Tag(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="tags")

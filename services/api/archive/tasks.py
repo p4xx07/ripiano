@@ -9,13 +9,15 @@ from datetime import timedelta
 from celery import shared_task
 from django.conf import settings
 from django.db import transaction
+from django.db import models
 from django.utils import timezone
 from PIL import Image
 from pypdf import PdfReader
 
-from .backup import create_snapshot
+from .backup import BackupError, backup_media_lock, create_snapshot
 from .classification import apply_rules
-from .models import BackupRun, Document, DocumentTag, FilingRule
+from .models import BackupRun, Document, DocumentTag, FilingRule, PurgeJob
+from .purge import remove_job_media
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +114,52 @@ def backup_archive(run_id=None):
         run.completed_at = timezone.now()
         run.error = str(exc)[:500]
     run.save(update_fields=["status", "snapshot_name", "completed_at", "error"])
+
+
+@shared_task(name="archive.tasks.purge_document")
+def purge_document(job_id):
+    try:
+        with backup_media_lock():
+            with transaction.atomic():
+                job = PurgeJob.objects.select_for_update().get(pk=job_id)
+                if job.status not in {PurgeJob.Status.PENDING, PurgeJob.Status.RUNNING}:
+                    return
+                job.status = PurgeJob.Status.RUNNING
+                job.started_at = timezone.now()
+                job.error = ""
+                job.save(update_fields=["status", "started_at", "error"])
+            try:
+                remove_job_media(job)
+            except Exception as exc:
+                logger.exception("Permanent deletion cleanup failed: %s", job.id)
+                job.status = PurgeJob.Status.FAILED
+                job.error = str(exc)[:500]
+                job.save(update_fields=["status", "error"])
+                return
+            job.status = PurgeJob.Status.COMPLETE
+            job.completed_at = timezone.now()
+            job.title = ""
+            job.original_path = ""
+            job.archive_path = ""
+            job.original_sha256 = ""
+            job.save(update_fields=["status", "completed_at", "title", "original_path", "archive_path", "original_sha256"])
+    except BackupError:
+        # The snapshot still needs its files. The scheduler retries pending jobs.
+        logger.info("Permanent deletion waits for the current backup: %s", job_id)
+    except Exception as exc:
+        logger.exception("Permanent deletion could not access its storage: %s", job_id)
+        PurgeJob.objects.filter(pk=job_id).update(status=PurgeJob.Status.FAILED, error=str(exc)[:500])
+
+
+@shared_task(name="archive.tasks.reconcile_purge_jobs")
+def reconcile_purge_jobs():
+    stale_before = timezone.now() - timedelta(hours=1)
+    ids = list(PurgeJob.objects.filter(
+        models.Q(status=PurgeJob.Status.PENDING)
+        | models.Q(status=PurgeJob.Status.RUNNING, started_at__lt=stale_before)
+    ).order_by("created_at").values_list("id", flat=True)[:25])
+    for job_id in ids:
+        purge_document.delay(str(job_id))
 
 
 @shared_task(name="archive.tasks.reclassify_owner")

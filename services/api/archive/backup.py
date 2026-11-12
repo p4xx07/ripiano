@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -25,6 +26,22 @@ logger = logging.getLogger(__name__)
 
 class BackupError(RuntimeError):
     pass
+
+
+@contextmanager
+def backup_media_lock():
+    """Exclude file removal while a snapshot may still need live media."""
+    root = Path(settings.RIPIANO_BACKUP_ROOT)
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / ".lock").open("a+b") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise BackupError("A backup or media cleanup is already running") from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def _hash_file(path):

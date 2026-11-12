@@ -2134,6 +2134,49 @@ button:disabled {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.purge-jobs {
+  margin-top: var(--space-9);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+.purge-jobs h2 {
+  margin: 0 0 var(--space-2);
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: var(--type-subtitle);
+  font-weight: 500;
+}
+.purge-jobs > p {
+  margin: 0 0 var(--space-4);
+  color: var(--color-muted);
+  font-size: var(--type-small);
+  line-height: 1.5;
+}
+.purge-jobs ul {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.purge-jobs li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-heading);
+  font-size: var(--type-small);
+}
+.purge-jobs li > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.purge-jobs li small {
+  flex-basis: 100%;
+  color: var(--color-danger);
+}
 .trash-heading {
   margin-bottom: var(--space-7);
 }

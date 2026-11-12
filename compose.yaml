@@ -75,7 +75,7 @@ services:
   maintenance_worker:
     <<: *api-base
     volumes:
-      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data:ro
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
       - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup
     command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "maintenance"]
     depends_on:

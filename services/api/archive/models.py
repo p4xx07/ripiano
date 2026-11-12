@@ -325,6 +325,32 @@ class Movement(models.Model):
         ordering = ["-created_at"]
 
 
+class PurgeJob(models.Model):
+    """Retryable cleanup record retained after its document row is deleted."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        RUNNING = "running", "Running"
+        COMPLETE = "complete", "Complete"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="purge_jobs")
+    document_id = models.UUIDField(unique=True)
+    title = models.CharField(max_length=300, blank=True)
+    original_path = models.CharField(max_length=500, blank=True)
+    archive_path = models.CharField(max_length=500, blank=True)
+    original_sha256 = models.CharField(max_length=64, blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
+    error = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
 class AgentGrant(models.Model):
     """A named, revocable bearer grant; only the hash is persisted."""
 

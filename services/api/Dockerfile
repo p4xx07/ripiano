@@ -9,7 +9,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --no-dev --frozen
 COPY . .
-RUN mkdir -p /data && useradd --system --uid 10001 --home /app ripiano && chown -R ripiano:ripiano /app /data
+RUN mkdir -p /data /backup && useradd --system --uid 10001 --home /app ripiano && chown -R ripiano:ripiano /app /data /backup
 USER ripiano
 EXPOSE 8000
 CMD [".venv/bin/gunicorn", "ripiano.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "2", "--timeout", "60"]

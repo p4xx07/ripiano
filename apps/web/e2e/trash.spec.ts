@@ -104,3 +104,51 @@ test("move selected documents to Trash and restore them together", async ({ page
     expect(await (await page.request.get(`/api/documents/${id}/original`)).body()).toEqual(originals[index]);
   }
 });
+
+test("permanently delete a trashed document and finish live-file cleanup", async ({ page }, testInfo) => {
+  test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
+  await page.goto("/");
+  await page.getByLabel("Username").fill(username!);
+  await page.getByLabel("Password").fill(password!);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
+
+  const name = `purge-${Date.now()}-${testInfo.project.name}`;
+  const add = page.getByRole("button", { name: "Add document", exact: true });
+  if (await add.isVisible()) await add.click();
+  else await page.getByRole("button", { name: "Add", exact: true }).click();
+  const upload = page.waitForResponse((response) => response.url().endsWith("/api/documents") && response.request().method() === "POST" && response.status() === 202);
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: /Browse files/ }).click();
+  await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
+  const id = (await (await upload).json()).id;
+  await expect.poll(async () => (await (await page.request.get(`/api/documents/${id}`)).json()).status, { timeout: 60000 }).toBe("ready");
+  await page.getByRole("textbox", { name: "Search documents" }).fill(`title:${name}`);
+  await page.getByRole("button", { name, exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "Keep it in place." });
+  await detail.getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await detail.getByRole("button", { name: "Confirm move" }).click();
+  await expect(detail).toHaveCount(0);
+  await navigate(page, "Trash");
+  const row = page.locator(".document-row").filter({ hasText: name });
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "Delete permanently" }).click();
+  const confirmation = page.getByRole("dialog", { name: "Delete permanently?" });
+  await expect(confirmation).toContainText("Older backups may retain copies");
+  await page.screenshot({ path: testInfo.outputPath("permanent-deletion-confirmation.png"), animations: "disabled" });
+  const purgeResponse = page.waitForResponse((response) => response.url().endsWith(`/api/documents/${id}/purge`) && response.request().method() === "POST");
+  await confirmation.getByRole("button", { name: "Confirm permanent deletion" }).click();
+  const jobId = (await (await purgeResponse).json()).id;
+  await expect(row).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "Deletion requested." })).toBeVisible();
+  expect((await page.request.get(`/api/documents/${id}`)).status()).toBe(404);
+  await expect.poll(async () => {
+    const result = await (await page.request.get("/api/purge-jobs")).json();
+    return result.jobs.find((job: { document_id: string }) => job.document_id === id)?.status;
+  }, { timeout: 120000 }).toBe("complete");
+  const jobRow = page.locator(`[data-job-id="${jobId}"]`);
+  await expect(jobRow).toContainText("Files removed", { timeout: 15000 });
+  await expect(jobRow).toContainText(`Ref ${jobId.slice(0, 8)}`);
+  await jobRow.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("permanent-deletion.png"), animations: "disabled" });
+});

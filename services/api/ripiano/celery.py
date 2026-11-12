@@ -15,6 +15,10 @@ app.conf.beat_schedule = {
         "task": "archive.tasks.reconcile_pending_documents",
         "schedule": 60.0,
     },
+    "reconcile-purge-jobs": {
+        "task": "archive.tasks.reconcile_purge_jobs",
+        "schedule": 300.0,
+    },
     "scheduled-backup": {
         "task": "archive.tasks.backup_archive",
         "schedule": crontab(hour=settings.RIPIANO_BACKUP_HOUR, minute=settings.RIPIANO_BACKUP_MINUTE),

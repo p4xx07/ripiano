@@ -21,7 +21,7 @@ The checked-in [environment example](portainer.env.example) collects the values 
 | `RIPIANO_DB_PATH` | `/volume1/docker/ripiano/postgres` | PostgreSQL state |
 | `RIPIANO_BACKUP_PATH` | `/volume1/ripiano-backups` | Snapshot output for Hyper Backup |
 
-Set `RIPIANO_DEBUG=0`. `RIPIANO_PORT` defaults to 8080 and is the **host** port connected to Synology's reverse proxy. Create the three NAS folders before deployment. The API and workers run as UID 10001: the OCR worker needs media write access, and the maintenance worker needs media read and backup write access. The PostgreSQL image must be able to write its own database folder. Test those permissions on the NAS before adding personal documents.
+Set `RIPIANO_DEBUG=0`. `RIPIANO_PORT` defaults to 8080 and is the **host** port connected to Synology's reverse proxy. Create the three NAS folders before deployment. The API and workers run as UID 10001: the OCR worker needs media write access, and the maintenance worker needs media and backup write access for snapshots and permanent deletion. The PostgreSQL image must be able to write its own database folder. Test those permissions on the NAS before adding personal documents.
 
 `RIPIANO_BACKUP_HOUR`, `RIPIANO_BACKUP_MINUTE`, and `RIPIANO_BACKUP_RETENTION` are optional. The schedule is in Europe/Rome. Point Synology Hyper Backup at `<RIPIANO_BACKUP_PATH>/complete`. The Backblaze B2 configuration stays entirely in Synology; Ripiano has no B2 credentials. See [backup and restore](../docs/BACKUP_RESTORE.md) before an upgrade.
 

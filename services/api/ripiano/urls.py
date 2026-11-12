@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path
 
-from archive import agent_views, custom_field_views, export_views, link_views, metadata_views, physical_views, views
+from archive import agent_views, custom_field_views, export_views, link_views, metadata_views, physical_views, purge_views, views
 
 urlpatterns = [
     path("healthz", views.health),
@@ -21,6 +21,9 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>/reprocess", views.reprocess_document),
     path("api/documents/<uuid:document_id>/trash", views.trash_document),
     path("api/documents/<uuid:document_id>/restore", views.restore_document),
+    path("api/documents/<uuid:document_id>/purge", purge_views.purge_document_request),
+    path("api/purge-jobs", purge_views.purge_jobs),
+    path("api/purge-jobs/<uuid:job_id>/retry", purge_views.retry_purge_job),
     path("api/documents/<uuid:document_id>/notes", views.document_notes),
     path("api/documents/<uuid:document_id>/notes/<uuid:note_id>", views.document_note_detail),
     path("api/documents/<uuid:document_id>/links", link_views.document_links),

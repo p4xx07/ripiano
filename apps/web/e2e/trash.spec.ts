@@ -94,6 +94,8 @@ test("move selected documents to Trash and restore them together", async ({ page
   await expect(rows).toHaveCount(2);
   await page.getByRole("button", { name: "Select documents" }).click();
   for (const part of ["first", "second"]) await page.getByRole("checkbox", { name: `Select ${prefix}-${part}` }).check();
+  await rows.first().scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("bulk-trash-selected.png"), animations: "disabled" });
   await page.getByRole("button", { name: "Restore selected" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Restored 2 documents to the Library." })).toBeVisible();
   await expect(rows).toHaveCount(0);

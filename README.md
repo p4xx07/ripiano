@@ -74,6 +74,10 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 | --- | --- |
 | ![Desktop Trash with a document and Restore action](qa-artifacts/20261111-trash/desktop/trash-page.png) | ![Mobile Trash with a document and Restore action](qa-artifacts/20261111-trash/mobile/trash-page.png) |
 
+| Batch Restore on desktop | Batch Restore on mobile |
+| --- | --- |
+| ![Desktop Trash with two selected documents and batch Restore](qa-artifacts/20261112-bulk-trash/desktop/selected.png) | ![Mobile Trash with two selected documents and batch Restore](qa-artifacts/20261112-bulk-trash/mobile/selected.png) |
+
 | Missing paper copy on desktop | Missing sticker lookup on mobile |
 | --- | --- |
 | ![Desktop paper-copy card marked missing with last known location and history](qa-artifacts/20261111-physical-missing/desktop/missing-paper-copy.png) | ![Mobile sticker lookup warning that a paper copy is missing](qa-artifacts/20261111-physical-missing/mobile/missing-sticker-lookup.png) |

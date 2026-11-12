@@ -36,6 +36,7 @@ export default function TrashPanel({ refreshKey, onRestored }: { refreshKey: num
     try {
       await request(`/api/documents/${document.id}/restore`, { method: "POST" });
       setDocuments((previous) => previous.filter((item) => item.id !== document.id));
+      setSelectedIds((previous) => previous.filter((id) => id !== document.id));
       setNotice(`“${document.title}” is back in the Library.`);
       onRestored();
     } catch (cause) {
@@ -88,7 +89,7 @@ export default function TrashPanel({ refreshKey, onRestored }: { refreshKey: num
         <Button type="button" variant="secondary" disabled={busyId !== null || !selectedIds.length} onClick={() => void restoreSelected()}><RotateCcw size={16} /> Restore selected</Button>
       </div>}
     </div>}
-    {documents.length > 0 && <div className="document-list">{documents.map((document) => <article className="document-row trash-row" key={document.id}>
+    {documents.length > 0 && <div className="document-list">{documents.map((document) => <article className={`document-row trash-row${selectionMode ? " trash-row-selecting" : ""}`} key={document.id}>
       {selectionMode && <label className="document-select"><input type="checkbox" aria-label={`Select ${document.title}`} checked={selectedIds.includes(document.id)} disabled={busyId !== null || (selectedIds.length >= 100 && !selectedIds.includes(document.id))} onChange={() => setSelectedIds((current) => current.includes(document.id) ? current.filter((id) => id !== document.id) : current.length < 100 ? [...current, document.id] : current)} /></label>}
       <div className="document-icon"><FileText size={21} /></div>
       <div className="document-info"><h3>{document.title}</h3><div className="document-meta">Moved {document.trashed_at ? formatDate(document.trashed_at) : "to Trash"} · {document.original_name}{document.physical_copies.length > 0 && ` · ${document.physical_copies.length} paper ${document.physical_copies.length === 1 ? "copy" : "copies"}`}</div></div>

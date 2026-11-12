@@ -2,7 +2,7 @@ import { ComponentPropsWithoutRef, ReactNode, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 type ButtonProps = ComponentPropsWithoutRef<"button"> & {
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "danger";
 };
 
 export function Button({ variant = "primary", className = "", ...props }: ButtonProps) {

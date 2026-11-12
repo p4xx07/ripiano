@@ -1119,7 +1119,7 @@ function App() {
                     <summary>Move to Trash</summary>
                     <div className="bulk-filing">
                       <p>The selected documents will disappear from search and agent access. Originals, notes, and paper sticker history stay available for restore.</p>
-                      {confirmBulkTrash && <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkTrash()}>
+                      {confirmBulkTrash && <Button type="button" variant="danger" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkTrash()}>
                         <Trash2 size={16} /> Confirm move of {selectedIds.length}
                       </Button>}
                     </div>

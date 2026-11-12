@@ -17,6 +17,7 @@ from pypdf import PdfReader
 from .backup import BackupError, backup_media_lock, create_snapshot
 from .classification import apply_rules
 from .models import BackupRun, Document, DocumentTag, FilingRule, PurgeJob, TrashRetentionPolicy
+from .office import OFFICE_EXTENSIONS, convert_office
 from .purge import record_purge, remove_job_media
 
 logger = logging.getLogger(__name__)
@@ -43,14 +44,20 @@ def process_document(document_id):
         with tempfile.TemporaryDirectory(dir=media_root) as work_dir:
             work_dir = Path(work_dir)
             input_file = original
+            output_type = "pdfa"
             if document.original_mime.startswith("image/"):
                 input_file = work_dir / "input.pdf"
                 with Image.open(original) as image:
                     image.convert("RGB").save(input_file, "PDF", resolution=300)
+            elif document.original_mime in OFFICE_EXTENSIONS:
+                input_file = work_dir / "input.pdf"
+                convert_office(original, document.original_name, document.original_mime, input_file)
+                # PDF/A conversion can damage LibreOffice's text map; keep its searchable text.
+                output_type = "pdf"
             output_file = work_dir / "archive.pdf"
             subprocess.run(
                 [
-                    str(Path(sys.executable).parent / "ocrmypdf"), "--skip-text", "--output-type", "pdfa",
+                    str(Path(sys.executable).parent / "ocrmypdf"), "--skip-text", "--output-type", output_type,
                     "--language", settings.RIPIANO_OCR_LANGUAGES,
                     "--skip-big", "50", str(input_file), str(output_file),
                 ],

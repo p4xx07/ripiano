@@ -6,6 +6,8 @@ from pathlib import Path
 from django.conf import settings
 from PIL import Image, UnidentifiedImageError
 
+from .office import inspect_office
+
 
 class InvalidDocument(ValueError):
     pass
@@ -38,17 +40,24 @@ def save_original(upload):
             extension, mime = ".pdf", "application/pdf"
         else:
             try:
-                with Image.open(temp_path) as image:
-                    image.verify()
-                    image_format = image.format
-            except (UnidentifiedImageError, OSError, ValueError) as exc:
-                raise InvalidDocument("Only PDF, JPEG, and PNG files are supported in this first slice") from exc
-            if image_format == "JPEG":
-                extension, mime = ".jpg", "image/jpeg"
-            elif image_format == "PNG":
-                extension, mime = ".png", "image/png"
+                office = inspect_office(temp_path, upload.name)
+            except ValueError as exc:
+                raise InvalidDocument(str(exc)) from exc
+            if office:
+                extension, mime = office
             else:
-                raise InvalidDocument("Only PDF, JPEG, and PNG files are supported in this first slice")
+                try:
+                    with Image.open(temp_path) as image:
+                        image.verify()
+                        image_format = image.format
+                except (UnidentifiedImageError, OSError, ValueError) as exc:
+                    raise InvalidDocument("Use PDF, JPEG, PNG, DOCX, XLSX, or PPTX") from exc
+                if image_format == "JPEG":
+                    extension, mime = ".jpg", "image/jpeg"
+                elif image_format == "PNG":
+                    extension, mime = ".png", "image/png"
+                else:
+                    raise InvalidDocument("Use PDF, JPEG, PNG, DOCX, XLSX, or PPTX")
 
         file_id = uuid.uuid4()
         relative = Path("originals") / str(file_id)[:2] / f"{file_id}{extension}"

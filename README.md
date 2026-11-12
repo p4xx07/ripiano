@@ -114,6 +114,10 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 | --- | --- |
 | ![Desktop document files section with Export document ZIP action](qa-artifacts/20261111-document-export/desktop/export-action.png) | ![Mobile document files section with Export document ZIP action](qa-artifacts/20261111-document-export/mobile/export-action.png) |
 
+| Word upload found by text on desktop | Word upload found by text on mobile |
+| --- | --- |
+| ![Desktop Library finding text from a Word document](qa-artifacts/20261112-office-upload/desktop/search.png) | ![Mobile Library finding text from a Word document](qa-artifacts/20261112-office-upload/mobile/search.png) |
+
 | Collection export on desktop | Collection export on mobile |
 | --- | --- |
 | ![Desktop Library with two selected documents and a collection ZIP download](qa-artifacts/20261112-collection-export/desktop/selected.png) | ![Mobile Library with two selected documents and a collection ZIP download](qa-artifacts/20261112-collection-export/mobile/selected.png) |
@@ -137,7 +141,7 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 
 ## First implementation slice
 
-The current slice has owner setup and sign-in, PDF/JPEG/PNG upload, preserved originals, background OCR to PDF/A, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, and tag-changing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags through that grant. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. This is the beginning of the staged implementation, not the complete Paperless feature set. Calibrated pretrained classification, automatic OAuth agent sign-in, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
+The current slice has owner setup and sign-in, PDF/JPEG/PNG/DOCX/XLSX/PPTX upload, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, and tag-changing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags through that grant. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. This is the beginning of the staged implementation, not the complete Paperless feature set. Calibrated pretrained classification, automatic OAuth agent sign-in, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
 
 ### Run locally
 
@@ -150,6 +154,8 @@ In **Senders** and **Document types**, add a matching phrase to a name to file n
 Tags can be grouped under other tags. Create a nested tag from the **Under** picker or move an existing tag from its card. Filtering the Library by a parent finds documents tagged with any nested child, including deeper levels; documents tagged with both parent and child appear once. Agent grants that use a tag filter continue to require the exact granted tag.
 
 For a batch of files, Ripiano continues after an unsupported file and names each rejected file in the result. Accepted files appear in the Library without another filing step.
+
+Word `.docx`, Excel `.xlsx`, and PowerPoint `.pptx` files use the private Gotenberg LibreOffice service in the Compose stack. The original bytes are preserved; a searchable PDF is generated for viewing and search. Older `.doc`, `.xls`, and `.ppt` formats are not accepted yet. Office-derived PDFs currently use normal PDF output because PDF/A conversion damaged extracted text in a real local test. The converter has no published port and does not contact a cloud provider.
 
 With a hardware keyboard, press **/** to focus Library search from any archive screen, or **N** to open Add. These shortcuts stay inactive while typing or using a dialog.
 

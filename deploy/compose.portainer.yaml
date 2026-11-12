@@ -55,6 +55,19 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
+  converter:
+    image: gotenberg/gotenberg:9.4.0-libreoffice@sha256:4f8700501877b7198e1e393061add6ead52f4b0b2f1e4972a404be95b751d9e9
+    environment:
+      API_BODY_LIMIT: 27MB
+      API_TIMEOUT: 180s
+      LIBREOFFICE_MAX_QUEUE_SIZE: 5
+    networks: [converter]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
   api:
     <<: *api-base
     volumes:
@@ -68,9 +81,15 @@ services:
       retries: 15
   worker:
     <<: *api-base
+    environment:
+      <<: *api-env
+      RIPIANO_CONVERTER_URL: http://converter:3000
+    networks: [default, converter]
     command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "celery"]
     depends_on:
       api:
+        condition: service_healthy
+      converter:
         condition: service_healthy
   maintenance_worker:
     <<: *api-base
@@ -138,3 +157,7 @@ volumes:
   ripiano_media:
   ripiano_postgres:
   ripiano_backup:
+
+networks:
+  converter:
+    internal: true

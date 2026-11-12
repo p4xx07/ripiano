@@ -1,6 +1,6 @@
 # Portainer on Synology
 
-`compose.portainer.yaml` is the pull-only stack for the DS923+ (`linux/amd64`). It serves the PWA, API, and MCP on one web port. PostgreSQL, Valkey, OCR worker, maintenance worker, scheduler, and MCP have no published port. The OCR worker handles new documents and retries; the maintenance worker handles rule rechecks and backups, so a long archive scan does not hold new uploads. Put Synology's HTTPS reverse proxy in front of the web port, then install the PWA from that HTTPS origin.
+`compose.portainer.yaml` is the pull-only stack for the DS923+ (`linux/amd64`). It serves the PWA, API, and MCP on one web port. PostgreSQL, Valkey, OCR worker, private LibreOffice converter, maintenance worker, scheduler, and MCP have no published port. The OCR worker handles new documents and retries; the maintenance worker handles rule rechecks and backups, so a long archive scan does not hold new uploads. Put Synology's HTTPS reverse proxy in front of the web port, then install the PWA from that HTTPS origin.
 
 The images are built and published to GHCR by `.github/workflows/verify-and-publish.yml` after a `v*` release tag passes the automated jobs. No release images are published by the draft PR. The workflow summary prints image digest references. Set `RIPIANO_API_IMAGE` and `RIPIANO_WEB_IMAGE` in Portainer to those full `ghcr.io/...@sha256:...` values. A digest pins exactly what the NAS runs. If the packages are private, give Portainer read access to GHCR; public packages can be pulled anonymously.
 
@@ -24,6 +24,8 @@ The checked-in [environment example](portainer.env.example) collects the values 
 Set `RIPIANO_DEBUG=0`. `RIPIANO_PORT` defaults to 8080 and is the **host** port connected to Synology's reverse proxy. Create the three NAS folders before deployment. The API and workers run as UID 10001: the OCR worker needs media write access, and the maintenance worker needs media and backup write access for snapshots and permanent deletion. The PostgreSQL image must be able to write its own database folder. Test those permissions on the NAS before adding personal documents.
 
 `RIPIANO_BACKUP_HOUR`, `RIPIANO_BACKUP_MINUTE`, and `RIPIANO_BACKUP_RETENTION` are optional. The schedule is in Europe/Rome. Point Synology Hyper Backup at `<RIPIANO_BACKUP_PATH>/complete`. The Backblaze B2 configuration stays entirely in Synology; Ripiano has no B2 credentials. See [backup and restore](../docs/BACKUP_RESTORE.md) before an upgrade.
+
+The converter is the pinned Gotenberg LibreOffice image on a private Compose network. The OCR worker sends `.docx`, `.xlsx`, and `.pptx` files to it; no public port or cloud API is involved. Leave the `converter` service and worker network/URL settings in place when customizing the stack. The API accepts up to 25 MiB by default, and Gotenberg's 27 MB request-body cap leaves room for the multipart envelope. The converter may need extra NAS memory for large Office files; test representative files before relying on it for personal archives.
 
 The optional Telegram service uses the `telegram` profile and three additional environment variables described in the [root README](../README.md). It must be enabled deliberately because Telegram handles forwarded files before Ripiano receives them.
 

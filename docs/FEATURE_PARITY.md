@@ -9,7 +9,7 @@ Milestones: **R1** = safe daily archive; **R2** = full daily workflow and physic
 | Web upload, drag-and-drop, consume folder, scanner imports, API upload | All channels reach the same durable ingestion pipeline; PWA and Android capture add simpler mobile paths | R1-R2 |
 | Additional external inputs | Optional Telegram private-chat bot first; future S3 and Google Drive adapters use the same durable ingestion contract | R1-R3 |
 | Incoming email accounts and filtering rules, including OAuth-capable providers | Import attachments with source metadata; email configuration lives in Integrations | R3 |
-| PDF, image, Office, and email file processing through optional converters | Preserve originals; produce searchable previews/archive versions where supported; show unsupported-format errors | R1-R3 |
+| PDF, image, Office, and email file processing through optional converters | Preserve originals; produce searchable previews/archive versions where supported; show unsupported-format errors. DOCX/XLSX/PPTX intake and private conversion are implemented; legacy Office and email processing remain open. | R1-R3 |
 | OCR, selectable text, PDF/A, language settings, reprocessing | Local default; retry/reprocess without losing originals; compare OCR engines on actual scans | R1-R3 |
 | Barcode/QR extraction, ASN detection, tag barcodes, split pages | Support documented paper scan workflows; physical-copy stickers add a separate stable identity | R2-R3 |
 | Tags, nested tags, correspondents, document types, storage paths, dates | Keep all metadata fields; create and move nested tags without cycles, and let parent Library filters include descendants; replace manual filing with suggestions and exception review | R1-R2 |

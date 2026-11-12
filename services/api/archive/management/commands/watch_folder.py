@@ -17,7 +17,7 @@ from archive.models import Document
 from archive.storage import InvalidDocument
 
 logger = logging.getLogger(__name__)
-EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
+EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".pptx"}
 
 
 class FolderWatcher:
@@ -85,7 +85,7 @@ class FolderWatcher:
 
 
 class Command(BaseCommand):
-    help = "Import stable PDF/PNG/JPEG files from a read-only mounted folder"
+    help = "Import stable PDF/image/Office files from a read-only mounted folder"
 
     def add_arguments(self, parser):
         parser.add_argument("--once", action="store_true", help="Scan twice with a short delay, then exit")

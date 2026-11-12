@@ -13,6 +13,7 @@ from django.http import FileResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from .models import CustomFieldValue, Document, DocumentLink, DocumentNote, Movement
+from .office import OFFICE_EXTENSIONS
 from .physical_views import location_path
 
 
@@ -39,7 +40,7 @@ def _add_file(bundle, source, name, mime):
 
 
 def _write_files(bundle, document, prefix=""):
-    extension = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png"}.get(document.original_mime, ".bin")
+    extension = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", **OFFICE_EXTENSIONS}.get(document.original_mime, ".bin")
     original = _add_file(bundle, _media_path(document.original_path, "originals"), f"{prefix}original{extension}", document.original_mime)
     if original["sha256"] != document.original_sha256 or original["size"] != document.original_size:
         raise ValueError("Original checksum does not match the archive record")

@@ -97,7 +97,7 @@ def process_update(update, *, client, owner, allowed_ids):
         finally:
             upload.close()
     except InvalidDocument:
-        return chat_id, "Ripiano accepts PDF, JPEG, and PNG files. Use the web app for files over 20 MB."
+        return chat_id, "Ripiano accepts PDF, JPEG, PNG, DOCX, XLSX, and PPTX files. Use the web app for files over 20 MB."
     return chat_id, "Saved to Ripiano. You can find it in your archive."
 
 

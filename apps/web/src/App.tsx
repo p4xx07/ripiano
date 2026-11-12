@@ -1344,7 +1344,7 @@ function App() {
               className="visually-hidden"
               tabIndex={-1}
               type="file"
-              accept="application/pdf,image/jpeg,image/png"
+              accept="application/pdf,image/jpeg,image/png,.docx,.xlsx,.pptx"
               multiple
               onChange={(event) => void upload(event.target.files)}
             />
@@ -1390,7 +1390,7 @@ function App() {
                 </span>
                 <span>
                   <strong>Browse files</strong>
-                  <small>PDF, PNG, or JPEG</small>
+                  <small>PDF, JPG, PNG, DOCX, XLSX, or PPTX</small>
                 </span>
                 <ArrowRight size={18} />
               </button>

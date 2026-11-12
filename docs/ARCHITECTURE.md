@@ -17,7 +17,7 @@ flowchart LR
   BROKER --> MAINT[Maintenance worker]
   WORKER --> MEDIA
   WORKER --> PG
-  WORKER --> CONV[Optional Tika / Gotenberg]
+  WORKER --> CONV[Private Gotenberg LibreOffice]
   MAINT --> PG
   MAINT --> MEDIA
   MAINT --> BACKUP[(Mounted backup volume)]
@@ -26,7 +26,7 @@ flowchart LR
   API --> BACKUP
 ```
 
-The web/PWA and API are served on one HTTPS origin through the Synology reverse proxy, as in Condivisa. The Portainer stack contains an API/web service, OCR worker, maintenance worker, scheduler, PostgreSQL, Valkey, and optional conversion services. The public entry point is the reverse proxy; database, broker, converter, and MCP internals are not separately exposed to the internet. The Android client can use the same origin over LAN or Tailscale.
+The web/PWA and API are served on one HTTPS origin through the Synology reverse proxy, as in Condivisa. The Portainer stack contains an API/web service, OCR worker, maintenance worker, scheduler, PostgreSQL, Valkey, and a private Office converter. The public entry point is the reverse proxy; database, broker, converter, and MCP internals are not separately exposed to the internet. The Android client can use the same origin over LAN or Tailscale.
 
 External inputs use a shared ingestion service. Each adapter supplies an owner, original bytes, filename, source, and stable source reference. The service validates and durably stores the original, creates the document record, then queues the common OCR/classification pipeline. Source references prevent repeats after adapter restarts. The first adapter is an optional Telegram long poller with a persisted update cursor. It accepts files only from configured private chat IDs, so no inbound webhook port is needed. Standard Telegram Bot API downloads are limited to 20 MB and updates expire after 24 hours. Telegram handles the document before Ripiano receives it, so this input is explicitly less private than direct upload. Future S3, Google Drive, and watched-folder adapters should use the same contract and their own least-privilege credentials and cursors.
 
@@ -36,7 +36,7 @@ External inputs use a shared ingestion service. Each adapter supplies an owner, 
 - Python backend with Django and Django REST Framework for migrations, authentication, permissions, and API. Domain services handle document operations; views and models do not absorb the whole workflow. This is a fresh implementation, not a Paperless fork.
 - PostgreSQL for canonical metadata, versioned extracted text, and initial full-text search (GIN indexes, structured filters, and trigram support where useful). Search indexing is rebuildable from database content. A dedicated search engine is introduced only if the real corpus shows a relevance or latency problem that PostgreSQL cannot meet. An application query parser preserves advanced search behavior independently of the index implementation.
 - Celery with Valkey for asynchronous work, with job state and idempotency keys also recorded in PostgreSQL. Configure broker persistence and reconcile unfinished jobs from the database after restart. One worker processes OCR and retries; another handles rule rechecks and backups. This keeps long maintenance scans from delaying new uploads. Tune concurrency to the NAS after measurement. A single scheduler owns periodic jobs. No document is considered accepted until the original and its database record are durable.
-- OCRmyPDF + Tesseract as the initial archival OCR pipeline, with Italian and English language packs. Benchmark PaddleOCR or other engines on real scans before substituting. Tika/Gotenberg are optional converter services for the formats that need them. Preserve the original bytes regardless of derived output.
+- OCRmyPDF + Tesseract as the initial archival OCR pipeline, with Italian and English language packs. Benchmark PaddleOCR or other engines on real scans before substituting. A private Gotenberg LibreOffice service converts DOCX, XLSX, and PPTX to searchable PDF. Office-derived output currently stays normal PDF because the tested PDF/A step damaged its text map; PDF and image originals still use PDF/A. Preserve the original bytes regardless of derived output.
 - Capacitor Android shell around the shared web interface, with a Kotlin bridge to Android's native document scanner. Use the scanner's multi-page PDF/JPEG output, and retain a system camera/file-picker fallback when Google Play services or scanner initialization are unavailable. Flutter would require a second full UI and is not the first choice.
 
 These are starting choices, not assertions that any library is universally superior. The first vertical slice measures OCR quality, search quality, container memory, and Android camera reliability on representative documents and devices.

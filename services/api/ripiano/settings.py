@@ -80,6 +80,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_ROOT = Path(os.environ.get("RIPIANO_MEDIA_ROOT", BASE_DIR / "data"))
+RIPIANO_CONVERTER_URL = os.environ.get("RIPIANO_CONVERTER_URL", "")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 SESSION_COOKIE_HTTPONLY = True

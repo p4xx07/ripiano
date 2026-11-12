@@ -31,6 +31,7 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>/links/<uuid:target_id>", link_views.document_link_detail),
     path("api/custom-fields", custom_field_views.custom_fields),
     path("api/custom-fields/<uuid:field_id>", custom_field_views.custom_field_detail),
+    path("api/custom-fields/<uuid:field_id>/change-type", custom_field_views.change_custom_field_kind),
     path("api/documents/<uuid:document_id>/custom-fields", custom_field_views.document_custom_fields),
     path("api/documents/<uuid:document_id>/custom-fields/<uuid:field_id>", custom_field_views.document_custom_field_detail),
     path("api/backups", views.backups),

@@ -13,7 +13,7 @@ Milestones: **R1** = safe daily archive; **R2** = full daily workflow and physic
 | OCR, selectable text, PDF/A, language settings, reprocessing | Local default; retry/reprocess without losing originals; compare OCR engines on actual scans | R1-R3 |
 | Barcode/QR extraction, ASN detection, tag barcodes, split pages | Support documented paper scan workflows; physical-copy stickers add a separate stable identity | R2-R3 |
 | Tags, nested tags, correspondents, document types, storage paths, dates | Keep all metadata fields; create and move nested tags without cycles, and let parent Library filters include descendants; replace manual filing with suggestions and exception review | R1-R2 |
-| Typed custom fields and document links | Create/edit/filter/search fields and links with permissions | R3 |
+| Typed custom fields and document links | Create/edit/filter/search fields and links with permissions; preview and atomically convert compatible field values before a type change | R3 |
 | Exact, fuzzy, rule-based, and learned matching; suggestions | Rules plus local pretrained model and correction examples; explain why suggestions appear | R2-R3 |
 | Optional AI suggestions, similarity search, document chat | Opt-in provider selection, including local endpoints; show when content would leave the NAS | R3-R4 |
 | Full-text search, field syntax, snippets, filters, sort, saved views | Search-first Library with simple filters and a power-user query mode; saved collections | R1-R4 |

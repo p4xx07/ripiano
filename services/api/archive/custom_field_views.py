@@ -1,7 +1,9 @@
 import json
 import re
+import shlex
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 from django.http import JsonResponse
@@ -141,6 +143,95 @@ def custom_field_detail(request, field_id):
     return JsonResponse(field_json(field))
 
 
+def _convert_existing_value(kind, value):
+    if kind == CustomField.Kind.BOOLEAN:
+        normalized = value.strip().casefold()
+        if normalized in {"true", "yes"}:
+            return "true"
+        if normalized in {"false", "no"}:
+            return "false"
+        raise ValueError("Use yes/no or true/false for a yes-or-no field")
+    return normalize_value(kind, value)
+
+
+def _saved_query_uses_field(query, name):
+    try:
+        tokens = shlex.split(query)
+    except ValueError:
+        return False
+    for token in tokens:
+        key, separator, value = token.partition(":")
+        if separator and key == "field" and value.partition("=")[0].strip().casefold() == name.casefold():
+            return True
+    return False
+
+
+def _type_change_preview(field, kind):
+    value_count = changed_count = invalid_count = 0
+    changes = []
+    invalid = []
+    for item in field.values.select_related("document").iterator(chunk_size=500):
+        value_count += 1
+        try:
+            converted = _convert_existing_value(kind, item.value)
+        except ValueError:
+            invalid_count += 1
+            if len(invalid) < 3:
+                invalid.append({"document": item.document.title, "value": item.value})
+            continue
+        if converted != item.value:
+            changed_count += 1
+            if len(changes) < 3:
+                changes.append({"before": item.value, "after": converted})
+    blocked = [view.name for view in SavedView.objects.filter(owner=field.owner).iterator()
+               if view.custom_field_id == field.id or _saved_query_uses_field(view.query, field.name)]
+    return {
+        "id": str(field.id), "name": field.name, "from_kind": field.kind, "to_kind": kind,
+        "value_count": value_count, "changed_count": changed_count, "examples": changes,
+        "invalid_count": invalid_count, "invalid_examples": invalid,
+        "saved_search_count": len(blocked), "saved_searches": blocked[:5],
+        "can_change": invalid_count == 0 and not blocked,
+    }
+
+
+@require_http_methods(["GET", "POST"])
+def change_custom_field_kind(request, field_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    body = _body(request) if request.method == "POST" else None
+    kind = body.get("kind") if body is not None else request.GET.get("kind") if request.method == "GET" else None
+    if kind not in CustomField.Kind.values:
+        return JsonResponse({"error": "Choose a supported field type"}, status=400)
+    if request.method == "GET":
+        field = CustomField.objects.filter(pk=field_id, owner=request.user).first()
+        if field is None:
+            return JsonResponse({"error": "Custom field not found"}, status=404)
+        if field.kind == kind:
+            return JsonResponse({"error": "Choose a different field type"}, status=400)
+        return JsonResponse(_type_change_preview(field, kind))
+    with transaction.atomic():
+        # Saved-search creation takes this same owner lock before validation.
+        get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+        field = CustomField.objects.select_for_update().filter(pk=field_id, owner=request.user).first()
+        if field is None:
+            return JsonResponse({"error": "Custom field not found"}, status=404)
+        if field.kind == kind:
+            return JsonResponse({"error": "Choose a different field type"}, status=400)
+        preview = _type_change_preview(field, kind)
+        if not preview["can_change"]:
+            return JsonResponse({"error": "Fix invalid values and update saved searches before changing this type", **preview}, status=409)
+        ids = list(field.values.values_list("pk", flat=True))
+        for start in range(0, len(ids), 500):
+            values = list(CustomFieldValue.objects.filter(pk__in=ids[start:start + 500]))
+            for item in values:
+                item.value = _convert_existing_value(kind, item.value)
+            CustomFieldValue.objects.bulk_update(values, ["value"])
+        field.kind = kind
+        field.save(update_fields=["kind"])
+    return JsonResponse({"field": field_json(field), "converted": preview["value_count"], "changed": preview["changed_count"]})
+
+
 @require_http_methods(["GET"])
 def document_custom_fields(request, document_id):
     unauthorized = _unauthorized(request)
@@ -160,8 +251,8 @@ def document_custom_field_detail(request, document_id, field_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
     field = CustomField.objects.select_for_update().filter(pk=field_id, owner=request.user).first()
+    document = Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
     if document is None or field is None:
         return JsonResponse({"error": "Custom field not found"}, status=404)
     if request.method == "DELETE":

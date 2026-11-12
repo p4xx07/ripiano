@@ -1,10 +1,25 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ListFilter, Pencil, Plus, Trash2, X } from "lucide-react";
 import { CustomField, request } from "./api";
-import { Button } from "./ui";
+import { Button, Modal } from "./ui";
 
 const kindLabels: Record<CustomField["kind"], string> = {
   text: "Text", number: "Number", date: "Date", boolean: "Yes or no",
+};
+
+type TypeChangePreview = {
+  id: string;
+  name: string;
+  from_kind: CustomField["kind"];
+  to_kind: CustomField["kind"];
+  value_count: number;
+  changed_count: number;
+  examples: { before: string; after: string }[];
+  invalid_count: number;
+  invalid_examples: { document: string; value: string }[];
+  saved_search_count: number;
+  saved_searches: string[];
+  can_change: boolean;
 };
 
 export default function CustomFieldsPanel({ documentId, onChanged }: { documentId: string; onChanged: () => void }) {
@@ -16,6 +31,9 @@ export default function CustomFieldsPanel({ documentId, onChanged }: { documentI
   const [kind, setKind] = useState<CustomField["kind"]>("text");
   const [renameId, setRenameId] = useState("");
   const [renameName, setRenameName] = useState("");
+  const [changeTypeId, setChangeTypeId] = useState("");
+  const [targetKind, setTargetKind] = useState<CustomField["kind"]>("text");
+  const [typePreview, setTypePreview] = useState<TypeChangePreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -84,6 +102,43 @@ export default function CustomFieldsPanel({ documentId, onChanged }: { documentI
     }
   }
 
+  async function previewTypeChange(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const preview = await request<TypeChangePreview>(`/api/custom-fields/${changeTypeId}/change-type?kind=${targetKind}`);
+      setTypePreview(preview);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not review field type change");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeType() {
+    if (!typePreview?.can_change) return;
+    setBusy(true);
+    setError("");
+    try {
+      await request(`/api/custom-fields/${typePreview.id}/change-type`, {
+        method: "POST", body: JSON.stringify({ kind: typePreview.to_kind }),
+      });
+      const label = kindLabels[typePreview.to_kind];
+      const count = typePreview.value_count;
+      setTypePreview(null);
+      setChangeTypeId("");
+      await load();
+      onChanged();
+      setNotice(`${typePreview.name} is now ${label.toLowerCase()}. ${count} ${count === 1 ? "value was" : "values were"} checked.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not change field type");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove(field: CustomField) {
     if (!window.confirm(`Delete unused field “${field.name}”?`)) return;
     setBusy(true);
@@ -133,18 +188,38 @@ export default function CustomFieldsPanel({ documentId, onChanged }: { documentI
       </form>
     </details>
     {fields.length > 0 && <details className="custom-manage">
-      <summary>Manage field names</summary>
-      <p>Renaming updates every document. Delete a field after removing its values and saved searches.</p>
+      <summary>Manage field names and types</summary>
+      <p>Renaming updates every document. Changing a type checks every value first; saved searches using that field must be updated or removed. Delete a field after removing its values and saved searches.</p>
       <ul>{fields.map((field) => <li key={field.id}>
         {renameId === field.id ? <form onSubmit={(event) => void rename(event)}>
           <input aria-label={`New name for ${field.name}`} value={renameName} onChange={(event) => setRenameName(event.target.value)} maxLength={100} required />
           <Button disabled={busy || !renameName.trim()}>Save name</Button>
           <button type="button" aria-label="Cancel rename" onClick={() => setRenameId("")}><X size={16} /></button>
         </form> : <><span>{field.name} · {kindLabels[field.kind]}</span>
-          <button type="button" aria-label={`Rename ${field.name}`} disabled={busy} onClick={() => { setRenameId(field.id); setRenameName(field.name); }}><Pencil size={16} /></button>
-          {!field.in_use && <button type="button" aria-label={`Delete unused field ${field.name}`} disabled={busy} onClick={() => void remove(field)}><Trash2 size={16} /></button>}
+          {changeTypeId === field.id ? <form className="custom-type-form" onSubmit={(event) => void previewTypeChange(event)}>
+            <label>New type<select aria-label={`New type for ${field.name}`} value={targetKind} onChange={(event) => setTargetKind(event.target.value as CustomField["kind"])}>
+              {Object.entries(kindLabels).filter(([value]) => value !== field.kind).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select></label>
+            <Button disabled={busy}>Review change</Button>
+            <button type="button" aria-label={`Cancel type change for ${field.name}`} onClick={() => setChangeTypeId("")}><X size={16} /></button>
+          </form> : <>
+            <button type="button" aria-label={`Rename ${field.name}`} disabled={busy} onClick={() => { setChangeTypeId(""); setRenameId(field.id); setRenameName(field.name); }}><Pencil size={16} /></button>
+            <button type="button" aria-label={`Change type of ${field.name}`} disabled={busy} onClick={() => { setRenameId(""); setChangeTypeId(field.id); setTargetKind(field.kind === "text" ? "number" : "text"); }}>Change type</button>
+            {!field.in_use && <button type="button" aria-label={`Delete unused field ${field.name}`} disabled={busy} onClick={() => void remove(field)}><Trash2 size={16} /></button>}
+          </>}
         </>}
       </li>)}</ul>
     </details>}
+    {typePreview && <Modal titleId="type-change-title" panelClassName="add-modal type-change-modal" onClose={() => { if (!busy) setTypePreview(null); }}>
+      <button type="button" className="modal-close" aria-label="Close" disabled={busy} onClick={() => setTypePreview(null)}><X size={20} /></button>
+      <h2 id="type-change-title">Change {typePreview.name} to {kindLabels[typePreview.to_kind]}?</h2>
+      <p>{typePreview.value_count} {typePreview.value_count === 1 ? "document has" : "documents have"} a value for this field. {typePreview.changed_count} {typePreview.changed_count === 1 ? "value needs" : "values need"} normalization.</p>
+      {typePreview.examples.length > 0 && <div className="type-change-examples"><strong>Examples</strong><ul>{typePreview.examples.map((example, index) => <li key={index}>{example.before} → {example.after}</li>)}</ul></div>}
+      {typePreview.invalid_count > 0 && <div className="type-change-blocker" role="alert"><strong>{typePreview.invalid_count} {typePreview.invalid_count === 1 ? "value cannot" : "values cannot"} become {kindLabels[typePreview.to_kind].toLowerCase()}.</strong><ul>{typePreview.invalid_examples.map((example, index) => <li key={index}>{example.document}: {example.value}</li>)}</ul><p>Correct those documents, then review again.</p></div>}
+      {typePreview.saved_search_count > 0 && <div className="type-change-blocker" role="alert"><strong>{typePreview.saved_search_count} saved {typePreview.saved_search_count === 1 ? "search uses" : "searches use"} this field.</strong><p>{typePreview.saved_searches.join(", ")}</p><p>Update or remove those saved searches before changing the type.</p></div>}
+      {typePreview.can_change && <p>All values can be converted. The change will also affect how this field is searched and filtered.</p>}
+      {error && <p className="inline-error" role="alert">{error}</p>}
+      <div className="trash-confirm"><Button type="button" disabled={busy || !typePreview.can_change} onClick={() => void changeType()}>Confirm type change</Button><Button type="button" variant="secondary" disabled={busy} onClick={() => setTypePreview(null)}>Cancel</Button></div>
+    </Modal>}
   </section>;
 }

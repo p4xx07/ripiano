@@ -227,12 +227,12 @@ def saved_views(request):
     if body is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
     try:
-        values = _saved_view_values(body, request.user)
+        with transaction.atomic():
+            get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+            values = _saved_view_values(body, request.user)
+            view = SavedView.objects.create(owner=request.user, **values)
     except ValueError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
-    try:
-        with transaction.atomic():
-            view = SavedView.objects.create(owner=request.user, **values)
     except IntegrityError:
         return JsonResponse({"error": "A saved search with this name already exists"}, status=409)
     return JsonResponse(_saved_view_json(view), status=201)
@@ -253,14 +253,17 @@ def saved_view_detail(request, view_id):
     if body is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
     try:
-        values = _saved_view_values(body, request.user, view)
+        with transaction.atomic():
+            get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+            view = SavedView.objects.select_for_update().filter(pk=view_id, owner=request.user).first()
+            if view is None:
+                return JsonResponse({"error": "Saved search not found"}, status=404)
+            values = _saved_view_values(body, request.user, view)
+            for key, value in values.items():
+                setattr(view, key, value)
+            view.save(update_fields=list(values))
     except ValueError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
-    for key, value in values.items():
-        setattr(view, key, value)
-    try:
-        with transaction.atomic():
-            view.save(update_fields=list(values))
     except IntegrityError:
         return JsonResponse({"error": "A saved search with this name already exists"}, status=409)
     return JsonResponse(_saved_view_json(view))

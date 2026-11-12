@@ -46,6 +46,10 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 | --- | --- |
 | ![Desktop Library with combined field search](qa-artifacts/93eb784/field-search/desktop/field-search.png) | ![Mobile Library with combined field search](qa-artifacts/93eb784/field-search/mobile/field-search.png) |
 
+| Review a custom-field type change on desktop | Review a custom-field type change on mobile |
+| --- | --- |
+| ![Desktop dialog explaining why an invalid value blocks a type change](qa-artifacts/20261112-custom-type/desktop/blocked.png) | ![Mobile dialog explaining why an invalid value blocks a type change](qa-artifacts/20261112-custom-type/mobile/blocked.png) |
+
 | Sorting the Library on desktop | Sorting the Library on mobile |
 | --- | --- |
 | ![Desktop Library sorted by title](qa-artifacts/e9bb89a/library-sort/desktop/library-sort.png) | ![Mobile Library sorted by title](qa-artifacts/e9bb89a/library-sort/mobile/library-sort.png) |
@@ -181,7 +185,7 @@ The document originals are stored under the mounted media path. OCR output is de
 
 The document panel keeps dated notes separate from follow-ups. Notes can be added or deleted, found through Library search (including `note:`), and retrieved in older pages when the history grows.
 
-Under **Custom details**, create a text, number, date, or yes/no field once and set it on any document. Only fields with values appear by default; choose an unused field when you need it. A field value is found by ordinary Library search, by a visual field and value filter, or with `field:"Policy number=PN-123"`. Number and date filters accept an exact value or inclusive from/to bounds. Save any visual filter as a search to reuse it. You can rename a field across documents and delete an unused field after removing its values and saved searches. Custom values are included in the portable document ZIP.
+Under **Custom details**, create a text, number, date, or yes/no field once and set it on any document. Only fields with values appear by default; choose an unused field when you need it. A field value is found by ordinary Library search, by a visual field and value filter, or with `field:"Policy number=PN-123"`. Number and date filters accept an exact value or inclusive from/to bounds. Save any visual filter as a search to reuse it. You can rename a field across documents. To change its type, review how every existing value would convert; invalid values and saved searches using the field block the change until you fix them. A successful change converts all values in one database transaction. Delete an unused field after removing its values and saved searches. Custom values are included in the portable document ZIP.
 
 The same panel can link related documents. Search for the other document by title or text, then choose **Link**. The connection appears on both documents, so either side opens the other. Moving one document to Trash hides the link until it is restored; its underlying relationship is retained.
 

@@ -2013,6 +2013,48 @@ button:disabled {
   color: var(--color-accent-strong);
   cursor: pointer;
 }
+.custom-type-form label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-heading);
+  font-size: var(--type-small);
+}
+.custom-type-form select {
+  min-width: 8rem;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font: inherit;
+}
+.type-change-modal h2 {
+  padding-right: var(--space-9);
+}
+.type-change-modal p,
+.type-change-modal li {
+  overflow-wrap: anywhere;
+}
+.type-change-examples,
+.type-change-blocker {
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-tint);
+  color: var(--color-heading);
+  font-size: var(--type-small);
+}
+.type-change-blocker {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+.type-change-examples ul,
+.type-change-blocker ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+.type-change-blocker p {
+  margin: var(--space-2) 0 0;
+}
 .custom-manage input {
   flex: 1 1 180px;
   min-width: 0;

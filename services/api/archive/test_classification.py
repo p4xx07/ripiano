@@ -4,9 +4,10 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
+from django.utils import timezone
 
 from archive.classification import apply_rules
-from archive.models import ClassificationRule, Correspondent, Document, DocumentTag, DocumentType, FilingRule, Tag
+from archive.models import ClassificationRule, Correspondent, Document, DocumentTag, DocumentType, FilingRule, Tag, TagOverride
 from archive.tasks import reclassify_filing_candidates, reclassify_owner, reclassify_tag_candidates
 from ripiano.celery import app as celery_app
 
@@ -29,6 +30,170 @@ def ready_document(owner, text="Invoice for electricity"):
         original_mime="application/pdf", original_sha256="a" * 64, original_size=10,
         status=Document.Status.READY, extracted_text=text,
     )
+
+
+@pytest.mark.django_db
+def test_manual_examples_suggest_filing_without_changing_document():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    source = ready_document(owner, "Electricity invoice from Acme Energy for May")
+    target = ready_document(owner, "Acme Energy electricity invoice for June")
+    source.title = "Acme electricity May"
+    target.title = "Acme electricity June"
+    source.save(update_fields=["title"])
+    target.save(update_fields=["title"])
+    tag = Tag.objects.create(owner=owner, name="Utilities")
+    sender = Correspondent.objects.create(owner=owner, name="Acme Energy")
+    kind = DocumentType.objects.create(owner=owner, name="Invoice")
+    DocumentTag.objects.create(document=source, tag=tag, origin=DocumentTag.Origin.MANUAL)
+    source.correspondent = sender
+    source.correspondent_origin = Document.FilingOrigin.MANUAL
+    source.document_type = kind
+    source.document_type_origin = Document.FilingOrigin.MANUAL
+    source.save(update_fields=["correspondent", "correspondent_origin", "document_type", "document_type_origin"])
+    client = Client()
+    client.force_login(owner)
+    result = client.get(f"/api/documents/{target.id}/filing-suggestions")
+    assert result.status_code == 200
+    suggestions = result.json()
+    assert [item["name"] for item in suggestions["tags"]] == ["Utilities"]
+    assert [item["name"] for item in suggestions["correspondents"]] == ["Acme Energy"]
+    assert [item["name"] for item in suggestions["document_types"]] == ["Invoice"]
+    assert suggestions["tags"][0]["example"]["id"] == str(source.id)
+    assert {"acme", "electricity"}.issubset(set(suggestions["tags"][0]["shared_terms"]))
+    assert not DocumentTag.objects.filter(document=target).exists()
+    target.refresh_from_db()
+    assert target.correspondent is None and target.document_type is None
+
+    TagOverride.objects.create(document=target, tag=tag)
+    target.correspondent_origin = Document.FilingOrigin.MANUAL
+    target.save(update_fields=["correspondent_origin"])
+    suppressed = client.get(f"/api/documents/{target.id}/filing-suggestions").json()
+    assert suppressed["tags"] == [] and suppressed["correspondents"] == []
+    assert len(suppressed["document_types"]) == 1
+
+
+@pytest.mark.django_db
+def test_filing_suggestions_require_owner_ready_and_manual_example():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    target = ready_document(owner, "Acme Energy electricity invoice")
+    foreign = ready_document(other, "Acme Energy electricity invoice")
+    rule_source = ready_document(owner, "Acme Energy electricity invoice")
+    tag = Tag.objects.create(owner=owner, name="Private")
+    other_tag = Tag.objects.create(owner=other, name="Other")
+    DocumentTag.objects.create(document=foreign, tag=other_tag, origin=DocumentTag.Origin.MANUAL)
+    DocumentTag.objects.create(document=rule_source, tag=tag, origin=DocumentTag.Origin.RULE)
+    client = Client()
+    client.force_login(owner)
+    endpoint = f"/api/documents/{target.id}/filing-suggestions"
+    assert client.get(endpoint).json() == {"tags": [], "correspondents": [], "document_types": []}
+    assert client.get(f"/api/documents/{foreign.id}/filing-suggestions").status_code == 404
+    DocumentTag.objects.filter(document=rule_source).update(origin=DocumentTag.Origin.MANUAL)
+    assert len(client.get(endpoint).json()["tags"]) == 1
+    rule_source.trashed_at = timezone.now()
+    rule_source.save(update_fields=["trashed_at"])
+    assert client.get(endpoint).json()["tags"] == []
+    target.status = Document.Status.PENDING
+    target.save(update_fields=["status"])
+    assert client.get(endpoint).json()["tags"] == []
+
+
+@pytest.mark.django_db
+def test_filing_suggestions_skip_existing_tags_cleared_types_and_foreign_or_trashed_examples(django_assert_max_num_queries):
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    text = "Acme Energy electricity invoice meter reading"
+    target = ready_document(owner, text)
+    source = ready_document(owner, text)
+    trashed = ready_document(owner, text)
+    foreign = ready_document(other, text)
+    kept = Tag.objects.create(owner=owner, name="Already here")
+    DocumentTag.objects.create(document=source, tag=kept, origin=DocumentTag.Origin.MANUAL)
+    DocumentTag.objects.create(document=target, tag=kept, origin=DocumentTag.Origin.MANUAL)
+    kind = DocumentType.objects.create(owner=owner, name="Invoice")
+    source.document_type = kind
+    source.document_type_origin = Document.FilingOrigin.MANUAL
+    source.save(update_fields=["document_type", "document_type_origin"])
+    trashed_sender = Correspondent.objects.create(owner=owner, name="Trashed sender")
+    trashed.correspondent = trashed_sender
+    trashed.correspondent_origin = Document.FilingOrigin.MANUAL
+    trashed.trashed_at = timezone.now()
+    trashed.save(update_fields=["correspondent", "correspondent_origin", "trashed_at"])
+    foreign_sender = Correspondent.objects.create(owner=other, name="Foreign sender")
+    foreign.correspondent = foreign_sender
+    foreign.correspondent_origin = Document.FilingOrigin.MANUAL
+    foreign.save(update_fields=["correspondent", "correspondent_origin"])
+    client = Client()
+    client.force_login(owner)
+    endpoint = f"/api/documents/{target.id}/filing-suggestions"
+    with django_assert_max_num_queries(8):
+        result = client.get(endpoint).json()
+    assert result["tags"] == [] and result["correspondents"] == []
+    assert [item["name"] for item in result["document_types"]] == ["Invoice"]
+    target.document_type_origin = Document.FilingOrigin.MANUAL
+    target.save(update_fields=["document_type_origin"])
+    assert client.get(endpoint).json()["document_types"] == []
+
+
+@pytest.mark.django_db
+def test_filing_suggestions_ignore_common_filler_words():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    source = ready_document(owner, "Please read this with your doctor")
+    target = ready_document(owner, "Please read this with your bank")
+    source.title = "Clinic"
+    target.title = "Bank"
+    source.save(update_fields=["title"])
+    target.save(update_fields=["title"])
+    tag = Tag.objects.create(owner=owner, name="Health")
+    DocumentTag.objects.create(document=source, tag=tag, origin=DocumentTag.Origin.MANUAL)
+    client = Client()
+    client.force_login(owner)
+    assert client.get(f"/api/documents/{target.id}/filing-suggestions").json()["tags"] == []
+
+
+@pytest.mark.django_db
+def test_filing_suggestions_ignore_words_common_to_many_examples():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    target = ready_document(owner, "Scanner header archive copy stamp target notice")
+    for index in range(6):
+        example = ready_document(owner, f"Scanner header archive copy stamp example{index}")
+        tag = Tag.objects.create(owner=owner, name=f"Topic {index}")
+        DocumentTag.objects.create(document=example, tag=tag, origin=DocumentTag.Origin.MANUAL)
+    client = Client()
+    client.force_login(owner)
+    assert client.get(f"/api/documents/{target.id}/filing-suggestions").json()["tags"] == []
+
+
+@pytest.mark.django_db
+def test_filing_suggestions_reject_weak_shared_scan_words():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    source = ready_document(owner, "Ripiano judge solar meter")
+    target = ready_document(owner, "Ripiano judge insurance policy")
+    source.title = "Solar meter"
+    target.title = "Insurance policy"
+    source.save(update_fields=["title"])
+    target.save(update_fields=["title"])
+    tag = Tag.objects.create(owner=owner, name="Solar")
+    DocumentTag.objects.create(document=source, tag=tag, origin=DocumentTag.Origin.MANUAL)
+    client = Client()
+    client.force_login(owner)
+    assert client.get(f"/api/documents/{target.id}/filing-suggestions").json()["tags"] == []
+
+
+@pytest.mark.django_db
+def test_filing_suggestions_prefer_whole_document_similarity():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    target = ready_document(owner, "Acme electricity nordkind lucekind billkind private notice")
+    close = ready_document(owner, "Acme electricity nordkind lucekind billkind annual notice")
+    weak = ready_document(owner, "Acme electricity notice")
+    close_tag = Tag.objects.create(owner=owner, name="Utilities")
+    weak_tag = Tag.objects.create(owner=owner, name="Old generic filing")
+    DocumentTag.objects.create(document=close, tag=close_tag, origin=DocumentTag.Origin.MANUAL)
+    DocumentTag.objects.create(document=weak, tag=weak_tag, origin=DocumentTag.Origin.MANUAL)
+    client = Client()
+    client.force_login(owner)
+    result = client.get(f"/api/documents/{target.id}/filing-suggestions").json()
+    assert [item["name"] for item in result["tags"]] == ["Utilities"]
 
 
 @pytest.mark.django_db

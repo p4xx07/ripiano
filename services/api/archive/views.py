@@ -13,13 +13,14 @@ from django.core import signing
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import IntegrityError, connection, transaction
 from django.db.models import BigIntegerField, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, prefetch_related_objects
-from django.db.models.functions import Cast, Lower
+from django.db.models.functions import Cast, Lower, Substr
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
 from .models import BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, ShareLink, Tag, TagOverride
+from .classification import filing_suggestions
 from .custom_field_views import normalize_filter_range, normalize_filter_value
 from .physical_views import copy_json
 from .ingestion import ingest_document
@@ -793,6 +794,17 @@ def document_detail(request, document_id):
                     DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
         document = Document.objects.filter(pk=document.id).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").get()
     return JsonResponse(_document_json(document))
+
+
+@require_http_methods(["GET"])
+def document_filing_suggestions(request, document_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    document = Document.objects.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).only("id", "owner", "status", "trashed_at", "title", "correspondent_origin", "document_type_origin").annotate(text_start=Substr("extracted_text", 1, 1800)).first()
+    if document is None:
+        return JsonResponse({"error": "Document not found"}, status=404)
+    return JsonResponse(filing_suggestions(document))
 
 
 @transaction.atomic

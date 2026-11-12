@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   ArrowDownToLine,
+  Building2,
   Copy,
   Eye,
   FileText,
@@ -15,7 +16,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Document, DocumentNote, FilingItem, Location, PhysicalCopy, request, Tag, tagPathLabel } from "./api";
+import { Document, DocumentNote, FilingItem, FilingSuggestions, Location, PhysicalCopy, request, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 import CustomFieldsPanel from "./CustomFieldsPanel";
@@ -56,6 +57,8 @@ export default function DocumentPanel({
     initial.tags.map((tag) => tag.id),
   );
   const [available, setAvailable] = useState<Tag[]>([]);
+  const [suggestions, setSuggestions] = useState<FilingSuggestions | null>(null);
+  const [suggestionStatus, setSuggestionStatus] = useState("");
   const availableById = new Map(available.map((tag) => [tag.id, tag]));
   const sortedAvailable = [...available].sort((a, b) =>
     tagPathLabel(a, availableById).localeCompare(tagPathLabel(b, availableById)));
@@ -85,6 +88,16 @@ export default function DocumentPanel({
       .then((result) => setAvailable(result.tags))
       .catch((cause) => setError(cause.message));
   }, []);
+  useEffect(() => {
+    setSuggestions(null);
+    setSuggestionStatus("");
+    if (current.status !== "ready") return;
+    let active = true;
+    request<FilingSuggestions>(`/api/documents/${current.id}/filing-suggestions`)
+      .then((result) => { if (active) setSuggestions(result); })
+      .catch(() => { if (active) setSuggestions(null); });
+    return () => { active = false; };
+  }, [current.id, current.status]);
   useEffect(() => {
     request<{ locations: Location[] }>("/api/locations")
       .then((result) => setLocations(result.locations))
@@ -342,6 +355,16 @@ export default function DocumentPanel({
     }
   }
 
+  const suggestedTags = suggestions?.tags.filter((item) => !selected.includes(item.id)) ?? [];
+  const suggestedSenders = correspondentId ? [] : suggestions?.correspondents ?? [];
+  const suggestedTypes = documentTypeId ? [] : suggestions?.document_types ?? [];
+  function acceptSuggestion(fieldId: string, message: string, apply: () => void) {
+    apply();
+    setSuggestionStatus(`${message} Save to keep it.`);
+    requestAnimationFrame(() => document.getElementById(fieldId)?.focus());
+  }
+  const visibleSuggestions = suggestedTags.length + suggestedSenders.length + suggestedTypes.length > 0;
+
   return (
     <Modal titleId="detail-heading" panelClassName="detail-panel" backdropClassName="detail-backdrop" onClose={onClose}>
         <button className="modal-close" onClick={onClose} aria-label="Close">
@@ -385,8 +408,33 @@ export default function DocumentPanel({
               onChange={(event) => setDate(event.target.value)}
             />
           </Field>
+          {visibleSuggestions && (
+            <section className="filing-suggestions" aria-labelledby="filing-suggestions-heading">
+              <h3 id="filing-suggestions-heading">Suggested from your documents</h3>
+              <p>Based on documents you filed yourself. Nothing changes until you save.</p>
+              {suggestedTags.map((item) => (
+                <button type="button" key={`tag-${item.id}`} aria-label={`Add tag: ${item.name}`} aria-describedby={`suggestion-tag-${item.id}`} onClick={() => acceptSuggestion(`detail-tag-${item.id}`, `Tag ${item.name} selected.`, () => setSelected((value) => [...value, item.id]))}>
+                  <span className="suggestion-action"><TagIcon size={16} aria-hidden="true" /><span>Add tag: {item.name}</span></span>
+                  <small id={`suggestion-tag-${item.id}`}>Like “{item.example.title}” · shared: {item.shared_terms.join(", ")}</small>
+                </button>
+              ))}
+              {suggestedSenders.map((item) => (
+                <button type="button" key={`sender-${item.id}`} aria-label={`Set sender: ${item.name}`} aria-describedby={`suggestion-sender-${item.id}`} onClick={() => acceptSuggestion("detail-correspondent", `Sender set to ${item.name}.`, () => setCorrespondentId(item.id))}>
+                  <span className="suggestion-action"><Building2 size={16} aria-hidden="true" /><span>Set sender: {item.name}</span></span>
+                  <small id={`suggestion-sender-${item.id}`}>Like “{item.example.title}” · shared: {item.shared_terms.join(", ")}</small>
+                </button>
+              ))}
+              {suggestedTypes.map((item) => (
+                <button type="button" key={`type-${item.id}`} aria-label={`Set type: ${item.name}`} aria-describedby={`suggestion-type-${item.id}`} onClick={() => acceptSuggestion("detail-document-type", `Type set to ${item.name}.`, () => setDocumentTypeId(item.id))}>
+                  <span className="suggestion-action"><FileText size={16} aria-hidden="true" /><span>Set type: {item.name}</span></span>
+                  <small id={`suggestion-type-${item.id}`}>Like “{item.example.title}” · shared: {item.shared_terms.join(", ")}</small>
+                </button>
+              ))}
+            </section>
+          )}
+          {suggestionStatus && <p className="visually-hidden" role="status">{suggestionStatus}</p>}
           <Field label="From" hint={current.correspondent_origin === "rule" ? "Added by matching phrase · change it if needed" : "Optional sender or organization"} className="detail-label">
-            <select value={correspondentId} onChange={(event) => setCorrespondentId(event.target.value)}>
+            <select id="detail-correspondent" value={correspondentId} onChange={(event) => setCorrespondentId(event.target.value)}>
               <option value="">No sender</option>
               {correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
@@ -399,7 +447,7 @@ export default function DocumentPanel({
             </div>
           ) : <button type="button" className="text-action" onClick={() => setCreatingCorrespondent(true)}><Plus size={15} /> Add a sender</button>}
           <Field label="Document type" hint={current.document_type_origin === "rule" ? "Added by matching phrase · change it if needed" : "Optional"} className="detail-label">
-            <select value={documentTypeId} onChange={(event) => setDocumentTypeId(event.target.value)}>
+            <select id="detail-document-type" value={documentTypeId} onChange={(event) => setDocumentTypeId(event.target.value)}>
               <option value="">No type</option>
               {documentTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
@@ -434,6 +482,7 @@ export default function DocumentPanel({
               {sortedAvailable.map((tag) => (
                 <label className="tag-choice" key={tag.id}>
                   <input
+                    id={`detail-tag-${tag.id}`}
                     type="checkbox"
                     checked={selected.includes(tag.id)}
                     onChange={() => toggle(tag.id)}

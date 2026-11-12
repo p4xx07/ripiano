@@ -124,6 +124,20 @@ export type Document = {
   snippet_source: "document" | "note" | "sticker" | "field" | null;
 };
 
+export type FilingSuggestion = {
+  id: string;
+  name: string;
+  example: { id: string; title: string };
+  shared_terms: string[];
+  similarity: number;
+};
+
+export type FilingSuggestions = {
+  tags: FilingSuggestion[];
+  correspondents: FilingSuggestion[];
+  document_types: FilingSuggestion[];
+};
+
 export type DocumentNote = {
   id: string;
   body: string;

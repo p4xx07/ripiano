@@ -1836,6 +1836,59 @@ button:disabled {
   display: grid;
   gap: var(--space-4);
 }
+.filing-suggestions {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-soft);
+  background: var(--color-surface-tint);
+}
+.filing-suggestions h3 {
+  margin: 0;
+  color: var(--color-heading);
+  font-size: var(--type-label);
+}
+.filing-suggestions p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--type-caption);
+}
+.filing-suggestions button {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--type-body);
+  padding: var(--space-compact);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
+  cursor: pointer;
+}
+.filing-suggestions button:hover,
+.filing-suggestions button:focus-visible {
+  border-color: var(--color-primary);
+}
+.filing-suggestions .suggestion-action {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  font-weight: 600;
+}
+.filing-suggestions .suggestion-action svg {
+  flex: none;
+  margin-top: 2px;
+}
+.filing-suggestions button small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-muted);
+  font-size: var(--type-small);
+}
 .tag-choices {
   display: grid;
   gap: var(--space-tight);

@@ -19,7 +19,7 @@ from .office import OFFICE_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 ORIGINAL_EXTENSIONS = {
-    "application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", **OFFICE_EXTENSIONS,
+    "application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "message/rfc822": ".eml", **OFFICE_EXTENSIONS,
 }
 
 
@@ -173,7 +173,7 @@ def build_browse_tree(run):
             shutil.rmtree(stage)
         stage.mkdir()
         try:
-            documents = Document.objects.filter(owner_id=run.owner_id, trashed_at__isnull=True).select_related("correspondent", "document_type")
+            documents = Document.objects.filter(owner_id=run.owner_id, trashed_at__isnull=True, is_split_source=False).select_related("correspondent", "document_type")
             entries = [_write_document(stage, document) for document in documents.order_by("id").iterator(chunk_size=100)]
             manifest = {
                 "format_version": 1, "kind": "nas_browse_copy", "created_at": datetime.now(timezone.utc).isoformat(),

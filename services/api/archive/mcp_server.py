@@ -96,7 +96,7 @@ def _grant():
 
 
 def _documents(grant):
-    queryset = Document.objects.filter(owner=grant.owner, trashed_at__isnull=True)
+    queryset = Document.objects.filter(owner=grant.owner, trashed_at__isnull=True, is_split_source=False)
     if grant.filter_tag_id:
         queryset = queryset.filter(tag_links__tag_id=grant.filter_tag_id)
     return queryset

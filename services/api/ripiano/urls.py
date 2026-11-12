@@ -1,12 +1,21 @@
 from django.contrib import admin
 from django.urls import path
 
-from archive import agent_views, browse_views, custom_field_views, export_views, link_views, metadata_views, physical_views, purge_views, share_views, views
+from archive import agent_views, mail_views, version_views, browse_views, custom_field_views, export_views, link_views, metadata_views, physical_views, purge_views, share_views, views
 
 urlpatterns = [
     path("healthz", views.health),
     path("api/setup", views.setup_owner),
     path("api/session", views.session),
+    path("api/mail", mail_views.mail_overview),
+    path("api/mail/accounts", mail_views.mail_accounts),
+    path("api/mail/accounts/<uuid:account_id>", mail_views.mail_account_detail),
+    path("api/mail/accounts/<uuid:account_id>/test", mail_views.mail_account_test),
+    path("api/mail/accounts/<uuid:account_id>/check", mail_views.mail_account_check),
+    path("api/mail/rules", mail_views.mail_rules),
+    path("api/mail/rules/<uuid:rule_id>", mail_views.mail_rule_detail),
+    path("api/mail/oauth/callback", mail_views.mail_oauth_callback),
+    path("api/mail/oauth/<str:provider>/start", mail_views.mail_oauth_start),
     path("api/documents", views.documents),
     path("api/documents/export", export_views.export_documents),
     path("api/documents/bulk-tags", views.bulk_document_tags),
@@ -14,9 +23,16 @@ urlpatterns = [
     path("api/documents/bulk-date", views.bulk_document_date),
     path("api/documents/bulk-reprocess", views.bulk_reprocess_documents),
     path("api/documents/bulk-trash", views.bulk_document_trash),
+    path("api/documents/merge", version_views.documents_merge),
     path("api/documents/<uuid:document_id>", views.document_detail),
     path("api/documents/<uuid:document_id>/filing-suggestions", views.document_filing_suggestions),
     path("api/documents/<uuid:document_id>/original", views.download_original),
+    path("api/documents/<uuid:document_id>/versions", version_views.document_versions),
+    path("api/documents/<uuid:document_id>/versions/<uuid:version_id>/download", version_views.document_version_download),
+    path("api/documents/<uuid:document_id>/versions/<uuid:version_id>/restore", version_views.document_version_restore),
+    path("api/documents/<uuid:document_id>/pages", version_views.document_pages),
+    path("api/documents/<uuid:document_id>/pages/<int:number>.png", version_views.document_page_preview),
+    path("api/documents/<uuid:document_id>/split", version_views.document_split),
     path("api/documents/<uuid:document_id>/archive", views.download_archive),
     path("api/documents/<uuid:document_id>/export", export_views.export_document),
     path("api/documents/<uuid:document_id>/shares", share_views.document_shares),

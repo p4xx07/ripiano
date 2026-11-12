@@ -14,10 +14,10 @@ from django.db import IntegrityError
 
 from archive.ingestion import ingest_document
 from archive.models import Document
-from archive.storage import InvalidDocument
+from archive.storage import SUPPORTED_EXTENSIONS, InvalidDocument
 
 logger = logging.getLogger(__name__)
-EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".pptx"}
+EXTENSIONS = SUPPORTED_EXTENSIONS
 
 
 class FolderWatcher:

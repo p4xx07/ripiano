@@ -18,6 +18,7 @@ from .backup import BackupError, backup_media_lock, create_snapshot
 from .browse_export import build_browse_tree, prune_old_browse_trees
 from .classification import apply_rules
 from .models import BackupRun, BrowseExportRun, Document, DocumentTag, FilingRule, PurgeJob, TrashRetentionPolicy
+from .email_render import EML_TYPE, render_html
 from .office import OFFICE_EXTENSIONS, convert_office
 from .purge import record_purge, remove_job_media
 
@@ -50,11 +51,19 @@ def process_document(document_id):
                 input_file = work_dir / "input.pdf"
                 with Image.open(original) as image:
                     image.convert("RGB").save(input_file, "PDF", resolution=300)
+            elif document.original_mime == EML_TYPE[1]:
+                page = work_dir / "message.html"
+                page.write_text(render_html(original), encoding="utf-8")
+                input_file = work_dir / "input.pdf"
+                convert_office(page, "message.html", "text/html", input_file)
+                output_type = "pdf"
             elif document.original_mime in OFFICE_EXTENSIONS:
                 input_file = work_dir / "input.pdf"
                 convert_office(original, document.original_name, document.original_mime, input_file)
                 # PDF/A conversion can damage LibreOffice's text map; keep its searchable text.
                 output_type = "pdf"
+            if settings.RIPIANO_BARCODES and (document.original_mime == "application/pdf" or document.original_mime.startswith("image/")):
+                apply_barcodes(document, original, input_file, work_dir)
             output_file = work_dir / "archive.pdf"
             subprocess.run(
                 [
@@ -191,7 +200,8 @@ def purge_document(job_id):
             job.original_path = ""
             job.archive_path = ""
             job.original_sha256 = ""
-            job.save(update_fields=["status", "completed_at", "title", "original_path", "archive_path", "original_sha256"])
+            job.version_files = []
+            job.save(update_fields=["status", "completed_at", "title", "original_path", "archive_path", "original_sha256", "version_files"])
     except BackupError:
         # The snapshot still needs its files. The scheduler retries pending jobs.
         logger.info("Permanent deletion waits for the current backup: %s", job_id)
@@ -289,3 +299,112 @@ def reclassify_tag_candidates(owner_id, tag_id, phrases, deleted=False):
             apply_rules(document)
         except Exception:
             logger.exception("Automatic tagging failed for document %s", document.id)
+
+
+@shared_task(name="archive.tasks.poll_mail_account", time_limit=30 * 60)
+def poll_mail_account(account_id):
+    from .mail import poll_account
+
+    return poll_account(account_id)
+
+
+@shared_task(name="archive.tasks.poll_mail_accounts")
+def poll_mail_accounts():
+    from .models import MailAccount
+
+    for account_id in MailAccount.objects.filter(enabled=True, rules__enabled=True).distinct().values_list("id", flat=True):
+        poll_mail_account.delay(str(account_id))
+
+
+def _note(document, body):
+    from .models import DocumentNote
+
+    DocumentNote.objects.create(document=document, author_id=document.owner_id, body=body)
+
+
+def _split(document, pdf, ranges):
+    """Create one document per page range, carrying over the source's filing. All or nothing."""
+    from io import BytesIO
+
+    from django.core.files.base import File
+    from pypdf import PdfReader, PdfWriter
+
+    from .ingestion import ingest_document
+    from .models import DocumentEmail
+
+    reader = PdfReader(pdf)
+    stem = Path(document.original_name).stem[:80] or "scan"
+    written = []
+    try:
+        with transaction.atomic():
+            locked = Document.objects.select_for_update().get(pk=document.pk)
+            if locked.trashed_at or locked.is_split_source:
+                return False
+            links = list(DocumentTag.objects.filter(document=locked).exclude(origin=DocumentTag.Origin.RULE))
+            origin = DocumentEmail.objects.filter(document=locked).first()
+            for number, (start, end) in enumerate(ranges, start=1):
+                writer = PdfWriter()
+                for index in range(start, end):
+                    writer.add_page(reader.pages[index])
+                data = BytesIO()
+                writer.write(data)
+                part = ingest_document(locked.owner, File(BytesIO(data.getvalue()), name=f"{stem}-{number}.pdf"),
+                                       source=locked.source, title=f"{locked.title} ({number}/{len(ranges)})", queue=False)
+                written.append(part.original_path)
+                # Parts keep what an input rule or the owner already decided about the scan.
+                part.split_parent = locked
+                part.correspondent_id, part.correspondent_origin = locked.correspondent_id, locked.correspondent_origin
+                part.document_type_id, part.document_type_origin = locked.document_type_id, locked.document_type_origin
+                part.save(update_fields=["split_parent", "correspondent", "correspondent_origin", "document_type", "document_type_origin"])
+                DocumentTag.objects.bulk_create([DocumentTag(document=part, tag_id=link.tag_id, origin=link.origin) for link in links], ignore_conflicts=True)
+                if origin:
+                    DocumentEmail.objects.create(document=part, account=origin.account, account_name=origin.account_name, sender=origin.sender,
+                                                 subject=origin.subject, received_at=origin.received_at, message_id=origin.message_id)
+                transaction.on_commit(lambda part_id=str(part.id): process_document.delay(part_id), robust=True)
+            locked.is_split_source = True
+            locked.save(update_fields=["is_split_source"])
+    except Exception:  # noqa: BLE001 - a failed split leaves the scan whole and searchable
+        for path in written:
+            (Path(settings.MEDIA_ROOT) / path).unlink(missing_ok=True)
+        logger.warning("Splitting document %s failed", document.id, exc_info=True)
+        _note(document, "This scan has separator sheets, but Ripiano could not split it. It was kept as one document.")
+        return False
+    document.is_split_source = True
+    return True
+
+
+def apply_barcodes(document, original, pdf, work_dir):
+    """Split at separator sheets, or give this document its ASN and tag barcodes. Never fails processing."""
+    from django.db import IntegrityError
+
+    from .barcodes import scan_image, scan_pdf, split_ranges
+    from .models import Tag, TagOverride
+
+    try:
+        scan = scan_image(original) if document.original_mime.startswith("image/") else scan_pdf(pdf, work_dir)
+    except Exception:  # noqa: BLE001 - barcodes are optional; OCR continues
+        logger.warning("Barcode scan failed for document %s", document.id, exc_info=True)
+        return
+    # Only a document's first processing may split it: reprocessing must never hide a curated document.
+    first_run = document.processed_at is None
+    if (first_run and document.original_mime == "application/pdf" and document.split_parent_id is None
+            and not document.is_split_source and scan.separators):
+        if scan.truncated:
+            _note(document, f"This scan has separator sheets, but only the first {scan.scanned} pages are checked, so it was kept as one document.")
+        else:
+            ranges = split_ranges(scan)
+            if ranges and ranges != [(0, scan.pages)] and _split(document, pdf, ranges):
+                return
+    if document.is_split_source:
+        return
+    suppressed = set(TagOverride.objects.filter(document=document).values_list("tag_id", flat=True))
+    for name in scan.tags:
+        tag = Tag.objects.filter(owner_id=document.owner_id, name__iexact=name).order_by("created_at").first()
+        if tag and tag.id not in suppressed:
+            DocumentTag.objects.get_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.SOURCE})
+    if scan.asn and document.asn is None:
+        try:
+            with transaction.atomic():
+                Document.objects.filter(pk=document.pk, asn__isnull=True).update(asn=scan.asn)
+        except IntegrityError:
+            _note(document, f"Barcode ASN {scan.asn} is already used by another document, so it was not assigned here.")

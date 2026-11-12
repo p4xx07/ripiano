@@ -12,7 +12,27 @@ OFFICE_TYPES = {
     ".xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xl/workbook.xml"),
     ".pptx": ("application/vnd.openxmlformats-officedocument.presentationml.presentation", "ppt/presentation.xml"),
 }
-OFFICE_EXTENSIONS = {mime: extension for extension, (mime, _) in OFFICE_TYPES.items()}
+# OpenDocument packages declare their type in an uncompressed "mimetype" entry.
+ODF_TYPES = {
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+    ".odp": "application/vnd.oasis.opendocument.presentation",
+}
+# Pre-2007 binary Office files are OLE compound documents.
+LEGACY_TYPES = {
+    ".doc": "application/msword",
+    ".xls": "application/vnd.ms-excel",
+    ".ppt": "application/vnd.ms-powerpoint",
+}
+OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
+RTF_TYPE = (".rtf", "application/rtf")
+OFFICE_EXTENSIONS = {
+    **{mime: extension for extension, (mime, _) in OFFICE_TYPES.items()},
+    **{mime: extension for extension, mime in ODF_TYPES.items()},
+    **{mime: extension for extension, mime in LEGACY_TYPES.items()},
+    RTF_TYPE[1]: RTF_TYPE[0],
+}
+CONVERTIBLE_EXTENSIONS = set(OFFICE_EXTENSIONS.values())
 MAX_UNCOMPRESSED_BYTES = 250 * 1024 * 1024
 MAX_CONVERTED_BYTES = 100 * 1024 * 1024
 
@@ -21,23 +41,47 @@ class OfficeConversionError(RuntimeError):
     pass
 
 
-def inspect_office(path, filename):
-    extension = Path(filename).suffix.lower()
-    if extension not in OFFICE_TYPES:
-        return None
-    mime, main_part = OFFICE_TYPES[extension]
+def _inspect_package(path, required, *, mimetype=None):
     try:
         with ZipFile(path) as package:
             entries = package.infolist()
             names = {entry.filename for entry in entries}
-            if not entries or len(entries) > 5000 or "[Content_Types].xml" not in names or main_part not in names:
+            if not entries or len(entries) > 5000 or not required <= names:
                 raise ValueError
             if sum(entry.file_size for entry in entries) > MAX_UNCOMPRESSED_BYTES:
                 raise ValueError
             if any(entry.flag_bits & 1 or entry.filename.lower().endswith("vbaproject.bin") for entry in entries):
                 raise ValueError
-    except (OSError, BadZipFile, ValueError) as exc:
-        raise ValueError("This Office file is invalid, encrypted, or too large to expand") from exc
+            if mimetype is not None and package.read("mimetype").strip() != mimetype.encode():
+                raise ValueError
+            if mimetype is not None and any(name.lower().startswith(("basic/", "scripts/")) for name in names):
+                raise ValueError  # OpenDocument macros or scripts
+            if mimetype is not None and "META-INF/manifest.xml" in names and b"encryption-data" in package.read("META-INF/manifest.xml"):
+                raise ValueError  # OpenDocument password protection
+    except (OSError, BadZipFile, ValueError, KeyError) as exc:
+        raise ValueError("This Office file is invalid, password-protected, contains macros, or is too large to expand") from exc
+
+
+def inspect_office(path, filename):
+    """Return (extension, mime) for a convertible document, None if it is not one, or raise ValueError."""
+    extension = Path(filename).suffix.lower()
+    if extension in ODF_TYPES:
+        _inspect_package(path, {"mimetype", "content.xml"}, mimetype=ODF_TYPES[extension])
+        return extension, ODF_TYPES[extension]
+    if extension in LEGACY_TYPES:
+        with open(path, "rb") as source:
+            if source.read(8) != OLE_MAGIC:
+                raise ValueError("This file does not look like an older Office document")
+        return extension, LEGACY_TYPES[extension]
+    if extension == RTF_TYPE[0]:
+        with open(path, "rb") as source:
+            if not source.read(5).startswith(b"{\\rtf"):
+                raise ValueError("This file does not look like an RTF document")
+        return RTF_TYPE
+    if extension not in OFFICE_TYPES:
+        return None
+    mime, main_part = OFFICE_TYPES[extension]
+    _inspect_package(path, {"[Content_Types].xml", main_part})
     return extension, mime
 
 

@@ -27,6 +27,10 @@ app.conf.beat_schedule = {
         "task": "archive.tasks.reconcile_browse_exports",
         "schedule": 300.0,
     },
+    "poll-mail-accounts": {
+        "task": "archive.tasks.poll_mail_accounts",
+        "schedule": settings.RIPIANO_MAIL_POLL_MINUTES * 60.0,
+    },
     "scheduled-backup": {
         "task": "archive.tasks.backup_archive",
         "schedule": crontab(hour=settings.RIPIANO_BACKUP_HOUR, minute=settings.RIPIANO_BACKUP_MINUTE),

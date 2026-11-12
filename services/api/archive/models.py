@@ -18,6 +18,7 @@ class Document(models.Model):
         TELEGRAM = "telegram", "Telegram"
         ANDROID = "android", "Android scanner"
         FOLDER = "folder", "Watched folder"
+        EMAIL = "email", "Email"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -34,6 +35,7 @@ class Document(models.Model):
         NONE = "none", "Unassigned"
         RULE = "rule", "Matching phrase"
         MANUAL = "manual", "Set by user"
+        SOURCE = "source", "Input rule"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="documents")
@@ -65,10 +67,22 @@ class Document(models.Model):
     action_note = models.CharField(max_length=500, blank=True)
     action_completed_at = models.DateTimeField(null=True, blank=True)
     tags = models.ManyToManyField("Tag", through="DocumentTag", related_name="documents")
+    # Archive serial number: the owner's own running number, often printed as a barcode label.
+    asn = models.PositiveIntegerField(null=True, blank=True)
+    # A scan split at separator sheets stays as the hidden source of its parts.
+    split_parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="split_parts")
+    is_split_source = models.BooleanField(default=False)
+    # The original_* fields always describe the current version; older files live in DocumentVersion.
+    version_number = models.PositiveIntegerField(default=1)
+    version_note = models.CharField(max_length=200, default="Original upload")
+    version_created_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
-        constraints = [models.UniqueConstraint(fields=["owner", "source", "source_ref"], condition=~Q(source_ref=""), name="unique_document_source_ref")]
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "source", "source_ref"], condition=~Q(source_ref=""), name="unique_document_source_ref"),
+            models.UniqueConstraint(fields=["owner", "asn"], condition=Q(asn__isnull=False), name="unique_document_asn_per_owner"),
+        ]
         indexes = [models.Index(fields=["owner", "original_sha256"], name="document_owner_sha_idx")]
 
 
@@ -281,6 +295,7 @@ class DocumentTag(models.Model):
         MANUAL = "manual", "Manual"
         RULE = "rule", "Rule"
         MODEL = "model", "Model"
+        SOURCE = "source", "Input rule"
 
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="tag_links")
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name="document_links")
@@ -394,6 +409,8 @@ class PurgeJob(models.Model):
     original_path = models.CharField(max_length=500, blank=True)
     archive_path = models.CharField(max_length=500, blank=True)
     original_sha256 = models.CharField(max_length=64, blank=True)
+    # Older version files: [{"path": ..., "sha256": ...}]
+    version_files = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
     error = models.CharField(max_length=500, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -431,3 +448,140 @@ class AgentAudit(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class MailAccount(models.Model):
+    """An owner's IMAP mailbox. The secret is encrypted at rest and never returned."""
+
+    class Security(models.TextChoices):
+        SSL = "ssl", "SSL/TLS"
+        STARTTLS = "starttls", "STARTTLS"
+        NONE = "none", "None (local networks only)"
+
+    class Auth(models.TextChoices):
+        PASSWORD = "password", "Password"
+        OAUTH = "oauth", "OAuth"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mail_accounts")
+    name = models.CharField(max_length=100)
+    host = models.CharField(max_length=255)
+    port = models.PositiveIntegerField(default=993)
+    security = models.CharField(max_length=10, choices=Security.choices, default=Security.SSL)
+    username = models.CharField(max_length=255)
+    auth = models.CharField(max_length=10, choices=Auth.choices, default=Auth.PASSWORD)
+    oauth_provider = models.CharField(max_length=20, blank=True)
+    secret = models.TextField(blank=True)
+    enabled = models.BooleanField(default=True)
+    polling_until = models.DateTimeField(null=True, blank=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=300, blank=True)
+    last_imported = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        constraints = [models.UniqueConstraint(Lower("name"), "owner", name="unique_mail_account_name_per_owner")]
+
+
+class MailRule(models.Model):
+    """Which messages to import from one folder, and what to do with them afterwards."""
+
+    class After(models.TextChoices):
+        MARK_READ = "mark_read", "Mark as read"
+        FLAG = "flag", "Flag"
+        MOVE = "move", "Move to folder"
+        NOTHING = "nothing", "Leave unchanged"
+
+    class Title(models.TextChoices):
+        SUBJECT = "subject", "Email subject"
+        FILENAME = "filename", "Attachment name"
+
+    class Consume(models.TextChoices):
+        ATTACHMENTS = "attachments", "Attachments"
+        MESSAGE = "message", "The email itself"
+        BOTH = "both", "Email and attachments"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mail_rules")
+    account = models.ForeignKey(MailAccount, on_delete=models.CASCADE, related_name="rules")
+    name = models.CharField(max_length=100)
+    order = models.PositiveIntegerField(default=0)
+    enabled = models.BooleanField(default=True)
+    folder = models.CharField(max_length=200, default="INBOX")
+    filter_from = models.CharField(max_length=200, blank=True)
+    filter_subject = models.CharField(max_length=200, blank=True)
+    filter_body = models.CharField(max_length=200, blank=True)
+    filter_attachment = models.CharField(max_length=200, blank=True)
+    include_inline = models.BooleanField(default=False)
+    consume = models.CharField(max_length=12, choices=Consume.choices, default=Consume.ATTACHMENTS)
+    max_age_days = models.PositiveIntegerField(default=30)
+    after = models.CharField(max_length=10, choices=After.choices, default=After.MARK_READ)
+    move_to = models.CharField(max_length=200, blank=True)
+    title_from = models.CharField(max_length=10, choices=Title.choices, default=Title.SUBJECT)
+    tags = models.ManyToManyField("Tag", blank=True, related_name="mail_rules")
+    correspondent = models.ForeignKey("Correspondent", null=True, blank=True, on_delete=models.SET_NULL, related_name="mail_rules")
+    document_type = models.ForeignKey("DocumentType", null=True, blank=True, on_delete=models.SET_NULL, related_name="mail_rules")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "created_at", "id"]
+
+
+class ProcessedMail(models.Model):
+    """One handled message per rule, so a mailbox is never imported twice."""
+
+    class Status(models.TextChoices):
+        IMPORTED = "imported", "Imported"
+        NO_MATCH = "no_match", "No usable attachments"
+        SKIPPED = "skipped", "Skipped"
+        FAILED = "failed", "Failed"
+
+    rule = models.ForeignKey(MailRule, on_delete=models.CASCADE, related_name="processed")
+    folder = models.CharField(max_length=200)
+    uid_validity = models.BigIntegerField()
+    uid = models.BigIntegerField()
+    message_id = models.CharField(max_length=300, blank=True)
+    subject = models.CharField(max_length=300, blank=True)
+    sender = models.CharField(max_length=300, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices)
+    detail = models.CharField(max_length=300, blank=True)
+    documents = models.PositiveIntegerField(default=0)
+    processed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-processed_at", "-id"]
+        constraints = [models.UniqueConstraint(fields=["rule", "folder", "uid_validity", "uid"], name="unique_processed_mail")]
+
+
+class DocumentEmail(models.Model):
+    """Where an emailed document came from; kept even if the account is removed."""
+
+    document = models.OneToOneField(Document, on_delete=models.CASCADE, related_name="email")
+    account = models.ForeignKey(MailAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="documents")
+    account_name = models.CharField(max_length=100)
+    sender = models.CharField(max_length=300, blank=True)
+    subject = models.CharField(max_length=300, blank=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+    message_id = models.CharField(max_length=300, blank=True)
+
+
+class DocumentVersion(models.Model):
+    """An earlier file of a document, kept unchanged when a new version replaces it."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="versions")
+    number = models.PositiveIntegerField()
+    note = models.CharField(max_length=200)
+    original_name = models.CharField(max_length=500)
+    original_path = models.CharField(max_length=500)
+    original_mime = models.CharField(max_length=100)
+    original_sha256 = models.CharField(max_length=64)
+    original_size = models.PositiveBigIntegerField()
+    created_at = models.DateTimeField()
+    replaced_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-number"]
+        constraints = [models.UniqueConstraint(fields=["document", "number"], name="unique_document_version_number")]
+

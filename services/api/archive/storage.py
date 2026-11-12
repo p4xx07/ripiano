@@ -6,7 +6,12 @@ from pathlib import Path
 from django.conf import settings
 from PIL import Image, UnidentifiedImageError
 
-from .office import inspect_office
+from .email_render import EML_TYPE, inspect_eml
+from .office import CONVERTIBLE_EXTENSIONS, inspect_office
+
+# Every input channel accepts exactly these file name extensions.
+SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", EML_TYPE[0], *CONVERTIBLE_EXTENSIONS}
+UNSUPPORTED = "Use PDF, JPEG, PNG, an email (.eml), or an Office/OpenDocument/RTF file"
 
 
 class InvalidDocument(ValueError):
@@ -40,7 +45,7 @@ def save_original(upload):
             extension, mime = ".pdf", "application/pdf"
         else:
             try:
-                office = inspect_office(temp_path, upload.name)
+                office = inspect_office(temp_path, upload.name) or inspect_eml(temp_path, upload.name)
             except ValueError as exc:
                 raise InvalidDocument(str(exc)) from exc
             if office:
@@ -51,13 +56,13 @@ def save_original(upload):
                         image.verify()
                         image_format = image.format
                 except (UnidentifiedImageError, OSError, ValueError) as exc:
-                    raise InvalidDocument("Use PDF, JPEG, PNG, DOCX, XLSX, or PPTX") from exc
+                    raise InvalidDocument(UNSUPPORTED) from exc
                 if image_format == "JPEG":
                     extension, mime = ".jpg", "image/jpeg"
                 elif image_format == "PNG":
                     extension, mime = ".png", "image/png"
                 else:
-                    raise InvalidDocument("Use PDF, JPEG, PNG, DOCX, XLSX, or PPTX")
+                    raise InvalidDocument(UNSUPPORTED)
 
         file_id = uuid.uuid4()
         relative = Path("originals") / str(file_id)[:2] / f"{file_id}{extension}"

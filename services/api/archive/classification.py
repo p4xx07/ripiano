@@ -35,7 +35,7 @@ def filing_suggestions(document):
     if len(target) < 2:
         return {"tags": [], "correspondents": [], "document_types": []}
     rows = list(
-        Document.objects.filter(owner_id=document.owner_id, status=Document.Status.READY, trashed_at__isnull=True)
+        Document.objects.filter(owner_id=document.owner_id, status=Document.Status.READY, trashed_at__isnull=True, is_split_source=False)
         .exclude(pk=document.pk)
         .filter(
             Exists(DocumentTag.objects.filter(document=OuterRef("pk"), origin=DocumentTag.Origin.MANUAL))
@@ -128,7 +128,7 @@ def apply_rules(document):
         changes = []
         for kind, field in ((FilingRule.Kind.CORRESPONDENT, "correspondent"), (FilingRule.Kind.DOCUMENT_TYPE, "document_type")):
             origin_field = f"{field}_origin"
-            if getattr(locked, origin_field) == Document.FilingOrigin.MANUAL:
+            if getattr(locked, origin_field) in (Document.FilingOrigin.MANUAL, Document.FilingOrigin.SOURCE):
                 continue
             rule = filing_matches.get(kind)
             target_id = getattr(rule, f"{field}_id") if rule else None

@@ -10,6 +10,7 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.core import signing
+from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import IntegrityError, connection, transaction
 from django.db.models import BigIntegerField, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, prefetch_related_objects
@@ -29,7 +30,7 @@ from .tasks import backup_archive
 
 logger = logging.getLogger(__name__)
 CURSOR_SALT = "ripiano-document-page-v2"
-SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date", "field"}
+SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date", "field", "asn"}
 LIBRARY_SORTS = {"relevance", "newest", "oldest", "document_newest", "document_oldest", "title_asc", "title_desc"}
 
 
@@ -64,6 +65,10 @@ def _parse_search(query):
                     value = date.fromisoformat(value).isoformat()
                 except ValueError as exc:
                     raise ValueError("Use YYYY-MM-DD after date:") from exc
+            if field == "asn":
+                if not re.fullmatch(r"\d{1,9}", value):
+                    raise ValueError("Use a number after asn:")
+                value = str(int(value))
             if field == "field" and ("=" not in value or not all(part.strip() for part in value.split("=", 1))):
                 raise ValueError('Use field:"Name=value" to search a custom field')
             clauses.append((field, value))
@@ -188,6 +193,21 @@ def _document_json(document, query=""):
         "physical_copies": [copy_json(copy) for copy in document.physical_copies.all()],
         "snippet": snippet,
         "snippet_source": snippet_source,
+        "email": _email_json(document),
+        "asn": document.asn,
+        "split_parent": {"id": str(document.split_parent_id), "title": document.split_parent.title} if document.split_parent_id else None,
+        "is_split_source": document.is_split_source,
+    }
+
+
+def _email_json(document):
+    try:
+        origin = document.email
+    except ObjectDoesNotExist:
+        return None
+    return {
+        "account": origin.account_name, "sender": origin.sender, "subject": origin.subject,
+        "received_at": origin.received_at.isoformat() if origin.received_at else None,
     }
 
 
@@ -255,7 +275,10 @@ def documents(request):
         requested_view = request.GET.get("view")
         if requested_view not in (None, "documents", "actions", "exceptions", "trash"):
             return JsonResponse({"error": "Invalid document view"}, status=400)
-        queryset = Document.objects.filter(owner=request.user, trashed_at__isnull=requested_view != "trash").select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location")
+        queryset = Document.objects.filter(owner=request.user, trashed_at__isnull=requested_view != "trash")
+        if requested_view not in ("trash", "exceptions"):
+            # A scan split at separator sheets is reached from its parts; it still shows in Trash and Exceptions.
+            queryset = queryset.filter(is_split_source=False).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location")
         query = request.GET.get("q", "").strip()[:200]
         try:
             free_query, clauses = _parse_search(query)
@@ -342,6 +365,8 @@ def documents(request):
                 queryset = queryset.filter(correspondent__name__icontains=value)
             elif field == "type":
                 queryset = queryset.filter(document_type__name__icontains=value)
+            elif field == "asn":
+                queryset = queryset.filter(asn=int(value))
             elif field == "sticker":
                 queryset = queryset.filter(Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=value)))
             elif field == "field":
@@ -469,7 +494,7 @@ def documents(request):
             scan_id = str(UUID(scan_id))
         except ValueError:
             return JsonResponse({"error": "Invalid scan ID"}, status=400)
-        existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").first()
+        existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location").first()
         if existing:
             if existing.trashed_at:
                 return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
@@ -478,7 +503,7 @@ def documents(request):
         document = ingest_document(request.user, upload, source=Document.Source.ANDROID if scan_id else Document.Source.WEB, source_ref=scan_id)
     except IntegrityError:
         if scan_id:
-            existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").first()
+            existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location").first()
             if existing:
                 if existing.trashed_at:
                     return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
@@ -708,7 +733,7 @@ def document_detail(request, document_id):
     queryset = Document.objects
     if request.method == "PATCH":
         queryset = queryset.select_for_update(of=("self",))
-    document = queryset.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").first()
+    document = queryset.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location").first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if request.method == "PATCH":
@@ -759,6 +784,15 @@ def document_detail(request, document_id):
             except (TypeError, ValueError):
                 return JsonResponse({"error": "Use an ISO due date (YYYY-MM-DD)"}, status=400)
             changes.append("action_due_date")
+        if "asn" in body:
+            asn = body["asn"]
+            if asn is not None and (not isinstance(asn, int) or isinstance(asn, bool) or not 1 <= asn <= 999_999_999):
+                return JsonResponse({"error": "ASN must be a whole number from 1 to 999999999"}, status=400)
+            taken = Document.objects.filter(owner=request.user, asn=asn).exclude(pk=document.pk).first() if asn else None
+            if taken:
+                return JsonResponse({"error": f"ASN {asn} is already used by “{taken.title}”"}, status=409)
+            document.asn = asn
+            changes.append("asn")
         if "action_note" in body:
             if not isinstance(body["action_note"], str) or len(body["action_note"].strip()) > 500:
                 return JsonResponse({"error": "Action note must be at most 500 characters"}, status=400)
@@ -780,6 +814,12 @@ def document_detail(request, document_id):
             chosen = list(Tag.objects.filter(owner=request.user, pk__in=chosen_ids))
             if len(chosen) != len(chosen_ids):
                 return JsonResponse({"error": "Tag not found"}, status=400)
+        if "asn" in changes:
+            try:
+                with transaction.atomic():
+                    Document.objects.filter(pk=document.pk).update(asn=document.asn)
+            except IntegrityError:
+                return JsonResponse({"error": f"ASN {document.asn} is already used by another document"}, status=409)
         with transaction.atomic():
             if changes:
                 document.save(update_fields=changes)
@@ -792,7 +832,7 @@ def document_detail(request, document_id):
                 for tag in chosen:
                     TagOverride.objects.filter(document=document, tag=tag).delete()
                     DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
-        document = Document.objects.filter(pk=document.id).select_related("duplicate_of", "correspondent", "document_type").prefetch_related("tag_links__tag", "physical_copies__location").get()
+        document = Document.objects.filter(pk=document.id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location").get()
     return JsonResponse(_document_json(document))
 
 

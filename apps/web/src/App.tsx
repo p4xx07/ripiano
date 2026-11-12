@@ -11,6 +11,8 @@ import {
   ArrowDownToLine,
   ArrowRight,
   Bot,
+  Layers,
+  Mail,
   Camera,
   Check,
   Clock3,
@@ -40,6 +42,7 @@ import DocumentPanel from "./DocumentPanel";
 import ActionPanel from "./ActionPanel";
 import InboxPanel from "./InboxPanel";
 import AgentPanel from "./AgentPanel";
+import MailPanel from "./MailPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
 import SavedSearchBar from "./SavedSearchBar";
@@ -87,7 +90,7 @@ const emptyLibraryFilters: LibraryFilters = {
 };
 
 function TagSummary({ tags }: { tags: Document["tags"] }) {
-  const priority = { manual: 0, model: 1, rule: 2 };
+  const priority = { manual: 0, source: 1, model: 2, rule: 3 };
   const visibleFirst = [...tags].sort((a, b) =>
     priority[a.origin] - priority[b.origin] || a.name.localeCompare(b.name));
   function chips(limit: number) {
@@ -444,9 +447,17 @@ function App() {
     new URLSearchParams(window.location.search).get("sticker") ?? "";
   const initialLocation =
     new URLSearchParams(window.location.search).get("location") ?? "";
+  const [initialMailNotice] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("mail_connected");
+    const failed = params.get("mail_error");
+    if (!connected && !failed) return null;
+    window.history.replaceState(null, "", window.location.pathname);
+    return failed ? { kind: "error" as const, text: failed } : { kind: "ok" as const, text: connected ?? "" };
+  });
   const [view, setView] = useState<
-    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash"
-  >(initialSticker || initialLocation ? "physical" : "documents");
+    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations"
+  >(initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
   );
@@ -608,6 +619,26 @@ function App() {
       if (result.scheduled) await loadDocuments(query);
     } catch (cause) {
       setBulkError(cause instanceof Error ? cause.message : "Could not start OCR");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function mergeSelected() {
+    if (selectedIds.length < 2) return;
+    setBulkBusy(true);
+    setBulkError("");
+    setBulkNotice("");
+    try {
+      const merged = await request<{ id: string; title: string }>("/api/documents/merge", {
+        method: "POST",
+        body: JSON.stringify({ document_ids: selectedIds }),
+      });
+      setSelectedIds([]);
+      setBulkNotice(`Created “${merged.title}”. The selected documents are unchanged.`);
+      await loadDocuments(query);
+    } catch (cause) {
+      setBulkError(cause instanceof Error ? cause.message : "Could not merge documents");
     } finally {
       setBulkBusy(false);
     }
@@ -890,6 +921,9 @@ function App() {
         >
           <MapPin size={18} /> Paper archive
         </button>
+        <button className={`nav-link ${view === "integrations" ? "active" : ""}`} onClick={() => { setView("integrations"); setMenuOpen(false); }}>
+          <Mail size={18} /> Email
+        </button>
         <button className={`nav-link ${view === "trash" ? "active" : ""}`} onClick={() => { setView("trash"); setMenuOpen(false); }}>
           <Trash2 size={18} /> Trash
         </button>
@@ -957,6 +991,8 @@ function App() {
                 ? "Needs action"
               : view === "trash"
                 ? "Trash"
+              : view === "integrations"
+                ? "Email"
               : view === "tags"
                 ? "Tags & filing"
                 : view === "physical"
@@ -980,6 +1016,8 @@ function App() {
             <TrashPanel refreshKey={trashRefresh} onRestored={() => { void loadDocuments(query); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }} />
           ) : view === "agents" ? (
             <AgentPanel />
+          ) : view === "integrations" ? (
+            <MailPanel notice={initialMailNotice} />
           ) : view === "tags" ? (
             <TagPanel />
           ) : view === "physical" ? (
@@ -1208,6 +1246,16 @@ function App() {
                     </div>
                   </details>
                   <details className="bulk-filing-details">
+                    <summary>Merge into one PDF</summary>
+                    <div className="bulk-filing">
+                      <p>Creates a new document with the pages of the selected documents, in this order. The originals stay as they are.</p>
+                      {selectedIds.length > 1 && <ol className="merge-order">{selectedIds.map((id) => <li key={id}>{documents.find((item) => item.id === id)?.title ?? "Selected document"}</li>)}</ol>}
+                      <Button type="button" variant="secondary" disabled={bulkBusy || selectedIds.length < 2 || selectedIds.length > 50} onClick={() => void mergeSelected()}>
+                        <Layers size={16} /> Merge {selectedIds.length} {selectedIds.length === 1 ? "document" : "documents"}
+                      </Button>
+                    </div>
+                  </details>
+                  <details className="bulk-filing-details">
                     <summary>Export selected</summary>
                     <div className="bulk-filing">
                       <p>Download originals, searchable PDFs, OCR text, and metadata in one ZIP. Select up to 20 documents.</p>
@@ -1407,7 +1455,7 @@ function App() {
               className="visually-hidden"
               tabIndex={-1}
               type="file"
-              accept="application/pdf,image/jpeg,image/png,.docx,.xlsx,.pptx"
+              accept="application/pdf,image/jpeg,image/png,.eml,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.odt,.ods,.odp,.rtf"
               multiple
               onChange={(event) => void upload(event.target.files)}
             />
@@ -1453,7 +1501,7 @@ function App() {
                 </span>
                 <span>
                   <strong>Browse files</strong>
-                  <small>PDF, JPG, PNG, DOCX, XLSX, or PPTX</small>
+                  <small>PDF, JPG, PNG, emails (.eml), and Word, Excel, PowerPoint, OpenDocument, or RTF files</small>
                 </span>
                 <ArrowRight size={18} />
               </button>

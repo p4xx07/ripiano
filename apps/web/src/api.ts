@@ -107,8 +107,8 @@ export type Document = {
   document_date: string | null;
   correspondent: FilingItem | null;
   document_type: FilingItem | null;
-  correspondent_origin: "none" | "rule" | "manual";
-  document_type_origin: "none" | "rule" | "manual";
+  correspondent_origin: "none" | "rule" | "manual" | "source";
+  document_type_origin: "none" | "rule" | "manual" | "source";
   action_status: "none" | "open" | "done";
   action_due_date: string | null;
   action_note: string;
@@ -117,11 +117,15 @@ export type Document = {
     id: string;
     name: string;
     color: string;
-    origin: "manual" | "rule" | "model";
+    origin: "manual" | "rule" | "model" | "source";
   }[];
   physical_copies: PhysicalCopy[];
   snippet: string;
   snippet_source: "document" | "note" | "sticker" | "field" | null;
+  email: { account: string; sender: string; subject: string; received_at: string | null } | null;
+  asn: number | null;
+  split_parent: { id: string; title: string } | null;
+  is_split_source: boolean;
 };
 
 export type FilingSuggestion = {

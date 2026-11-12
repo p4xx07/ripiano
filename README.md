@@ -145,7 +145,7 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 
 ## First implementation slice
 
-The current slice has owner setup and sign-in, PDF/JPEG/PNG/DOCX/XLSX/PPTX upload, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, and tag-changing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags through that grant. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. This is the beginning of the staged implementation, not the complete Paperless feature set. Calibrated pretrained classification, automatic OAuth agent sign-in, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
+The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and Office/OpenDocument/RTF upload, IMAP email intake, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, and tag-changing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags through that grant. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. This is the beginning of the staged implementation, not the complete Paperless feature set. Calibrated pretrained classification, automatic OAuth agent sign-in, and the rest of the [parity matrix](docs/FEATURE_PARITY.md) are still to be built.
 
 ### Run locally
 
@@ -159,7 +159,7 @@ Tags can be grouped under other tags. Create a nested tag from the **Under** pic
 
 For a batch of files, Ripiano continues after an unsupported file and names each rejected file in the result. Accepted files appear in the Library without another filing step.
 
-Word `.docx`, Excel `.xlsx`, and PowerPoint `.pptx` files use the private Gotenberg LibreOffice service in the Compose stack. The original bytes are preserved; a searchable PDF is generated for viewing and search. Older `.doc`, `.xls`, and `.ppt` formats are not accepted yet. Office-derived PDFs currently use normal PDF output because PDF/A conversion damaged extracted text in a real local test. The converter has no published port and does not contact a cloud provider.
+Word `.docx`, Excel `.xlsx`, and PowerPoint `.pptx` files use the private Gotenberg LibreOffice service in the Compose stack. The original bytes are preserved; a searchable PDF is generated for viewing and search. Older binary `.doc`, `.xls`, and `.ppt` files, OpenDocument `.odt`, `.ods`, and `.odp`, and `.rtf` use the same path; files are checked by content, and OpenDocument or OOXML files with macros are refused. Emails (`.eml`) keep the original message and become a searchable PDF of the sender, recipients, date, subject, text, and attachment names. The page is built from escaped text, so remote images, links, scripts, and styles in the message are never loaded. Outlook `.msg` files are not accepted yet. Office-derived PDFs currently use normal PDF output because PDF/A conversion damaged extracted text in a real local test. The converter has no published port and does not contact a cloud provider.
 
 With a hardware keyboard, press **/** to focus Library search from any archive screen, or **N** to open Add. These shortcuts stay inactive while typing or using a dialog.
 
@@ -224,6 +224,36 @@ Each shelf or box also has a stable `L-` code and a printable QR label. Scan it 
 Create a bot with BotFather. Set `RIPIANO_TELEGRAM_BOT_TOKEN` and `RIPIANO_TELEGRAM_OWNER_USERNAME` in `.env`, then run `docker compose --profile telegram up -d`. Send `/start` to the bot in a private chat; it returns your numeric chat ID. Put that ID in `RIPIANO_TELEGRAM_ALLOWED_CHAT_IDS` and restart the Telegram service. You can now send or forward PDF, JPEG, PNG, or photos to the bot. Each accepted file enters the same OCR and search pipeline as web uploads. For multiple people, list IDs separated by commas; all currently file into the configured owner archive. Only private chats are accepted, and the bot exposes no inbound NAS port.
 
 Telegram's [Bot API limits standard bot downloads to 20 MB](https://core.telegram.org/bots/api#getfile). Telegram handles the file before Ripiano downloads it, so use the direct app upload when the document must never pass through Telegram. Updates remain on Telegram for at most 24 hours; prolonged NAS downtime can miss messages. The bot token must remain secret.
+
+### Pages and versions
+
+Open a document and choose **Open pages & versions**:
+- **Edit pages:** rotate, remove, or reorder pages, then **Save as new version**. The previous file is kept as an older version, and the searchable PDF is rebuilt.
+- **Split:** tick "New document after this page" and choose **Split into N documents**. This creates new documents and leaves the original untouched.
+- **Merge:** in Library selection mode, **Merge into one PDF** creates a new document from the selected ones, in the order you selected them.
+- **Upload a new version:** replace the current file with a corrected one.
+- **Older versions:** each can be downloaded or made current again. Making a version current adds a new version, so nothing is lost.
+- **Signed PDFs:** a digitally signed PDF needs explicit confirmation before editing, because the edited version is no longer signed. The signed file remains as an older version.
+- **Non-PDF originals:** page tools work on the searchable PDF.
+
+Document exports include every older version. Only permanent deletion removes version files.
+
+### Barcodes on paper scans
+
+PDF and image scans are checked for QR codes and common 1D barcodes on the NAS. Nothing is sent elsewhere.
+- **Separator sheets:** a sheet with the code `PATCHT` splits a multi-page PDF into separate documents and is itself dropped. The full scan is kept unchanged as the hidden source of its parts; open it from any part with **Open full scan**.
+- **ASN:** a code such as `ASN00042` gives the document archive number 42. Numbers are unique per owner. A clash is recorded as a note on the document instead of being assigned, and you can change the number on the document. Search with `asn:42`.
+- **Tags:** a code such as `TAG:Bills` adds your existing tag "Bills".
+
+Set `RIPIANO_BARCODES=0` to turn this off. `RIPIANO_BARCODE_SEPARATOR`, `RIPIANO_BARCODE_ASN_PREFIX`, and `RIPIANO_BARCODE_TAG_PREFIX` change the codes. Up to 100 pages per file are scanned (`RIPIANO_BARCODE_MAX_PAGES`). Physical-copy stickers remain a separate, stable identity for the paper itself.
+
+### Optional email intake
+
+Open **Email** in the app, connect a mailbox, then add a rule. A rule reads one folder and imports PDF, image, and Office attachments from messages that match its optional sender, subject, text, and file-name filters within a maximum age. After import it can mark the message read, flag it, move it, or leave it unchanged. Ripiano never deletes mail, and each message is handled once per rule even if the read flag is cleared. A rule can add tags, a sender, and a document type; phrase rules do not override them, and you can change them on the document. The maintenance worker checks mailboxes every `RIPIANO_MAIL_POLL_MINUTES` (default 5), and **Check now** runs a check immediately.
+
+Use an IMAP app password where your provider offers one. Passwords and OAuth refresh tokens are encrypted with a key derived from `RIPIANO_SECRET_KEY`. Set `RIPIANO_MAIL_KEY` (a Fernet key) to keep them independent of that secret; changing either key requires entering mailbox passwords again.
+
+Gmail and Outlook can use OAuth instead. Register a web OAuth client with the redirect URI `${RIPIANO_PUBLIC_ORIGIN}/api/mail/oauth/callback`, then set `RIPIANO_GMAIL_OAUTH_CLIENT_ID`/`_SECRET` (Google Cloud: Gmail API, scope `https://mail.google.com/`) or `RIPIANO_OUTLOOK_OAUTH_CLIENT_ID`/`_SECRET` (Microsoft Entra: delegated `IMAP.AccessAsUser.All` and `offline_access`). The matching **Sign in with Google/Microsoft** button appears only when its client is configured. Browser tests use a local GreenMail server: `docker compose -f deploy/compose.mailtest.yaml up -d`.
 
 ### Optional watched folder
 

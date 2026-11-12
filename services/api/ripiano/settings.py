@@ -108,6 +108,8 @@ CELERY_TASK_ROUTES = {
     "archive.tasks.purge_document": {"queue": "maintenance"},
     "archive.tasks.reconcile_purge_jobs": {"queue": "maintenance"},
     "archive.tasks.purge_expired_trash": {"queue": "maintenance"},
+    "archive.tasks.poll_mail_accounts": {"queue": "maintenance"},
+    "archive.tasks.poll_mail_account": {"queue": "maintenance"},
 }
 
 RIPIANO_BACKUP_ROOT = Path(os.environ.get("RIPIANO_BACKUP_ROOT", "/backup"))
@@ -119,4 +121,18 @@ if not 0 <= RIPIANO_BACKUP_HOUR <= 23 or not 0 <= RIPIANO_BACKUP_MINUTE <= 59:
     raise RuntimeError("Backup hour and minute must be valid local times")
 
 RIPIANO_MAX_UPLOAD_BYTES = int(os.environ.get("RIPIANO_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+# Optional Fernet key for stored mailbox secrets; otherwise derived from RIPIANO_SECRET_KEY.
+RIPIANO_MAIL_KEY = os.environ.get("RIPIANO_MAIL_KEY", "")
+RIPIANO_MAIL_OAUTH = {
+    "gmail": (os.environ.get("RIPIANO_GMAIL_OAUTH_CLIENT_ID", ""), os.environ.get("RIPIANO_GMAIL_OAUTH_CLIENT_SECRET", "")),
+    "outlook": (os.environ.get("RIPIANO_OUTLOOK_OAUTH_CLIENT_ID", ""), os.environ.get("RIPIANO_OUTLOOK_OAUTH_CLIENT_SECRET", "")),
+}
+RIPIANO_MAIL_POLL_MINUTES = max(1, int(os.environ.get("RIPIANO_MAIL_POLL_MINUTES", "5")))
+# Paper workflows: separator sheets split scans, ASN labels number documents, TAG: codes add tags.
+RIPIANO_BARCODES = os.environ.get("RIPIANO_BARCODES", "1") == "1"
+RIPIANO_BARCODE_SEPARATOR = os.environ.get("RIPIANO_BARCODE_SEPARATOR", "PATCHT")
+RIPIANO_BARCODE_ASN_PREFIX = os.environ.get("RIPIANO_BARCODE_ASN_PREFIX", "ASN")
+RIPIANO_BARCODE_TAG_PREFIX = os.environ.get("RIPIANO_BARCODE_TAG_PREFIX", "TAG:")
+RIPIANO_BARCODE_MAX_PAGES = max(1, int(os.environ.get("RIPIANO_BARCODE_MAX_PAGES", "100")))
+RIPIANO_BARCODE_DPI = max(72, int(os.environ.get("RIPIANO_BARCODE_DPI", "200")))
 RIPIANO_OCR_LANGUAGES = os.environ.get("RIPIANO_OCR_LANGUAGES", "eng+ita")

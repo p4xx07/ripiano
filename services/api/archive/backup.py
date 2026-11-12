@@ -133,8 +133,8 @@ def _copy_media(stage):
         if not source.is_file():
             continue
         relative = source.relative_to(media_root)
-        if ".pending" in relative.parts:
-            continue
+        if ".pending" in relative.parts or relative.parts[0] == "previews":
+            continue  # unfinished uploads and rebuildable page previews are not backed up
         _valid_relative(relative.as_posix())
         digest = _hash_file(source)
         destination = stage / "media" / relative

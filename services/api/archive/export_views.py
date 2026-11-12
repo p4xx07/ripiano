@@ -40,13 +40,22 @@ def _add_file(bundle, source, name, mime):
 
 
 def _write_files(bundle, document, prefix=""):
-    extension = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", **OFFICE_EXTENSIONS}.get(document.original_mime, ".bin")
+    extension = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "message/rfc822": ".eml", **OFFICE_EXTENSIONS}.get(document.original_mime, ".bin")
     original = _add_file(bundle, _media_path(document.original_path, "originals"), f"{prefix}original{extension}", document.original_mime)
     if original["sha256"] != document.original_sha256 or original["size"] != document.original_size:
         raise ValueError("Original checksum does not match the archive record")
     files = {"original": original}
     if document.status == Document.Status.READY and document.archive_path:
         files["searchable_pdf"] = _add_file(bundle, _media_path(document.archive_path, "archive"), f"{prefix}searchable.pdf", "application/pdf")
+    versions = []
+    for version in document.versions.all():
+        suffix = Path(version.original_name).suffix.lower()[:10] or ".bin"
+        entry = _add_file(bundle, _media_path(version.original_path, "originals"), f"{prefix}versions/v{version.number}{suffix}", version.original_mime)
+        if entry["sha256"] != version.original_sha256:
+            raise ValueError("A stored version does not match its checksum")
+        versions.append({**entry, "number": version.number, "note": version.note, "created_at": version.created_at.isoformat()})
+    if versions:
+        files["previous_versions"] = versions
     if document.extracted_text:
         text = document.extracted_text.encode("utf-8")
         name = f"{prefix}ocr.txt"
@@ -78,6 +87,7 @@ def _metadata(document):
     return {
         "id": str(document.id), "title": document.title,
         "original_name": document.original_name, "source": document.source,
+        "version": {"number": document.version_number, "note": document.version_note},
         "created_at": document.created_at.isoformat(),
         "processed_at": document.processed_at.isoformat() if document.processed_at else None,
         "document_date": document.document_date.isoformat() if document.document_date else None,

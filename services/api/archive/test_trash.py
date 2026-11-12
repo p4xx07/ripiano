@@ -151,3 +151,55 @@ def test_android_retry_cannot_resurrect_a_trashed_scan():
     )
     assert repeated.status_code == 200
     assert repeated.json()["id"] == str(document.id)
+
+@pytest.mark.django_db
+def test_bulk_trash_and_restore_are_atomic_owner_scoped_and_preserve_links():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+
+    def make(name, user=owner, status=Document.Status.READY):
+        return Document.objects.create(
+            owner=user, title=name, original_name=f"{name}.pdf",
+            original_path=f"originals/{name}.pdf", archive_path=f"archive/{name}.pdf",
+            original_mime="application/pdf", original_sha256="a" * 64, original_size=10,
+            status=status,
+        )
+
+    first, second = make("first"), make("second")
+    processing, foreign = make("processing", status=Document.Status.PROCESSING), make("foreign", user=other)
+    note = DocumentNote.objects.create(document=first, author=owner, body="Keep the paper")
+    copy = PhysicalCopy.objects.create(document=first, sticker_code="R-BULK123")
+    client = Client()
+    path = "/api/documents/bulk-trash"
+
+    def submit(action, documents):
+        return client.post(path, json.dumps({
+            "action": action, "document_ids": [str(document.id) for document in documents],
+        }), content_type="application/json")
+
+    assert submit("trash", [first]).status_code == 401
+    client.force_login(owner)
+    assert submit("trash", [first, foreign]).status_code == 404
+    assert submit("trash", [first, processing]).status_code == 409
+    assert submit("restore", [first]).status_code == 409
+    assert submit("trash", [first, first]).status_code == 400
+    first.refresh_from_db()
+    assert first.trashed_at is None
+
+    response = submit("trash", [first, second])
+    assert response.status_code == 200 and response.json()["updated"] == 2
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.trashed_at and second.trashed_at
+    assert first.original_path == "originals/first.pdf" and first.archive_path == "archive/first.pdf"
+    assert DocumentNote.objects.filter(pk=note.pk).exists() and PhysicalCopy.objects.filter(pk=copy.pk).exists()
+    assert client.get(f"/api/stickers/{copy.sticker_code}").status_code == 410
+    assert submit("restore", [first, processing]).status_code == 409
+    first.refresh_from_db()
+    assert first.trashed_at is not None
+    response = submit("restore", [first, second])
+    assert response.status_code == 200 and response.json()["updated"] == 2
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.trashed_at is None and second.trashed_at is None
+    assert client.get(f"/api/stickers/{copy.sticker_code}").status_code == 200

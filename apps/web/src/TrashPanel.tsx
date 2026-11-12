@@ -10,6 +10,8 @@ export default function TrashPanel({ refreshKey, onRestored }: { refreshKey: num
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const load = useCallback(async (cursor?: string) => {
     setLoading(true);
@@ -43,6 +45,27 @@ export default function TrashPanel({ refreshKey, onRestored }: { refreshKey: num
     }
   }
 
+  async function restoreSelected() {
+    if (!selectedIds.length) return;
+    setBusyId("bulk");
+    setError("");
+    setNotice("");
+    try {
+      const result = await request<{ updated: number }>("/api/documents/bulk-trash", {
+        method: "POST",
+        body: JSON.stringify({ action: "restore", document_ids: selectedIds }),
+      });
+      setDocuments((previous) => previous.filter((item) => !selectedIds.includes(item.id)));
+      setSelectedIds([]);
+      setNotice(`Restored ${result.updated} ${result.updated === 1 ? "document" : "documents"} to the Library.`);
+      onRestored();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not restore selected documents");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return <>
     <div className="page-heading trash-heading"><div>
       <div className="eyebrow"><span className="eyebrow-line" /> RECOVER A DOCUMENT</div>
@@ -54,7 +77,19 @@ export default function TrashPanel({ refreshKey, onRestored }: { refreshKey: num
     {notice && <p className="bulk-notice" role="status">{notice}</p>}
     {loading && !documents.length && <p role="status">Loading Trash…</p>}
     {!loading && !documents.length && !error && <div className="empty-state"><div className="empty-icon"><Trash2 size={30} /></div><h3>Trash is empty</h3><p>Documents moved here can be restored from this page.</p></div>}
+    {documents.length > 0 && <div className="bulk-controls">
+      <button type="button" className="text-action" disabled={busyId !== null} onClick={() => { setSelectionMode((current) => !current); setSelectedIds([]); }}>
+        {selectionMode ? "Done selecting" : "Select documents"}
+      </button>
+      {selectionMode && <div className="bulk-actions">
+        <strong>{selectedIds.length} selected</strong>
+        <button type="button" className="text-action" disabled={busyId !== null} onClick={() => setSelectedIds(documents.slice(0, 100).map((document) => document.id))}>Select loaded</button>
+        {selectedIds.length > 0 && <button type="button" className="text-action" disabled={busyId !== null} onClick={() => setSelectedIds([])}>Clear selection</button>}
+        <Button type="button" variant="secondary" disabled={busyId !== null || !selectedIds.length} onClick={() => void restoreSelected()}><RotateCcw size={16} /> Restore selected</Button>
+      </div>}
+    </div>}
     {documents.length > 0 && <div className="document-list">{documents.map((document) => <article className="document-row trash-row" key={document.id}>
+      {selectionMode && <label className="document-select"><input type="checkbox" aria-label={`Select ${document.title}`} checked={selectedIds.includes(document.id)} disabled={busyId !== null || (selectedIds.length >= 100 && !selectedIds.includes(document.id))} onChange={() => setSelectedIds((current) => current.includes(document.id) ? current.filter((id) => id !== document.id) : current.length < 100 ? [...current, document.id] : current)} /></label>}
       <div className="document-icon"><FileText size={21} /></div>
       <div className="document-info"><h3>{document.title}</h3><div className="document-meta">Moved {document.trashed_at ? formatDate(document.trashed_at) : "to Trash"} · {document.original_name}{document.physical_copies.length > 0 && ` · ${document.physical_copies.length} paper ${document.physical_copies.length === 1 ? "copy" : "copies"}`}</div></div>
       <Button type="button" variant="secondary" disabled={busyId !== null} onClick={() => void restore(document)}><RotateCcw size={16} /> {busyId === document.id ? "Restoring…" : "Restore"}</Button>

@@ -570,6 +570,45 @@ def bulk_document_filing(request):
 
 
 @require_http_methods(["POST"])
+def bulk_document_trash(request):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    body = _payload(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    raw_ids = body.get("document_ids")
+    if not isinstance(raw_ids, list) or not 1 <= len(raw_ids) <= 100:
+        return JsonResponse({"error": "Choose 1–100 documents"}, status=400)
+    try:
+        document_ids = {UUID(str(value)) for value in raw_ids}
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid document ID"}, status=400)
+    if len(document_ids) != len(raw_ids):
+        return JsonResponse({"error": "Document IDs must be unique"}, status=400)
+    action = body.get("action")
+    if action not in {"trash", "restore"}:
+        return JsonResponse({"error": "Choose trash or restore"}, status=400)
+    with transaction.atomic():
+        documents_to_change = list(Document.objects.select_for_update().filter(
+            owner=request.user, pk__in=document_ids,
+        ).order_by("pk"))
+        if len(documents_to_change) != len(document_ids):
+            return JsonResponse({"error": "Document not found"}, status=404)
+        if action == "trash":
+            if any(document.trashed_at for document in documents_to_change):
+                return JsonResponse({"error": "A selected document is already in Trash"}, status=409)
+            if any(document.status in {Document.Status.PENDING, Document.Status.PROCESSING} for document in documents_to_change):
+                return JsonResponse({"error": "Wait for processing to finish before moving these documents to Trash"}, status=409)
+            Document.objects.filter(owner=request.user, pk__in=document_ids).update(trashed_at=timezone.now())
+        else:
+            if any(not document.trashed_at for document in documents_to_change):
+                return JsonResponse({"error": "A selected document is not in Trash"}, status=409)
+            Document.objects.filter(owner=request.user, pk__in=document_ids).update(trashed_at=None)
+    return JsonResponse({"updated": len(document_ids), "action": action})
+
+
+@require_http_methods(["POST"])
 def bulk_reprocess_documents(request):
     unauthorized = _unauthorized(request)
     if unauthorized:

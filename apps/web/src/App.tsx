@@ -362,6 +362,7 @@ function App() {
   const [bulkSenderId, setBulkSenderId] = useState("");
   const [bulkTypeId, setBulkTypeId] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [confirmBulkTrash, setConfirmBulkTrash] = useState(false);
   const [bulkError, setBulkError] = useState("");
   const [bulkNotice, setBulkNotice] = useState("");
   const [filterOptions, setFilterOptions] = useState<{ tags: Tag[]; correspondents: FilingItem[]; document_types: FilingItem[]; custom_fields: CustomField[] }>({ tags: [], correspondents: [], document_types: [], custom_fields: [] });
@@ -523,6 +524,30 @@ function App() {
       if (result.scheduled) await loadDocuments(query);
     } catch (cause) {
       setBulkError(cause instanceof Error ? cause.message : "Could not start OCR");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function applyBulkTrash() {
+    if (!selectedIds.length) return;
+    setBulkBusy(true);
+    setBulkError("");
+    setBulkNotice("");
+    try {
+      const result = await request<{ updated: number }>("/api/documents/bulk-trash", {
+        method: "POST",
+        body: JSON.stringify({ action: "trash", document_ids: selectedIds }),
+      });
+      setSelectedIds([]);
+      setConfirmBulkTrash(false);
+      setBulkNotice(`Moved ${result.updated} ${result.updated === 1 ? "document" : "documents"} to Trash. Restore them from Trash if needed.`);
+      await loadDocuments(query);
+      setTrashRefresh((value) => value + 1);
+      setActionRefresh((value) => value + 1);
+      setInboxRefresh((value) => value + 1);
+    } catch (cause) {
+      setBulkError(cause instanceof Error ? cause.message : "Could not move documents to Trash");
     } finally {
       setBulkBusy(false);
     }
@@ -1047,7 +1072,7 @@ function App() {
                 </div>
               )}
               {!listError && (!isEmpty || selectionMode || bulkNotice) && <div className="bulk-controls">
-                <button type="button" className="text-action" disabled={bulkBusy || (isEmpty && !selectionMode)} onClick={() => { setSelectionMode(!selectionMode); setSelectedIds([]); setBulkError(""); setBulkNotice(""); }}>
+                <button type="button" className="text-action" disabled={bulkBusy || (isEmpty && !selectionMode)} onClick={() => { setSelectionMode(!selectionMode); setSelectedIds([]); setConfirmBulkTrash(false); setBulkError(""); setBulkNotice(""); }}>
                   {selectionMode ? "Done selecting" : "Select documents"}
                 </button>
                 {selectionMode && <div className="bulk-actions">
@@ -1088,6 +1113,15 @@ function App() {
                       <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkOcr("rebuild")}>
                         <RotateCcw size={16} /> Rebuild searchable PDFs
                       </Button>
+                    </div>
+                  </details>
+                  <details className="bulk-filing-details" open={confirmBulkTrash} onToggle={(event) => setConfirmBulkTrash(event.currentTarget.open)}>
+                    <summary>Move to Trash</summary>
+                    <div className="bulk-filing">
+                      <p>The selected documents will disappear from search and agent access. Originals, notes, and paper sticker history stay available for restore.</p>
+                      {confirmBulkTrash && <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkTrash()}>
+                        <Trash2 size={16} /> Confirm move of {selectedIds.length}
+                      </Button>}
                     </div>
                   </details>
                 </div>}

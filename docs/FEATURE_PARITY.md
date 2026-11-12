@@ -27,7 +27,7 @@ Milestones: **R1** = safe daily archive; **R2** = full daily workflow and physic
 | Share links, expiring links, bundles, email sending | Off by default, clear preview of recipient reach, expiry and revocation | R3 |
 | REST API, API tokens, documented schema, task/status endpoints | Versioned API and OpenAPI, with permission parity and compatibility tests | R1-R4 |
 | Dashboard, statistics, saved views, system monitoring and task controls | Home shows useful work without setup; advanced monitoring stays available | R2-R4 |
-| Export/import, maintenance, index rebuild, backup/restore | Open manifest and originals; scheduled verified snapshots to mounted volume | R1-R4 |
+| Export/import, maintenance, index rebuild, backup/restore | Open manifest and originals in single-document and selected-document exports; scheduled verified snapshots to mounted volume | R1-R4 |
 | Search, metadata, and interface localization | Italian and English at minimum; no hard-coded text in components | R2-R4 |
 | Keyboard shortcuts and accessible desktop interaction | Common actions and search are keyboard operable; mobile has touch-sized controls | R2-R4 |
 

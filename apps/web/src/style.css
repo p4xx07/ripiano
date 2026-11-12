@@ -408,6 +408,7 @@ button:disabled {
   font-size: var(--type-body);
   font-weight: 700;
   white-space: nowrap;
+  text-decoration: none;
 }
 .button-primary {
   background: var(--color-primary);

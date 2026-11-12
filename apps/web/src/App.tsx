@@ -1144,6 +1144,14 @@ function App() {
                       </Button>
                     </div>
                   </details>
+                  <details className="bulk-filing-details">
+                    <summary>Export selected</summary>
+                    <div className="bulk-filing">
+                      <p>Download originals, searchable PDFs, OCR text, and metadata in one ZIP. Select up to 20 documents.</p>
+                      {selectedIds.length > 20 && <p className="inline-error">Choose 20 or fewer documents for one export.</p>}
+                      {selectedIds.length > 0 && selectedIds.length <= 20 && !bulkBusy && <a className="button button-secondary" href={`/api/documents/export?${new URLSearchParams(selectedIds.map((id) => ["document_ids", id]))}`} download="ripiano-documents.zip"><ArrowDownToLine size={16} /> Download {selectedIds.length} {selectedIds.length === 1 ? "document" : "documents"}</a>}
+                    </div>
+                  </details>
                   <details className="bulk-filing-details" open={confirmBulkTrash} onToggle={(event) => setConfirmBulkTrash(event.currentTarget.open)}>
                     <summary>Move to Trash</summary>
                     <div className="bulk-filing">

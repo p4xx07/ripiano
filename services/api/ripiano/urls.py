@@ -8,6 +8,7 @@ urlpatterns = [
     path("api/setup", views.setup_owner),
     path("api/session", views.session),
     path("api/documents", views.documents),
+    path("api/documents/export", export_views.export_documents),
     path("api/documents/bulk-tags", views.bulk_document_tags),
     path("api/documents/bulk-filing", views.bulk_document_filing),
     path("api/documents/bulk-date", views.bulk_document_date),

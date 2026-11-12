@@ -828,6 +828,55 @@ def test_bulk_filing_is_atomic_owner_scoped_and_resists_rules():
 
 
 @pytest.mark.django_db
+def test_bulk_document_date_updates_filtering_and_rejects_mixed_owner_batches():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+
+    def make(title, user=owner, trashed_at=None):
+        return Document.objects.create(
+            owner=user, title=title, original_name=f"{title}.pdf",
+            original_path=f"originals/{title}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10,
+            status=Document.Status.READY, trashed_at=trashed_at,
+        )
+
+    first, second = make("First"), make("Second")
+    foreign, trashed = make("Foreign", user=other), make("Trashed", trashed_at=timezone.now())
+    client = Client()
+
+    def change(ids, document_date):
+        return client.post("/api/documents/bulk-date", json.dumps({
+            "document_ids": [str(item.id) for item in ids], "document_date": document_date,
+        }), content_type="application/json")
+
+    assert change([first], "2025-04-15").status_code == 401
+    client.force_login(owner)
+    assert change([first, foreign], "2025-04-15").status_code == 404
+    assert change([first, trashed], "2025-04-15").status_code == 404
+    assert change([first, first], "2025-04-15").status_code == 400
+    assert change([], "2025-04-15").status_code == 400
+    for invalid in ("2025-02-30", "20250415", "today", 20250415):
+        assert change([first], invalid).status_code == 400
+    first.refresh_from_db()
+    assert first.document_date is None
+
+    response = change([first, second], "2025-04-15")
+    assert response.status_code == 200
+    assert response.json() == {"updated": 2, "document_date": "2025-04-15"}
+    assert {item["id"] for item in client.get("/api/documents", {"date_from": "2025-04-15", "date_to": "2025-04-15"}).json()["documents"]} == {str(first.id), str(second.id)}
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.document_date == second.document_date == date(2025, 4, 15)
+
+    response = change([first, second], None)
+    assert response.status_code == 200 and response.json()["document_date"] is None
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.document_date is None and second.document_date is None
+    assert client.get("/api/documents", {"date_from": "2025-04-15", "date_to": "2025-04-15"}).json()["documents"] == []
+
+
+@pytest.mark.django_db
 def test_search_does_not_include_partial_matches_for_document_numbers():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     for number in ("AB123", "AB456"):

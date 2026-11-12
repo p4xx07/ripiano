@@ -361,6 +361,7 @@ function App() {
   const [bulkTagId, setBulkTagId] = useState("");
   const [bulkSenderId, setBulkSenderId] = useState("");
   const [bulkTypeId, setBulkTypeId] = useState("");
+  const [bulkDate, setBulkDate] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmBulkTrash, setConfirmBulkTrash] = useState(false);
   const [bulkError, setBulkError] = useState("");
@@ -500,6 +501,26 @@ function App() {
       await loadDocuments(query);
     } catch (cause) {
       setBulkError(cause instanceof Error ? cause.message : "Could not update selected documents");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function applyBulkDate(clear: boolean) {
+    if (!selectedIds.length || (!clear && !bulkDate)) return;
+    setBulkBusy(true);
+    setBulkError("");
+    setBulkNotice("");
+    try {
+      const result = await request<{ updated: number }>("/api/documents/bulk-date", {
+        method: "POST",
+        body: JSON.stringify({ document_ids: selectedIds, document_date: clear ? null : bulkDate }),
+      });
+      setBulkNotice(`${clear ? "Cleared document date" : `Set document date to ${bulkDate}`} for ${result.updated} ${result.updated === 1 ? "document" : "documents"}.`);
+      setSelectedIds([]);
+      await loadDocuments(query);
+    } catch (cause) {
+      setBulkError(cause instanceof Error ? cause.message : "Could not update document dates");
     } finally {
       setBulkBusy(false);
     }
@@ -1102,6 +1123,14 @@ function App() {
                       {filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                     </select>
                     <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTypeId} onClick={() => void applyBulkFiling("document_type")}>Set type</Button>
+                    </div>
+                  </details>
+                  <details className="bulk-filing-details">
+                    <summary>Change document date</summary>
+                    <div className="bulk-filing">
+                      <input type="date" aria-label="Document date for selected documents" value={bulkDate} disabled={bulkBusy} onChange={(event) => setBulkDate(event.target.value)} />
+                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkDate} onClick={() => void applyBulkDate(false)}>Set date</Button>
+                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkDate(true)}>Clear date</Button>
                     </div>
                   </details>
                   <details className="bulk-filing-details">

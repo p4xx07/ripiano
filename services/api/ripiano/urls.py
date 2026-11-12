@@ -10,6 +10,7 @@ urlpatterns = [
     path("api/documents", views.documents),
     path("api/documents/bulk-tags", views.bulk_document_tags),
     path("api/documents/bulk-filing", views.bulk_document_filing),
+    path("api/documents/bulk-date", views.bulk_document_date),
     path("api/documents/bulk-reprocess", views.bulk_reprocess_documents),
     path("api/documents/bulk-trash", views.bulk_document_trash),
     path("api/documents/<uuid:document_id>", views.document_detail),

@@ -570,6 +570,45 @@ def bulk_document_filing(request):
 
 
 @require_http_methods(["POST"])
+def bulk_document_date(request):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    body = _payload(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    raw_ids = body.get("document_ids")
+    if not isinstance(raw_ids, list) or not 1 <= len(raw_ids) <= 100:
+        return JsonResponse({"error": "Choose 1–100 documents"}, status=400)
+    try:
+        document_ids = {UUID(str(value)) for value in raw_ids}
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid document ID"}, status=400)
+    if len(document_ids) != len(raw_ids):
+        return JsonResponse({"error": "Document IDs must be unique"}, status=400)
+    if "document_date" not in body:
+        return JsonResponse({"error": "Choose a document date or clear it"}, status=400)
+    raw_date = body["document_date"]
+    if raw_date is None:
+        document_date = None
+    elif isinstance(raw_date, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_date):
+        try:
+            document_date = date.fromisoformat(raw_date)
+        except ValueError:
+            return JsonResponse({"error": "Use a valid date (YYYY-MM-DD)"}, status=400)
+    else:
+        return JsonResponse({"error": "Use a valid date (YYYY-MM-DD)"}, status=400)
+    with transaction.atomic():
+        documents_to_change = list(Document.objects.select_for_update().filter(
+            owner=request.user, trashed_at__isnull=True, pk__in=document_ids,
+        ).order_by("pk"))
+        if len(documents_to_change) != len(document_ids):
+            return JsonResponse({"error": "Document not found"}, status=404)
+        Document.objects.filter(owner=request.user, trashed_at__isnull=True, pk__in=document_ids).update(document_date=document_date)
+    return JsonResponse({"updated": len(document_ids), "document_date": document_date.isoformat() if document_date else None})
+
+
+@require_http_methods(["POST"])
 def bulk_document_trash(request):
     unauthorized = _unauthorized(request)
     if unauthorized:

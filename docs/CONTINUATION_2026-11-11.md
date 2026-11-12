@@ -1,5 +1,7 @@
 # Ripiano handoff — updated 11 November 2026
 
+Historical snapshot. Continue from [the 12 November handoff](CONTINUATION_2026-11-12.md).
+
 The user asked Codex to continue implementation regularly after the credit balance reset, with periodic GitHub checkpoints and judge-system evidence. Work in the real checkout `/Users/debotta/dbrepos/ripiano`, branch `codex/initial-implementation`, draft PR [#1](https://github.com/p4xx07/ripiano/pull/1). Do not return to the old temporary checkout. The user authorized merging into `main` **when the app is actually done** and its release gates pass; the draft is not at that point.
 
 ## Current checkpoint

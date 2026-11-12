@@ -23,6 +23,7 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>/restore", views.restore_document),
     path("api/documents/<uuid:document_id>/purge", purge_views.purge_document_request),
     path("api/purge-jobs", purge_views.purge_jobs),
+    path("api/trash-retention", purge_views.trash_retention),
     path("api/purge-jobs/<uuid:job_id>/retry", purge_views.retry_purge_job),
     path("api/documents/<uuid:document_id>/notes", views.document_notes),
     path("api/documents/<uuid:document_id>/notes/<uuid:note_id>", views.document_note_detail),

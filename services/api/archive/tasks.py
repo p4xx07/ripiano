@@ -16,8 +16,8 @@ from pypdf import PdfReader
 
 from .backup import BackupError, backup_media_lock, create_snapshot
 from .classification import apply_rules
-from .models import BackupRun, Document, DocumentTag, FilingRule, PurgeJob
-from .purge import remove_job_media
+from .models import BackupRun, Document, DocumentTag, FilingRule, PurgeJob, TrashRetentionPolicy
+from .purge import record_purge, remove_job_media
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,36 @@ def reconcile_purge_jobs():
     ).order_by("created_at").values_list("id", flat=True)[:25])
     for job_id in ids:
         purge_document.delay(str(job_id))
+
+
+@shared_task(name="archive.tasks.purge_expired_trash")
+def purge_expired_trash():
+    """Queue expired Trash items only for owners who opted in."""
+    owner_ids = list(TrashRetentionPolicy.objects.filter(enabled=True).values_list("owner_id", flat=True))
+    for owner_id in owner_ids:
+        for _ in range(1000):
+            try:
+                with transaction.atomic():
+                    policy = TrashRetentionPolicy.objects.select_for_update().get(owner_id=owner_id)
+                    if not policy.enabled:
+                        break
+                    cutoff = timezone.now() - timedelta(days=policy.days)
+                    document = Document.objects.select_for_update().filter(
+                        owner_id=owner_id, trashed_at__lte=cutoff,
+                    ).order_by("trashed_at", "id").first()
+                    if document is None:
+                        break
+                    job = record_purge(document)
+            except TrashRetentionPolicy.DoesNotExist:
+                break
+            except Exception:
+                logger.exception("Automatic Trash cleanup failed for owner %s", owner_id)
+                break
+            try:
+                purge_document.delay(str(job.id))
+            except Exception:
+                # The persisted pending job is retried by reconcile_purge_jobs.
+                logger.exception("Could not queue automatic Trash cleanup %s", job.id)
 
 
 @shared_task(name="archive.tasks.reclassify_owner")

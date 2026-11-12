@@ -21,7 +21,7 @@ Milestones: **R1** = safe daily archive; **R2** = full daily workflow and physic
 | Preview, original/archive download, notes, document history | Show common actions first; retain underlying versions and audit events | R1-R3 |
 | File versions and merge-as-versions | Root metadata with version-specific file/text; explicit selection and history | R3 |
 | PDF rotate, split, merge, reorder, delete pages | Warn when an edit changes an original or invalidates a digital signature | R3 |
-| Bulk edits, retagging, reprocessing, trash/restore | Preview and undo where possible; background job status for long actions | R2-R3 |
+| Bulk edits, retagging, reprocessing, trash/restore, and opt-in retention | Preview and undo where possible; background job status for long actions | R2-R3 |
 | Workflows: consume/add/update/scheduled triggers, filters, assignment/removal, email, webhook, password removal, AI actions | Guided recipes plus full advanced editor; deterministic execution and visible run history | R3-R4 |
 | Users, groups, object permissions, ownership, 2FA, OIDC/remote auth where applicable | Same access behavior across PWA, Android, REST, and MCP; agent grants are additional restrictions | R1-R4 |
 | Share links, expiring links, bundles, email sending | Off by default, clear preview of recipient reach, expiry and revocation | R3 |

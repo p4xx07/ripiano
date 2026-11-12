@@ -6,7 +6,7 @@ from pathlib import Path
 from django.conf import settings
 
 from .backup import _hash_file, _valid_relative
-from .models import Document
+from .models import Document, PhysicalCopy, PurgeJob
 
 
 class PurgeError(RuntimeError):
@@ -51,3 +51,15 @@ def remove_job_media(job):
             os.fsync(parent)
         finally:
             os.close(parent)
+
+
+def record_purge(document):
+    """Remove a locked trashed document and leave a durable media cleanup job."""
+    job = PurgeJob.objects.create(
+        owner=document.owner, document_id=document.id, title=document.title,
+        original_path=document.original_path, archive_path=document.archive_path,
+        original_sha256=document.original_sha256,
+    )
+    PhysicalCopy.objects.filter(document=document).delete()
+    document.delete()
+    return job

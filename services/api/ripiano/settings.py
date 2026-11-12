@@ -104,6 +104,7 @@ CELERY_TASK_ROUTES = {
     "archive.tasks.backup_archive": {"queue": "maintenance"},
     "archive.tasks.purge_document": {"queue": "maintenance"},
     "archive.tasks.reconcile_purge_jobs": {"queue": "maintenance"},
+    "archive.tasks.purge_expired_trash": {"queue": "maintenance"},
 }
 
 RIPIANO_BACKUP_ROOT = Path(os.environ.get("RIPIANO_BACKUP_ROOT", "/backup"))

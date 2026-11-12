@@ -3,6 +3,13 @@ import { FileText, RotateCcw, Trash2, X } from "lucide-react";
 import { Document, formatDate, request } from "./api";
 import { Button, Modal } from "./ui";
 
+type RetentionPolicy = {
+  enabled: boolean;
+  days: number;
+  eligible_count: number;
+  updated_at: string | null;
+};
+
 type PurgeJob = {
   id: string;
   title: string;
@@ -23,6 +30,10 @@ export default function TrashPanel({ refreshKey, onRestored }: { refreshKey: num
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [confirmPurge, setConfirmPurge] = useState<Document | null>(null);
   const [purgeJobs, setPurgeJobs] = useState<PurgeJob[]>([]);
+  const [retention, setRetention] = useState<RetentionPolicy | null>(null);
+  const [retentionDays, setRetentionDays] = useState("90");
+  const [retentionError, setRetentionError] = useState("");
+  const [reviewRetention, setReviewRetention] = useState<RetentionPolicy | null>(null);
 
   const load = useCallback(async (cursor?: string) => {
     setLoading(true);
@@ -48,6 +59,17 @@ export default function TrashPanel({ refreshKey, onRestored }: { refreshKey: num
   }, []);
 
   useEffect(() => { void load(); void loadPurgeJobs(); }, [load, loadPurgeJobs, refreshKey]);
+  const loadRetention = useCallback(async () => {
+    setRetentionError("");
+    try {
+      const policy = await request<RetentionPolicy>("/api/trash-retention");
+      setRetention(policy);
+      setRetentionDays(String(policy.days));
+    } catch (cause) {
+      setRetentionError(cause instanceof Error ? cause.message : "Could not load automatic cleanup settings");
+    }
+  }, []);
+  useEffect(() => { void loadRetention(); }, [loadRetention, refreshKey]);
   useEffect(() => {
     if (!purgeJobs.some((job) => job.status === "pending" || job.status === "running")) return;
     const timer = window.setInterval(() => void loadPurgeJobs(), 5000);
@@ -124,13 +146,48 @@ export default function TrashPanel({ refreshKey, onRestored }: { refreshKey: num
     }
   }
 
+  async function previewRetention() {
+    const days = Number(retentionDays);
+    if (!Number.isInteger(days) || days < 30 || days > 3650) {
+      setRetentionError("Choose between 30 and 3650 days.");
+      return;
+    }
+    setBusyId("retention");
+    setRetentionError("");
+    try {
+      setReviewRetention(await request<RetentionPolicy>(`/api/trash-retention?days=${days}`));
+    } catch (cause) {
+      setRetentionError(cause instanceof Error ? cause.message : "Could not preview automatic cleanup");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function saveRetention(enabled: boolean, days: number) {
+    setBusyId("retention");
+    setRetentionError("");
+    try {
+      const policy = await request<RetentionPolicy>("/api/trash-retention", {
+        method: "PUT", body: JSON.stringify({ enabled, days }),
+      });
+      setRetention(policy);
+      setRetentionDays(String(policy.days));
+      setReviewRetention(null);
+      setNotice(enabled ? `Automatic cleanup is on after ${days} days in Trash.` : "Automatic cleanup is off. Documents stay in Trash until you delete them.");
+    } catch (cause) {
+      setRetentionError(cause instanceof Error ? cause.message : "Could not save automatic cleanup settings");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return <>
     <div className="page-heading trash-heading"><div>
       <div className="eyebrow"><span className="eyebrow-line" /> RECOVER A DOCUMENT</div>
       <h1>Trash<span className="heading-period">.</span></h1>
       <p>Restore a document with its original, notes, tags, and paper stickers.</p>
     </div></div>
-    <div className="section-heading"><div><h2>Moved aside</h2><p>Documents here are hidden from search, downloads, and agents. Nothing is erased automatically.</p></div></div>
+    <div className="section-heading"><div><h2>Moved aside</h2><p>Documents here are hidden from search, downloads, and agents. {retention ? retention.enabled ? `Automatic cleanup is on after ${retention.days} days in Trash.` : "Nothing is erased automatically." : "Review automatic cleanup below."}</p></div></div>
     {error && <div className="inline-error" role="alert">{error} <button type="button" onClick={() => void load()}>Retry</button></div>}
     {notice && <p className="bulk-notice" role="status">{notice}</p>}
     {loading && !documents.length && <p role="status">Loading Trash…</p>}
@@ -154,6 +211,16 @@ export default function TrashPanel({ refreshKey, onRestored }: { refreshKey: num
       <Button type="button" variant="danger" disabled={busyId !== null} onClick={() => setConfirmPurge(document)}><Trash2 size={16} /> Delete permanently</Button>
     </article>)}</div>}
     {nextCursor && <Button type="button" variant="secondary" disabled={loading || busyId !== null} onClick={() => void load(nextCursor)}>Show more</Button>}
+    <section className="trash-retention">
+      <div><h2>Automatic cleanup</h2><p>{retention ? retention.enabled ? `On · Documents left in Trash for ${retention.days} days are deleted daily at 03:00 Europe/Rome.` : "Off · Documents stay in Trash until you delete them." : "Loading automatic cleanup…"}</p></div>
+      <div className="trash-retention-controls">
+        <label>Delete after <input type="number" min="30" max="3650" step="1" inputMode="numeric" value={retentionDays} disabled={!retention || busyId !== null} onChange={(event) => setRetentionDays(event.target.value)} /> days in Trash</label>
+        <Button type="button" variant="secondary" disabled={busyId !== null || !retention || (retention.enabled && Number(retentionDays) === retention.days)} onClick={() => void previewRetention()}>{retention?.enabled ? "Review change" : "Review and enable"}</Button>
+        {retention?.enabled && <Button type="button" variant="secondary" disabled={busyId !== null} onClick={() => void saveRetention(false, retention.days)}>Turn off</Button>}
+      </div>
+      <small>Only documents already in Trash are eligible. The next daily run starts cleanup; existing backups follow their own retention schedule.</small>
+      {retentionError && <p className="inline-error" role="alert">{retentionError} {!retention && <button type="button" onClick={() => void loadRetention()}>Retry</button>}</p>}
+    </section>
     {purgeJobs.length > 0 && <section className="purge-jobs">
       <h2>Recent permanent deletions</h2>
       <p>Live files are removed after any running backup finishes. Existing snapshots may retain them until their retention period ends.</p>
@@ -164,6 +231,16 @@ export default function TrashPanel({ refreshKey, onRestored }: { refreshKey: num
         {job.status === "failed" && <Button type="button" variant="secondary" disabled={busyId !== null} onClick={() => void retryPurge(job)}><RotateCcw size={16} /> Retry cleanup</Button>}
       </li>)}</ul>
     </section>}
+    {reviewRetention && <Modal titleId="retention-title" panelClassName="add-modal purge-modal" onClose={() => { if (!busyId) setReviewRetention(null); }}>
+      <button type="button" className="modal-close" aria-label="Close" disabled={busyId !== null} onClick={() => setReviewRetention(null)}><X size={20} /></button>
+      <h2 id="retention-title">{retention?.enabled ? "Change automatic cleanup?" : "Enable automatic cleanup?"}</h2>
+      <p>Every day at 03:00 Europe/Rome, documents left in Trash for at least {reviewRetention.days} days will be permanently deleted with their paper sticker history. {reviewRetention.eligible_count} {reviewRetention.eligible_count === 1 ? "document is" : "documents are"} eligible now. Older backups may retain copies until their retention period ends.</p>
+      {retentionError && <p className="inline-error" role="alert">{retentionError}</p>}
+      <div className="trash-confirm">
+        <Button type="button" variant="danger" disabled={busyId !== null} onClick={() => void saveRetention(true, reviewRetention.days)}>Confirm automatic cleanup</Button>
+        <Button type="button" variant="secondary" disabled={busyId !== null} onClick={() => setReviewRetention(null)}>Cancel</Button>
+      </div>
+    </Modal>}
     {confirmPurge && <Modal titleId="purge-title" panelClassName="add-modal purge-modal" onClose={() => { if (!busyId) setConfirmPurge(null); }}>
       <button type="button" className="modal-close" aria-label="Close" disabled={busyId !== null} onClick={() => setConfirmPurge(null)}><X size={20} /></button>
       <h2 id="purge-title">Delete permanently?</h2>

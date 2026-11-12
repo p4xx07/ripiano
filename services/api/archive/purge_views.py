@@ -1,12 +1,16 @@
 """Owner-only permanent deletion requests and cleanup status."""
 
+import json
 import logging
+from datetime import timedelta
 
 from django.db import transaction
+from django.utils import timezone
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from .models import Document, PhysicalCopy, PurgeJob
+from .models import Document, PurgeJob, TrashRetentionPolicy
+from .purge import record_purge
 from .tasks import purge_document
 
 logger = logging.getLogger(__name__)
@@ -48,15 +52,7 @@ def purge_document_request(request, document_id):
         ).first()
         if document is None:
             return JsonResponse({"error": "Document not found in Trash"}, status=404)
-        job = PurgeJob.objects.create(
-            owner=request.user, document_id=document.id, title=document.title,
-            original_path=document.original_path, archive_path=document.archive_path,
-            original_sha256=document.original_sha256,
-        )
-        # Physical copies deliberately protect their parent from implicit deletion.
-        # A confirmed purge explicitly retires their stickers and movement history.
-        PhysicalCopy.objects.filter(document=document).delete()
-        document.delete()
+        job = record_purge(document)
     _enqueue(job)
     return JsonResponse(_job_json(job), status=202)
 
@@ -89,3 +85,40 @@ def retry_purge_job(request, job_id):
         job.save(update_fields=["status", "error", "started_at"])
     _enqueue(job)
     return JsonResponse(_job_json(job), status=202)
+
+
+@require_http_methods(["GET", "PUT"])
+def trash_retention(request):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    if request.method == "PUT":
+        try:
+            body = json.loads(request.body)
+        except (ValueError, UnicodeDecodeError):
+            body = None
+        if not isinstance(body, dict) or set(body) != {"enabled", "days"}:
+            return JsonResponse({"error": "Provide enabled and days"}, status=400)
+        enabled, days = body["enabled"], body["days"]
+        if not isinstance(enabled, bool) or isinstance(days, bool) or not isinstance(days, int) or not 30 <= days <= 3650:
+            return JsonResponse({"error": "Choose 30 to 3650 days"}, status=400)
+        with transaction.atomic():
+            policy, _ = TrashRetentionPolicy.objects.select_for_update().get_or_create(owner=request.user)
+            policy.enabled = enabled
+            policy.days = days
+            policy.save(update_fields=["enabled", "days", "updated_at"])
+    else:
+        policy = TrashRetentionPolicy.objects.filter(owner=request.user).first()
+    days = policy.days if policy else 90
+    if request.method == "GET" and "days" in request.GET:
+        raw_days = request.GET["days"]
+        if len(raw_days) > 4 or not raw_days.isascii() or not raw_days.isdigit() or not 30 <= int(raw_days) <= 3650:
+            return JsonResponse({"error": "Choose 30 to 3650 days"}, status=400)
+        days = int(raw_days)
+    cutoff = timezone.now() - timedelta(days=days)
+    return JsonResponse({
+        "enabled": policy.enabled if policy else False,
+        "days": days,
+        "eligible_count": Document.objects.filter(owner=request.user, trashed_at__lte=cutoff).count(),
+        "updated_at": policy.updated_at.isoformat() if policy else None,
+    })

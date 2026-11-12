@@ -325,6 +325,20 @@ class Movement(models.Model):
         ordering = ["-created_at"]
 
 
+class TrashRetentionPolicy(models.Model):
+    """Per-owner opt-in to remove documents left in Trash for a chosen age."""
+
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="trash_retention_policy")
+    enabled = models.BooleanField(default=False)
+    days = models.PositiveSmallIntegerField(default=90)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=Q(days__gte=30, days__lte=3650), name="trash_retention_days_range"),
+        ]
+
+
 class PurgeJob(models.Model):
     """Retryable cleanup record retained after its document row is deleted."""
 

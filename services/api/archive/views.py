@@ -569,6 +569,55 @@ def bulk_document_filing(request):
     return JsonResponse({"updated": len(documents_to_change), "field": field, "value_id": str(value_id) if value_id else None})
 
 
+@require_http_methods(["POST"])
+def bulk_reprocess_documents(request):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    body = _payload(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    raw_ids = body.get("document_ids")
+    if not isinstance(raw_ids, list) or not 1 <= len(raw_ids) <= 100:
+        return JsonResponse({"error": "Choose 1–100 documents"}, status=400)
+    try:
+        document_ids = {UUID(str(value)) for value in raw_ids}
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid document ID"}, status=400)
+    if len(document_ids) != len(raw_ids):
+        return JsonResponse({"error": "Document IDs must be unique"}, status=400)
+    mode = body.get("mode")
+    if mode not in {"retry", "rebuild"}:
+        return JsonResponse({"error": "Choose retry or rebuild"}, status=400)
+    allowed = {Document.Status.FAILED} if mode == "retry" else {Document.Status.READY, Document.Status.FAILED}
+    with transaction.atomic():
+        documents_to_check = list(Document.objects.select_for_update().filter(
+            owner=request.user, trashed_at__isnull=True, pk__in=document_ids,
+        ).order_by("pk"))
+        if len(documents_to_check) != len(document_ids):
+            return JsonResponse({"error": "Document not found"}, status=404)
+        scheduled = []
+        skipped = []
+        for document in documents_to_check:
+            if document.status in allowed:
+                document.status = Document.Status.PENDING
+                document.error = ""
+                document.processing_started_at = None
+                document.save(update_fields=["status", "error", "processing_started_at"])
+                scheduled.append(str(document.id))
+            else:
+                skipped.append(str(document.id))
+    if scheduled:
+        from .tasks import process_document
+
+        for document_id in scheduled:
+            try:
+                process_document.delay(document_id)
+            except Exception:
+                logger.exception("Document processing queue unavailable; pending document will be reconciled: %s", document_id)
+    return JsonResponse({"scheduled": len(scheduled), "skipped": len(skipped), "skipped_ids": skipped, "mode": mode})
+
+
 @transaction.atomic
 @require_http_methods(["GET", "PATCH"])
 def document_detail(request, document_id):

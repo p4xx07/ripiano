@@ -240,6 +240,80 @@ def test_ready_document_can_reprocess_without_changing_original_or_queuing_twice
 
 
 @pytest.mark.django_db
+def test_bulk_ocr_retries_failures_and_rebuilds_ready_documents_without_crossing_owners():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+
+    def make(name, status, owner_id=owner, trashed_at=None):
+        return Document.objects.create(
+            owner=owner_id, title=name, original_name=f"{name}.pdf",
+            original_path=f"originals/{name}.pdf", original_mime="application/pdf",
+            original_sha256="a" * 64, original_size=10, archive_path=f"archive/{name}.pdf",
+            status=status, error="OCR error" if status == Document.Status.FAILED else "",
+            trashed_at=trashed_at,
+        )
+
+    ready = make("ready", Document.Status.READY)
+    failed = make("failed", Document.Status.FAILED)
+    pending = make("pending", Document.Status.PENDING)
+    trashed = make("trashed", Document.Status.READY, trashed_at=timezone.now())
+    foreign = make("foreign", Document.Status.READY, owner_id=other)
+    path = "/api/documents/bulk-reprocess"
+    client = Client()
+
+    def submit(ids, mode="retry"):
+        return client.post(path, json.dumps({"document_ids": [str(item.id) for item in ids], "mode": mode}), content_type="application/json")
+
+    assert submit([failed]).status_code == 401
+    client.force_login(owner)
+    assert submit([ready, foreign], "rebuild").status_code == 404
+    assert submit([ready, trashed], "rebuild").status_code == 404
+    assert submit([ready, ready], "rebuild").status_code == 400
+    assert client.post(path, json.dumps({"document_ids": ["invalid"], "mode": "retry"}), content_type="application/json").status_code == 400
+    assert submit([ready], "invalid").status_code == 400
+    ready.refresh_from_db()
+    assert ready.status == Document.Status.READY
+
+    with patch("archive.tasks.process_document.delay") as enqueue:
+        response = submit([ready, failed, pending])
+    assert response.status_code == 200
+    assert response.json()["scheduled"] == 1 and response.json()["skipped"] == 2
+    assert set(response.json()["skipped_ids"]) == {str(ready.id), str(pending.id)}
+    enqueue.assert_called_once_with(str(failed.id))
+    failed.refresh_from_db()
+    assert failed.status == Document.Status.PENDING and failed.error == ""
+    assert failed.original_path == "originals/failed.pdf"
+    with patch("archive.tasks.process_document.delay") as enqueue:
+        response = submit([ready, failed, pending], "rebuild")
+    assert response.status_code == 200
+    assert response.json()["scheduled"] == 1 and response.json()["skipped"] == 2
+    enqueue.assert_called_once_with(str(ready.id))
+    ready.refresh_from_db()
+    assert ready.status == Document.Status.PENDING and ready.archive_path == "archive/ready.pdf"
+    foreign.refresh_from_db()
+    assert foreign.status == Document.Status.READY
+
+
+@pytest.mark.django_db
+def test_bulk_ocr_pending_work_survives_an_unavailable_queue():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    document = Document.objects.create(
+        owner=owner, title="Failed", original_name="failed.pdf", original_path="originals/failed.pdf",
+        original_mime="application/pdf", original_sha256="a" * 64, original_size=10,
+        status=Document.Status.FAILED, error="OCR error",
+    )
+    client = Client()
+    client.force_login(owner)
+    with patch("archive.tasks.process_document.delay", side_effect=RuntimeError("Broker unavailable")):
+        response = client.post("/api/documents/bulk-reprocess", json.dumps({
+            "document_ids": [str(document.id)], "mode": "retry",
+        }), content_type="application/json")
+    assert response.status_code == 200 and response.json()["scheduled"] == 1
+    document.refresh_from_db()
+    assert document.status == Document.Status.PENDING
+
+
+@pytest.mark.django_db
 def test_follow_ups_are_optional_owner_scoped_and_due_ordered():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     other = get_user_model().objects.create_user("other", password="secure-password-2")

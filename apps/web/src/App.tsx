@@ -504,6 +504,30 @@ function App() {
     }
   }
 
+  async function applyBulkOcr(mode: "retry" | "rebuild") {
+    if (!selectedIds.length) return;
+    setBulkBusy(true);
+    setBulkError("");
+    setBulkNotice("");
+    try {
+      const result = await request<{ scheduled: number; skipped: number; skipped_ids: string[] }>(
+        "/api/documents/bulk-reprocess", {
+          method: "POST",
+          body: JSON.stringify({ mode, document_ids: selectedIds }),
+        },
+      );
+      setSelectedIds(result.skipped_ids);
+      setBulkNotice(result.scheduled
+        ? `Started OCR for ${result.scheduled} ${result.scheduled === 1 ? "document" : "documents"}.${result.skipped ? ` ${result.skipped} still selected because ${result.skipped === 1 ? "it was" : "they were"} not eligible.` : ""}`
+        : "No selected documents are eligible for this OCR action.");
+      if (result.scheduled) await loadDocuments(query);
+    } catch (cause) {
+      setBulkError(cause instanceof Error ? cause.message : "Could not start OCR");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   const loadDocuments = useCallback(async (search: string, cursor: string | null = null) => {
     if (cursor && loadingMoreRef.current) return;
     if (cursor) {
@@ -1053,6 +1077,17 @@ function App() {
                       {filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                     </select>
                     <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTypeId} onClick={() => void applyBulkFiling("document_type")}>Set type</Button>
+                    </div>
+                  </details>
+                  <details className="bulk-filing-details">
+                    <summary>OCR actions</summary>
+                    <div className="bulk-filing">
+                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkOcr("retry")}>
+                        <RotateCcw size={16} /> Retry failed OCR
+                      </Button>
+                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkOcr("rebuild")}>
+                        <RotateCcw size={16} /> Rebuild searchable PDFs
+                      </Button>
                     </div>
                   </details>
                 </div>}

@@ -72,6 +72,22 @@ class Document(models.Model):
         indexes = [models.Index(fields=["owner", "original_sha256"], name="document_owner_sha_idx")]
 
 
+class ShareLink(models.Model):
+    """An expiring bearer link to one preserved original; only its hash is stored."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="share_links")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="share_links")
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["owner", "document", "-created_at"], name="share_owner_doc_recent_idx")]
+
+
 class DocumentNote(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="notes")

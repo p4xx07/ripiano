@@ -24,7 +24,7 @@ Milestones: **R1** = safe daily archive; **R2** = full daily workflow and physic
 | Bulk edits, retagging, reprocessing, trash/restore, and opt-in retention | Preview and undo where possible; background job status for long actions | R2-R3 |
 | Workflows: consume/add/update/scheduled triggers, filters, assignment/removal, email, webhook, password removal, AI actions | Guided recipes plus full advanced editor; deterministic execution and visible run history | R3-R4 |
 | Users, groups, object permissions, ownership, 2FA, OIDC/remote auth where applicable | Same access behavior across PWA, Android, REST, and MCP; agent grants are additional restrictions | R1-R4 |
-| Share links, expiring links, bundles, email sending | Off by default, clear preview of recipient reach, expiry and revocation | R3 |
+| Share links, expiring links, bundles, email sending | Off by default; original-file links expire and can be revoked, while bundles and email sending remain open | R3 |
 | REST API, API tokens, documented schema, task/status endpoints | Versioned API and OpenAPI, with permission parity and compatibility tests | R1-R4 |
 | Dashboard, statistics, saved views, system monitoring and task controls | Home shows useful work without setup; advanced monitoring stays available | R2-R4 |
 | Export/import, maintenance, index rebuild, backup/restore | Open manifest and originals in single-document and selected-document exports; scheduled verified snapshots to mounted volume | R1-R4 |

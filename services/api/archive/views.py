@@ -19,7 +19,7 @@ from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
-from .models import BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, Tag, TagOverride
+from .models import BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, ShareLink, Tag, TagOverride
 from .custom_field_views import normalize_filter_range, normalize_filter_value
 from .physical_views import copy_json
 from .ingestion import ingest_document
@@ -639,7 +639,9 @@ def bulk_document_trash(request):
                 return JsonResponse({"error": "A selected document is already in Trash"}, status=409)
             if any(document.status in {Document.Status.PENDING, Document.Status.PROCESSING} for document in documents_to_change):
                 return JsonResponse({"error": "Wait for processing to finish before moving these documents to Trash"}, status=409)
-            Document.objects.filter(owner=request.user, pk__in=document_ids).update(trashed_at=timezone.now())
+            trashed_at = timezone.now()
+            Document.objects.filter(owner=request.user, pk__in=document_ids).update(trashed_at=trashed_at)
+            ShareLink.objects.filter(document_id__in=document_ids, revoked_at__isnull=True).update(revoked_at=trashed_at)
         else:
             if any(not document.trashed_at for document in documents_to_change):
                 return JsonResponse({"error": "A selected document is not in Trash"}, status=409)
@@ -892,6 +894,7 @@ def trash_document(request, document_id):
             return JsonResponse({"error": "Wait for processing to finish before moving this document to Trash"}, status=409)
         document.trashed_at = timezone.now()
         document.save(update_fields=["trashed_at"])
+        ShareLink.objects.filter(document=document, revoked_at__isnull=True).update(revoked_at=document.trashed_at)
     return JsonResponse({"id": str(document.id), "trashed_at": document.trashed_at.isoformat()})
 
 

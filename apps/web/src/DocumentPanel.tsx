@@ -19,6 +19,7 @@ import { Document, DocumentNote, FilingItem, Location, PhysicalCopy, request, Ta
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 import CustomFieldsPanel from "./CustomFieldsPanel";
+import ShareLinksPanel from "./ShareLinksPanel";
 
 export default function DocumentPanel({
   initial,
@@ -518,6 +519,7 @@ export default function DocumentPanel({
           {(current.status === "pending" || current.status === "processing") && <p className="detail-processing">OCR is being prepared. The original is available above.</p>}
           {current.status === "failed" && current.error && <p className="inline-error">{current.error}</p>}
         </div>
+        <ShareLinksPanel documentId={current.id} />
         <div className="detail-files physical-copies">
           <h3>
             <MapPin size={17} /> Paper copies

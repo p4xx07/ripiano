@@ -118,6 +118,10 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 | --- | --- |
 | ![Desktop Library with two selected documents and a collection ZIP download](qa-artifacts/20261112-collection-export/desktop/selected.png) | ![Mobile Library with two selected documents and a collection ZIP download](qa-artifacts/20261112-collection-export/mobile/selected.png) |
 
+| Expiring share link on desktop | Expiring share link on mobile |
+| --- | --- |
+| ![Desktop document panel showing a one-time original-file link and expiry controls, with the token masked](qa-artifacts/20261112-share-links/desktop/created.png) | ![Mobile document panel showing a one-time original-file link and expiry controls, with the token masked](qa-artifacts/20261112-share-links/mobile/created.png) |
+
 ## Planning documents
 
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
@@ -194,6 +198,8 @@ Under **Custom details**, create a text, number, date, or yes/no field once and 
 The same panel can link related documents. Search for the other document by title or text, then choose **Link**. The connection appears on both documents, so either side opens the other. Moving one document to Trash hides the link until it is restored; its underlying relationship is retained.
 
 Use **Export document ZIP** under Files to download the preserved original, the searchable PDF and OCR text when available, and a readable `manifest.json` with tags, notes, related documents, and paper-copy history. Each file has a SHA-256 checksum in the manifest. In the Library, select up to 20 documents and open **Export selected** to download one collection ZIP. Its root manifest identifies each document and gives checksums for files in stable ID-based folders. A complete archive export/import tool is still planned.
+
+To give someone a document without an account, open **Share original** in its document panel, choose a 1, 7, or 30-day expiry, and create a link. Copy it while it is shown: Ripiano stores only a hash of the token and cannot display that URL later. Anyone with the URL can download the original without signing in. You can revoke an active link at any time; moving a document to Trash revokes its links permanently, even if the document is restored. A link only exposes original file bytes, not notes, tags, OCR text, or the rest of the archive. On a NAS, the recipient must be able to reach the HTTPS `RIPIANO_PUBLIC_ORIGIN`; a Tailscale-only address only works for people on that tailnet.
 
 Move a completed document to **Trash** from its detail panel and restore it later with its original, notes, tags, and sticker history intact. Trashed documents disappear from Library search, Needs action, downloads, and agent tools. A sticker scan explains that its document is in Trash. Processing must finish before a document can be moved. Select documents in the Library to move a batch to Trash after confirmation, and select documents in Trash to restore them together. These actions reject the whole batch if any document is inaccessible or in the wrong state. A confirmed **Delete permanently** action removes the record and paper-copy sticker history, then the maintenance worker removes its live original and archive files after any active backup finishes. Trash shows cleanup status and lets you retry a failed cleanup. Previously completed snapshots may still contain the document until their configured retention expires. Automatic cleanup is off by default. In Trash, choose 30–3650 days and review the current eligible count before enabling a daily 03:00 Europe/Rome cleanup. Disabling it stops future automatic deletions; cleanup already requested still completes.
 

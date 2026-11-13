@@ -777,3 +777,24 @@ class DocumentAccess(models.Model):
             models.UniqueConstraint(fields=["document", "user"], condition=Q(user__isnull=False), name="unique_document_access_user"),
             models.UniqueConstraint(fields=["document", "group"], condition=Q(group__isnull=False), name="unique_document_access_group"),
         ]
+
+
+class FilingModel(models.Model):
+    """A person's learned filing model, rebuilt from their own manual filing. Never shared or exported."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        TRAINING = "training", "Training"
+        READY = "ready", "Ready"
+        NOT_ENOUGH = "not_enough", "Not enough examples"
+        FAILED = "failed", "Failed"
+
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="filing_model")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.QUEUED)
+    payload = models.BinaryField(blank=True, default=b"")
+    metrics = models.JSONField(default=dict, blank=True)
+    examples = models.PositiveIntegerField(default=0)
+    error = models.CharField(max_length=300, blank=True)
+    requested_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    trained_at = models.DateTimeField(null=True, blank=True)

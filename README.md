@@ -306,6 +306,14 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 - **Ending access:** removing a grant, removing someone from the group, turning the account off, or moving the document to Trash all end access immediately.
 - **Passwords:** a password reset ends that person's other sessions and API tokens. API tokens cannot manage people or groups.
 
+### Learned suggestions
+
+Ripiano learns from the senders, document types, and tags you set by hand, on your own server. It learns again every night, or when you press **Tags & filing → Learned suggestions → Learn now**.
+- **When it suggests:** only when it is at least 60% likely to be right. The probability is calibrated on documents the model had not seen.
+- **Never automatic:** suggestions appear in the document dialog with that probability. Nothing changes until you tap one.
+- **Getting started:** it needs at least 3 hand-filed documents each for 2 or more senders (or types), or 3 documents with the same tag.
+- **Privacy:** each person's model uses only their own documents. It is rebuilt rather than exported.
+
 ### Workflows
 
 Open **Workflows** to automate routine filing. A workflow runs:

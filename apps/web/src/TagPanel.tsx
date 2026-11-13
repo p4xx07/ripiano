@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowRight, Plus, Printer, Tag as TagIcon, Trash2, X } from "lucide-react";
 import { MatchMode, matchModes, request, Rule, Tag, tagPathLabel } from "./api";
 import { Button } from "./ui";
+import LearningPanel from "./LearningPanel";
 import FilingVocabularyPanel from "./FilingVocabularyPanel";
 import StoragePathsPanel from "./StoragePathsPanel";
 
@@ -413,6 +414,7 @@ export default function TagPanel() {
       <div className="filing-vocabularies">
         <FilingVocabularyPanel kind="correspondents" />
         <FilingVocabularyPanel kind="document-types" />
+        <LearningPanel />
         <StoragePathsPanel />
       </div>
     </>

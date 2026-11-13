@@ -22,7 +22,7 @@ from django.db import connection, transaction
 FORMAT = "ripiano-export"
 FORMAT_VERSION = 1
 # Runtime bookkeeping (jobs, cursors, audit noise) is not part of the archive.
-SKIPPED = {"InputCursor", "BackupRun", "BrowseExportRun", "PurgeJob"}
+SKIPPED = {"InputCursor", "BackupRun", "BrowseExportRun", "PurgeJob", "FilingModel"}
 
 
 class PortableError(Exception):

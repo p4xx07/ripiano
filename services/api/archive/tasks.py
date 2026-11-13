@@ -520,3 +520,22 @@ def send_document_email(self, send_id):
         logger.warning("Document email %s failed", send_id, exc_info=True)
         return fail("The mail server did not accept the message.")
     DocumentEmailSend.objects.filter(pk=send.pk).update(status=DocumentEmailSend.Status.SENT, detail="")
+
+
+@shared_task(name="archive.tasks.train_filing_model", time_limit=30 * 60)
+def train_filing_model(owner_id):
+    from .learning import train_owner
+
+    train_owner(owner_id)
+
+
+@shared_task(name="archive.tasks.train_filing_models")
+def train_filing_models():
+    """Nightly: retrain for everyone who has filed at least one document by hand."""
+    from django.contrib.auth import get_user_model
+
+    from .learning import has_manual_filing
+
+    for owner_id in get_user_model().objects.filter(is_active=True).values_list("pk", flat=True):
+        if has_manual_filing(owner_id).exists():
+            train_filing_model.delay(owner_id)

@@ -18,7 +18,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Document, DocumentNote, FilingItem, FilingSuggestion, FilingSuggestions, Location, PhysicalCopy, request, Tag, tagPathLabel } from "./api";
+import { Document, DocumentNote, FilingItem, FilingSuggestion, FilingSuggestions, Location, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 import CustomFieldsPanel from "./CustomFieldsPanel";
@@ -472,19 +472,19 @@ export default function DocumentPanel({
               {suggestedTags.map((item) => (
                 <button type="button" disabled={busy} key={`tag-${item.id}`} aria-label={`Add tag: ${item.name}`} aria-describedby={`suggestion-tag-${item.id}`} onClick={() => void acceptSuggestion("tag", item)}>
                   <span className="suggestion-action"><TagIcon size={16} aria-hidden="true" /><span>Add tag: {item.name}</span></span>
-                  <small id={`suggestion-tag-${item.id}`}>Like “{item.example.title}” · shared: {item.shared_terms.join(", ")}</small>
+                  <small id={`suggestion-tag-${item.id}`}>{suggestionBasis(item)}</small>
                 </button>
               ))}
               {suggestedSenders.map((item) => (
                 <button type="button" disabled={busy} key={`sender-${item.id}`} aria-label={`Set sender: ${item.name}`} aria-describedby={`suggestion-sender-${item.id}`} onClick={() => void acceptSuggestion("sender", item)}>
                   <span className="suggestion-action"><Building2 size={16} aria-hidden="true" /><span>Set sender: {item.name}</span></span>
-                  <small id={`suggestion-sender-${item.id}`}>Like “{item.example.title}” · shared: {item.shared_terms.join(", ")}</small>
+                  <small id={`suggestion-sender-${item.id}`}>{suggestionBasis(item)}</small>
                 </button>
               ))}
               {suggestedTypes.map((item) => (
                 <button type="button" disabled={busy} key={`type-${item.id}`} aria-label={`Set type: ${item.name}`} aria-describedby={`suggestion-type-${item.id}`} onClick={() => void acceptSuggestion("type", item)}>
                   <span className="suggestion-action"><FileText size={16} aria-hidden="true" /><span>Set type: {item.name}</span></span>
-                  <small id={`suggestion-type-${item.id}`}>Like “{item.example.title}” · shared: {item.shared_terms.join(", ")}</small>
+                  <small id={`suggestion-type-${item.id}`}>{suggestionBasis(item)}</small>
                 </button>
               ))}
             </section>

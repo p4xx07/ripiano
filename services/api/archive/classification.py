@@ -92,7 +92,46 @@ def filing_suggestions(document):
         ranked = sorted(values.values(), key=lambda item: (-item["similarity"], item["name"], item["id"]))
         cutoff = ranked[0]["similarity"] * 0.8 if ranked else 1
         result[kind] = [item for item in ranked if item["similarity"] >= cutoff][:limits[kind]]
+    _add_learned(document, result, existing | suppressed, limits)
     return result
+
+
+def _add_learned(document, result, skip_tags, limits):
+    """Merge calibrated predictions from the person's learned model, if they trained one."""
+    from .learning import TEXT_CHARS, _load, predict
+    from .models import Correspondent, DocumentType, Tag
+
+    try:
+        model = _load(document.owner_id)
+        if model is None:
+            return
+        # The same text length as training, so the probabilities stay calibrated.
+        text = Document.objects.filter(pk=document.pk).annotate(start=Substr("extracted_text", 1, TEXT_CHARS)).values_list("start", flat=True).first() or ""
+        predictions = predict(document, document.title, text, model)
+    except Exception:  # noqa: BLE001 - a broken model must never hide the document
+        logger.exception("Learned filing model failed for %s", document.pk)
+        return
+    allowed = {
+        "tags": True,
+        "correspondents": document.correspondent_origin == Document.FilingOrigin.NONE,
+        "document_types": document.document_type_origin == Document.FilingOrigin.NONE,
+    }
+    models = {"tags": Tag, "correspondents": Correspondent, "document_types": DocumentType}
+    for kind, items in predictions.items():
+        if not allowed.get(kind) or not items:
+            continue
+        ids = [label for label, _ in items if not (kind == "tags" and label in {str(tag) for tag in skip_tags})]
+        names = {str(pk): name for pk, name in models[kind].objects.filter(owner_id=document.owner_id, pk__in=ids).values_list("pk", "name")}
+        current = {item["id"]: item for item in result.get(kind, [])}
+        for label, probability in items:
+            if label not in names:
+                continue
+            if label in current:
+                current[label]["probability"] = round(probability, 2)
+            else:
+                current[label] = {"id": label, "name": names[label], "example": None, "shared_terms": [], "similarity": None, "probability": round(probability, 2)}
+        ranked = sorted(current.values(), key=lambda item: (-(item.get("probability") or 0), -(item["similarity"] or 0), item["name"], item["id"]))
+        result[kind] = ranked[:limits[kind]]
 
 
 MATCH_MODES = ("phrase", "any", "all", "regex", "fuzzy")

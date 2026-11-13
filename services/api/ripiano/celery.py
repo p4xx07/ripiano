@@ -43,6 +43,10 @@ app.conf.beat_schedule = {
         "task": "archive.tasks.expire_share_bundles",
         "schedule": 3600.0,
     },
+    "train-filing-models": {
+        "task": "archive.tasks.train_filing_models",
+        "schedule": crontab(hour=4, minute=30),
+    },
     "scheduled-backup": {
         "task": "archive.tasks.backup_archive",
         "schedule": crontab(hour=settings.RIPIANO_BACKUP_HOUR, minute=settings.RIPIANO_BACKUP_MINUTE),

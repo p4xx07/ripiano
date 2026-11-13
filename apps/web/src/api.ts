@@ -163,10 +163,18 @@ export type People = { people: Person[]; groups: PersonGroup[]; admin: boolean }
 export type FilingSuggestion = {
   id: string;
   name: string;
-  example: { id: string; title: string };
+  example: { id: string; title: string } | null;
   shared_terms: string[];
-  similarity: number;
+  similarity: number | null;
+  probability?: number;
 };
+
+export function suggestionBasis(item: FilingSuggestion): string {
+  const parts: string[] = [];
+  if (item.probability !== undefined) parts.push(`${Math.round(item.probability * 100)}% likely, learned from your filing`);
+  if (item.example) parts.push(`Like “${item.example.title}”${item.shared_terms.length ? ` · shared: ${item.shared_terms.join(", ")}` : ""}`);
+  return parts.join(" · ");
+}
 
 export type FilingSuggestions = {
   tags: FilingSuggestion[];

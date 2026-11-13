@@ -105,6 +105,8 @@ CELERY_TIMEZONE = "Europe/Rome"
 CELERY_TASK_DEFAULT_QUEUE = "celery"
 CELERY_TASK_ROUTES = {
     "archive.tasks.reclassify_owner": {"queue": "maintenance"},
+    "archive.tasks.train_filing_model": {"queue": "maintenance"},
+    "archive.tasks.train_filing_models": {"queue": "maintenance"},
     "archive.tasks.reclassify_filing_candidates": {"queue": "maintenance"},
     "archive.tasks.reclassify_tag_candidates": {"queue": "maintenance"},
     "archive.tasks.backup_archive": {"queue": "maintenance"},

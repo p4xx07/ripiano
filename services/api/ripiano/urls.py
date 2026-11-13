@@ -9,7 +9,7 @@ admin.site.login = never_cache(lambda request, extra_context=None: redirect("/")
 admin.site.has_permission = admin_has_permission
 from django.urls import path
 
-from archive import agent_views, storage_path_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, link_views, metadata_views, physical_views, purge_views, share_views, views
+from archive import agent_views, storage_path_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
 
 urlpatterns = [
     path("healthz", views.health),
@@ -81,7 +81,9 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>/custom-fields", custom_field_views.document_custom_fields),
     path("api/documents/<uuid:document_id>/custom-fields/<uuid:field_id>", custom_field_views.document_custom_field_detail),
     path("api/backups", views.backups),
+    path("api/backups/<uuid:run_id>/<str:action>", job_views.backup_run_action),
     path("api/browse-exports", browse_views.browse_exports),
+    path("api/browse-exports/<uuid:run_id>/<str:action>", job_views.browse_run_action),
     path("api/tags", metadata_views.tags),
     path("api/tags/<uuid:tag_id>", metadata_views.tag_detail),
     path("api/correspondents", metadata_views.correspondents),

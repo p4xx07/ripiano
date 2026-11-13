@@ -889,6 +889,10 @@ button:disabled {
   background: var(--color-danger-soft);
   color: var(--color-danger);
 }
+.status-cancelled {
+  background: var(--color-surface-tint);
+  color: var(--color-muted);
+}
 .download-link {
   height: 30px;
   width: 30px;
@@ -1387,6 +1391,59 @@ button:disabled {
 }
 .backup-list {
   margin-top: var(--space-5);
+}
+.job-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.job-controls button {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-soft);
+  background: var(--color-surface);
+  color: var(--color-accent-strong);
+  cursor: pointer;
+  padding: var(--space-compact);
+  font: inherit;
+  font-weight: 700;
+  min-height: 40px;
+}
+.job-controls button:hover,
+.job-controls button:focus-visible {
+  border-color: var(--color-primary);
+}
+.job-controls button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+.backup-list .document-info .doc-error,
+.backup-list .document-info .job-running-hint {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.backup-list .status:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+@media (max-width: 570px) {
+  .backup-list .document-row {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+  }
+  .backup-list .document-icon {
+    grid-column: 1;
+  }
+  .backup-list .document-info {
+    grid-column: 2;
+  }
+  .backup-list .status {
+    grid-column: 3;
+  }
+  .backup-list .job-controls {
+    grid-column: 2 / 4;
+  }
 }
 .document-title-button {
   color: inherit;

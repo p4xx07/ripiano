@@ -76,20 +76,26 @@ function AppearanceControl({ preference, onChange }: {
 
 type BackupRun = {
   id: string;
-  status: "pending" | "running" | "complete" | "failed";
+  status: "pending" | "running" | "complete" | "failed" | "cancelled";
   trigger: string;
   snapshot_name: string;
   error: string;
   created_at: string;
+  can_cancel: boolean;
+  can_retry: boolean;
+  retry_of: string | null;
 };
 
 type BrowseExportRun = {
   id: string;
-  status: "pending" | "running" | "complete" | "failed";
+  status: "pending" | "running" | "complete" | "failed" | "cancelled";
   document_count: number;
   folder: string | null;
   error: string;
   created_at: string;
+  can_cancel: boolean;
+  can_retry: boolean;
+  retry_of: string | null;
 };
 
 const emptyLibraryFilters: LibraryFilters = {
@@ -262,6 +268,8 @@ function BackupPanel() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [browseBusy, setBrowseBusy] = useState(false);
+  const [jobBusy, setJobBusy] = useState("");
+  const [jobFocus, setJobFocus] = useState("");
   const load = useCallback(async () => {
     try {
       const [result, browse] = await Promise.all([
@@ -282,6 +290,14 @@ function BackupPanel() {
     const timer = window.setInterval(load, 10000);
     return () => window.clearInterval(timer);
   }, [load]);
+  useEffect(() => {
+    if (!jobFocus) return;
+    const target = document.querySelector<HTMLElement>(`[data-job-focus="${jobFocus}"]`);
+    if (target) {
+      target.focus();
+      setJobFocus("");
+    }
+  }, [jobFocus, runs, browseRuns]);
 
   async function start() {
     setBusy(true);
@@ -308,6 +324,21 @@ function BackupPanel() {
       setError(cause instanceof Error ? cause.message : "Could not build the NAS browse copy");
     } finally {
       setBrowseBusy(false);
+    }
+  }
+
+  async function controlJob(kind: "backup" | "browse", id: string, action: "cancel" | "retry") {
+    setJobBusy(id);
+    setError("");
+    try {
+      const path = kind === "backup" ? "backups" : "browse-exports";
+      const result = await request<{ id: string }>(`/api/${path}/${id}/${action}`, { method: "POST" });
+      await load();
+      setJobFocus(`${kind}-${action === "cancel" ? id + "-retry" : result.id + "-status"}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `Could not ${action} this job`);
+    } finally {
+      setJobBusy("");
     }
   }
 
@@ -364,13 +395,18 @@ function BackupPanel() {
                 <div className="document-icon"><FolderOpen size={20} /></div>
                 <div className="document-info">
                   <h3>{run.folder ? `${run.document_count} ${run.document_count === 1 ? "document" : "documents"} ready on NAS` : `Browse copy ${formatDate(run.created_at)}`}</h3>
-                  <div className="document-meta">Created {formatDate(run.created_at)}</div>
+                  <div className="document-meta">Created {formatDate(run.created_at)}{run.retry_of ? " · Retry" : ""}</div>
                   {run.folder && <p className="browse-folder"><code>{run.folder}</code></p>}
                   {run.error && <p className="doc-error">{run.error}</p>}
+                  {run.status === "running" && <p className="job-running-hint">Finishing safely; active jobs cannot be stopped.</p>}
                 </div>
-                <span className={`status status-${run.status === "complete" ? "ready" : run.status === "failed" ? "failed" : "pending"}`}>
+                <span tabIndex={-1} data-job-focus={`browse-${run.id}-status`} className={`status status-${run.status === "complete" ? "ready" : run.status === "failed" ? "failed" : run.status === "cancelled" ? "cancelled" : "pending"}`}>
                   {run.status === "complete" && !run.folder ? "Removed" : run.status}
                 </span>
+                {(run.can_cancel || (run.can_retry && !browseActive)) && <div className="job-controls">
+                  {run.can_cancel && <button type="button" aria-label={`Cancel queued NAS copy ${run.id.slice(0, 8)}`} disabled={!!jobBusy} onClick={() => void controlJob("browse", run.id, "cancel")}>Cancel queued</button>}
+                  {run.can_retry && !browseActive && <button type="button" data-job-focus={`browse-${run.id}-retry`} aria-label={`Retry NAS copy ${run.id.slice(0, 8)}`} disabled={!!jobBusy} onClick={() => void controlJob("browse", run.id, "retry")}>Try again</button>}
+                </div>}
               </div>
             ))}
           </div>
@@ -400,18 +436,23 @@ function BackupPanel() {
                   {run.snapshot_name ||
                     (run.trigger === "manual"
                       ? "Manual backup"
-                      : "Scheduled backup")}
+                      : run.trigger === "retry" ? "Backup retry" : "Scheduled backup")}
                 </h3>
                 <div className="document-meta">
                   {formatDate(run.created_at)} <span>·</span> {run.trigger}
                 </div>
                 {run.error && <p className="doc-error">{run.error}</p>}
+                {run.status === "running" && <p className="job-running-hint">Finishing safely; active jobs cannot be stopped.</p>}
               </div>
-              <span
-                className={`status status-${run.status === "complete" ? "ready" : run.status === "failed" ? "failed" : "pending"}`}
+              <span tabIndex={-1} data-job-focus={`backup-${run.id}-status`}
+                className={`status status-${run.status === "complete" ? "ready" : run.status === "failed" ? "failed" : run.status === "cancelled" ? "cancelled" : "pending"}`}
               >
                 {run.status}
               </span>
+              {(run.can_cancel || run.can_retry) && <div className="job-controls">
+                {run.can_cancel && <button type="button" aria-label={`Cancel queued backup ${run.id.slice(0, 8)}`} disabled={!!jobBusy} onClick={() => void controlJob("backup", run.id, "cancel")}>Cancel queued</button>}
+                {run.can_retry && <button type="button" data-job-focus={`backup-${run.id}-retry`} aria-label={`Retry backup ${run.id.slice(0, 8)}`} disabled={!!jobBusy} onClick={() => void controlJob("backup", run.id, "retry")}>Try again</button>}
+              </div>}
             </div>
           ))}
         </div>

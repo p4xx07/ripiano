@@ -169,8 +169,10 @@ class BackupRun(models.Model):
         RUNNING = "running", "Running"
         COMPLETE = "complete", "Complete"
         FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    retry_of = models.OneToOneField("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="retry_run")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     trigger = models.CharField(max_length=20, default="schedule")
     snapshot_name = models.CharField(max_length=100, blank=True)
@@ -191,8 +193,10 @@ class BrowseExportRun(models.Model):
         RUNNING = "running", "Running"
         COMPLETE = "complete", "Complete"
         FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    retry_of = models.OneToOneField("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="retry_run")
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="browse_exports")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     folder_name = models.CharField(max_length=100, blank=True)

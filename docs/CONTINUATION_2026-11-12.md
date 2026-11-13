@@ -37,6 +37,7 @@ Work in `/Users/debotta/dbrepos/ripiano` on `codex/initial-implementation`, draf
 - Match modes: `classification.text_matches` (phrase/any/all/regex/fuzzy). Regex uses the `regex` package with a timeout and FULLCASE. `apply_rules` matches before locking.
 - Similar documents: `archive/similar.py` and `/api/documents/<id>/similar`.
 - Storage paths: `archive/storage_paths.py`, `storage_path_views.py`, and `StoragePathsPanel.tsx`. `Document.storage_path` shapes the NAS browse copy. Names are byte-capped and Windows-safe.
+- Backup and NAS browse task controls: owner-only cancellation while queued and retry after failure/cancellation, with a linked new run to preserve history. Workers lock and check status before starting; a reconciler requeues stranded pending backups and marks runs past the worker limit as failed. Controls for OCR and other background jobs remain open.
 - The next session should start from `docs/HANDOFF_2026-11-13.md`.
 - The local Compose test stack is on port 18080. Set both `RIPIANO_PORT=18080` and `RIPIANO_PUBLIC_ORIGIN=http://localhost:18080` for local browser tests; otherwise CSRF origin checking rejects sign-in. The test archives contain synthetic documents. Do not use the former temporary checkout.
 

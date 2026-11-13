@@ -123,10 +123,16 @@ def reconcile_pending_documents():
 
 @shared_task(name="archive.tasks.backup_archive", time_limit=6 * 3600)
 def backup_archive(run_id=None):
-    run = BackupRun.objects.get(pk=run_id) if run_id else BackupRun.objects.create(trigger="schedule")
-    run.status = BackupRun.Status.RUNNING
-    run.started_at = timezone.now()
-    run.save(update_fields=["status", "started_at"])
+    with transaction.atomic():
+        if run_id:
+            run = BackupRun.objects.select_for_update().filter(pk=run_id).first()
+            if run is None or run.status != BackupRun.Status.PENDING:
+                return
+            run.status = BackupRun.Status.RUNNING
+            run.started_at = timezone.now()
+            run.save(update_fields=["status", "started_at"])
+        else:
+            run = BackupRun.objects.create(trigger="schedule", status=BackupRun.Status.RUNNING, started_at=timezone.now())
     try:
         snapshot = create_snapshot()
         run.status = BackupRun.Status.COMPLETE
@@ -139,6 +145,22 @@ def backup_archive(run_id=None):
         run.completed_at = timezone.now()
         run.error = str(exc)[:500]
     run.save(update_fields=["status", "snapshot_name", "completed_at", "error"])
+
+
+@shared_task(name="archive.tasks.reconcile_backup_runs")
+def reconcile_backup_runs():
+    """Recover queued backups and surface workers lost after the six-hour limit."""
+    now = timezone.now()
+    BackupRun.objects.filter(status=BackupRun.Status.RUNNING, started_at__lt=now - timedelta(hours=7)).update(
+        status=BackupRun.Status.FAILED, error="Backup worker stopped before reporting a result", completed_at=now,
+    )
+    stale_before = now - timedelta(minutes=2)
+    for run_id in BackupRun.objects.filter(status=BackupRun.Status.PENDING, created_at__lt=stale_before).values_list("id", flat=True)[:10]:
+        try:
+            backup_archive.delay(str(run_id))
+        except Exception:
+            logger.exception("Backup queue unavailable: %s", run_id)
+            return
 
 
 @shared_task(name="archive.tasks.build_browse_export", time_limit=6 * 3600)

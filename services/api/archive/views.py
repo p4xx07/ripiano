@@ -1036,7 +1036,10 @@ def backups(request):
                 "id": str(run.id), "status": run.status, "trigger": run.trigger,
                 "snapshot_name": run.snapshot_name, "error": run.error,
                 "created_at": run.created_at.isoformat(),
-            } for run in BackupRun.objects.all()[:20]],
+                "can_cancel": run.status == BackupRun.Status.PENDING,
+                "can_retry": run.status in {BackupRun.Status.FAILED, BackupRun.Status.CANCELLED} and not hasattr(run, "retry_run"),
+                "retry_of": str(run.retry_of_id) if run.retry_of_id else None,
+            } for run in BackupRun.objects.select_related("retry_run").all()[:20]],
         })
     run = BackupRun.objects.create(trigger="manual")
     try:

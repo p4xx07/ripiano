@@ -27,6 +27,10 @@ app.conf.beat_schedule = {
         "task": "archive.tasks.reconcile_browse_exports",
         "schedule": 300.0,
     },
+    "reconcile-backup-runs": {
+        "task": "archive.tasks.reconcile_backup_runs",
+        "schedule": 300.0,
+    },
     "poll-mail-accounts": {
         "task": "archive.tasks.poll_mail_accounts",
         "schedule": settings.RIPIANO_MAIL_POLL_MINUTES * 60.0,

@@ -19,6 +19,9 @@ def _run_json(run):
         "id": str(run.id), "status": run.status, "document_count": run.document_count,
         "folder": relative.as_posix() if available else None, "error": run.error,
         "created_at": run.created_at.isoformat(), "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "can_cancel": run.status == BrowseExportRun.Status.PENDING,
+        "can_retry": run.status in {BrowseExportRun.Status.FAILED, BrowseExportRun.Status.CANCELLED} and not hasattr(run, "retry_run"),
+        "retry_of": str(run.retry_of_id) if run.retry_of_id else None,
     }
 
 
@@ -27,7 +30,7 @@ def browse_exports(request):
     if not request.user.is_authenticated or not request.user.is_superuser:
         return JsonResponse({"error": "Owner access required"}, status=403)
     if request.method == "GET":
-        runs = BrowseExportRun.objects.filter(owner=request.user)[:20]
+        runs = BrowseExportRun.objects.filter(owner=request.user).select_related("retry_run")[:20]
         return JsonResponse({"runs": [_run_json(run) for run in runs]})
     with transaction.atomic():
         get_user_model().objects.select_for_update().get(pk=request.user.pk)

@@ -585,3 +585,82 @@ class DocumentVersion(models.Model):
         ordering = ["-number"]
         constraints = [models.UniqueConstraint(fields=["document", "number"], name="unique_document_version_number")]
 
+
+
+class Workflow(models.Model):
+    """An owner's automation: when a trigger fires and the conditions match, apply the actions once."""
+
+    class Trigger(models.TextChoices):
+        ADDED = "added", "Document added"
+        UPDATED = "updated", "Document updated"
+        SCHEDULED = "scheduled", "Days after a date"
+
+    class DateField(models.TextChoices):
+        CREATED = "created", "Added date"
+        DOCUMENT_DATE = "document_date", "Document date"
+        DUE_DATE = "action_due_date", "Follow-up due date"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="workflows")
+    name = models.CharField(max_length=100)
+    enabled = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+    trigger = models.CharField(max_length=10, choices=Trigger.choices)
+    schedule_field = models.CharField(max_length=20, choices=DateField.choices, default=DateField.CREATED)
+    schedule_days = models.IntegerField(default=30)
+    # Conditions (all optional; every set condition must match)
+    filter_sources = models.JSONField(default=list, blank=True)
+    filter_filename = models.CharField(max_length=200, blank=True)
+    filter_text = models.CharField(max_length=200, blank=True)
+    filter_tag = models.ForeignKey("Tag", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    filter_correspondent = models.ForeignKey("Correspondent", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    filter_document_type = models.ForeignKey("DocumentType", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    # Actions
+    add_tags = models.ManyToManyField("Tag", blank=True, related_name="workflows_adding")
+    remove_tags = models.ManyToManyField("Tag", blank=True, related_name="workflows_removing")
+    set_correspondent = models.ForeignKey("Correspondent", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    set_document_type = models.ForeignKey("DocumentType", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    set_needs_action = models.BooleanField(default=False)
+    action_note = models.CharField(max_length=500, blank=True)
+    add_note = models.TextField(blank=True)
+    webhook_url = models.URLField(max_length=500, blank=True)
+    email_to = models.CharField(max_length=500, blank=True)
+    email_attach = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "created_at", "id"]
+
+
+class WorkflowRun(models.Model):
+    class Status(models.TextChoices):
+        APPLIED = "applied", "Applied"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workflow = models.ForeignKey(Workflow, on_delete=models.CASCADE, related_name="runs")
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="workflow_runs")
+    trigger = models.CharField(max_length=10, choices=Workflow.Trigger.choices)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPLIED)
+    detail = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            # "Added" and scheduled workflows act once per document; "updated" may run on every change.
+            models.UniqueConstraint(fields=["workflow", "document", "trigger"], condition=~Q(trigger="updated"), name="workflow_runs_once"),
+        ]
+
+
+class AccountSecurity(models.Model):
+    """Per-person sign-in protection. Secrets are encrypted; recovery codes are stored hashed."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="security")
+    totp_secret = models.TextField(blank=True)
+    pending_secret = models.TextField(blank=True)
+    enabled_at = models.DateTimeField(null=True, blank=True)
+    last_step = models.BigIntegerField(default=0)
+    recovery_hashes = models.JSONField(default=list, blank=True)
+    failed_attempts = models.PositiveIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)

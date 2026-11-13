@@ -35,6 +35,7 @@ def process_document(document_id):
         document.processing_started_at = timezone.now()
         document.error = ""
         document.save(update_fields=["status", "processing_started_at", "error"])
+    first_run = document.processed_at is None
 
     media_root = Path(settings.MEDIA_ROOT)
     original = media_root / document.original_path
@@ -99,6 +100,13 @@ def process_document(document_id):
         apply_rules(document)
     except Exception:
         logger.exception("Automatic filing failed for document %s", document.id)
+    if first_run and not document.is_split_source:
+        try:
+            from .workflows import run_for_document
+
+            run_for_document(document, "added")
+        except Exception:
+            logger.exception("Workflows failed for document %s", document.id)
 
 
 @shared_task(name="archive.tasks.reconcile_pending_documents")
@@ -408,3 +416,20 @@ def apply_barcodes(document, original, pdf, work_dir):
                 Document.objects.filter(pk=document.pk, asn__isnull=True).update(asn=scan.asn)
         except IntegrityError:
             _note(document, f"Barcode ASN {scan.asn} is already used by another document, so it was not assigned here.")
+
+
+@shared_task(name="archive.tasks.send_workflow_notifications", soft_time_limit=40, time_limit=60)
+def send_workflow_notifications(run_id):
+    from .models import WorkflowRun
+    from .workflows import send_notifications
+
+    run = WorkflowRun.objects.select_related("workflow", "document__correspondent", "document__document_type").filter(pk=run_id).first()
+    if run:
+        send_notifications(run)
+
+
+@shared_task(name="archive.tasks.run_scheduled_workflows")
+def run_scheduled_workflows():
+    from .workflows import run_scheduled
+
+    return run_scheduled()

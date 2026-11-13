@@ -1,12 +1,28 @@
 from django.contrib import admin
+from django.shortcuts import redirect
+from django.views.decorators.cache import never_cache
+
+from archive.two_factor import admin_has_permission
+
+# The admin has no password form of its own: sign in through Ripiano (with two-step sign-in), then open /admin/.
+admin.site.login = never_cache(lambda request, extra_context=None: redirect("/"))
+admin.site.has_permission = admin_has_permission
 from django.urls import path
 
-from archive import agent_views, mail_views, version_views, browse_views, custom_field_views, export_views, link_views, metadata_views, physical_views, purge_views, share_views, views
+from archive import agent_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, link_views, metadata_views, physical_views, purge_views, share_views, views
 
 urlpatterns = [
     path("healthz", views.health),
     path("api/setup", views.setup_owner),
     path("api/session", views.session),
+    path("api/account/security", security_views.security),
+    path("api/account/security/setup", security_views.security_setup),
+    path("api/account/security/enable", security_views.security_enable),
+    path("api/account/security/disable", security_views.security_disable),
+    path("api/account/security/recovery-codes", security_views.security_recovery_codes),
+    path("api/workflows", workflow_views.workflows),
+    path("api/workflows/<uuid:workflow_id>", workflow_views.workflow_detail),
+    path("api/workflows/<uuid:workflow_id>/run", workflow_views.workflow_run_now),
     path("api/mail", mail_views.mail_overview),
     path("api/mail/accounts", mail_views.mail_accounts),
     path("api/mail/accounts/<uuid:account_id>", mail_views.mail_account_detail),

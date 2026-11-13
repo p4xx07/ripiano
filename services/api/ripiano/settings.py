@@ -93,6 +93,10 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 
 CELERY_BROKER_URL = os.environ.get("RIPIANO_BROKER_URL", "redis://localhost:6379/0")
+# Shared cache (sign-in throttling) in the same Valkey as the queue when the stack provides it.
+if os.environ.get("RIPIANO_BROKER_URL"):
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache",
+                          "LOCATION": os.environ["RIPIANO_BROKER_URL"].rsplit("/", 1)[0] + "/1", "KEY_PREFIX": "ripiano"}}
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 3600
@@ -109,6 +113,8 @@ CELERY_TASK_ROUTES = {
     "archive.tasks.reconcile_purge_jobs": {"queue": "maintenance"},
     "archive.tasks.purge_expired_trash": {"queue": "maintenance"},
     "archive.tasks.poll_mail_accounts": {"queue": "maintenance"},
+    "archive.tasks.send_workflow_notifications": {"queue": "maintenance"},
+    "archive.tasks.run_scheduled_workflows": {"queue": "maintenance"},
     "archive.tasks.poll_mail_account": {"queue": "maintenance"},
 }
 
@@ -135,4 +141,16 @@ RIPIANO_BARCODE_ASN_PREFIX = os.environ.get("RIPIANO_BARCODE_ASN_PREFIX", "ASN")
 RIPIANO_BARCODE_TAG_PREFIX = os.environ.get("RIPIANO_BARCODE_TAG_PREFIX", "TAG:")
 RIPIANO_BARCODE_MAX_PAGES = max(1, int(os.environ.get("RIPIANO_BARCODE_MAX_PAGES", "100")))
 RIPIANO_BARCODE_DPI = max(72, int(os.environ.get("RIPIANO_BARCODE_DPI", "200")))
+# Optional outgoing mail for workflow emails.
+EMAIL_HOST = os.environ.get("RIPIANO_SMTP_HOST", "")
+EMAIL_PORT = int(os.environ.get("RIPIANO_SMTP_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("RIPIANO_SMTP_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("RIPIANO_SMTP_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("RIPIANO_SMTP_SECURITY", "starttls") == "starttls"
+EMAIL_USE_SSL = os.environ.get("RIPIANO_SMTP_SECURITY", "starttls") == "ssl"
+EMAIL_TIMEOUT = 20
+DEFAULT_FROM_EMAIL = os.environ.get("RIPIANO_SMTP_FROM", "ripiano@localhost")
+# Webhooks to LAN services (e.g. home automation) must be allowed explicitly.
+RIPIANO_WEBHOOK_ALLOW_PRIVATE = os.environ.get("RIPIANO_WEBHOOK_ALLOW_PRIVATE", "0") == "1"
+RIPIANO_EMAIL_ATTACH_MAX_BYTES = int(os.environ.get("RIPIANO_EMAIL_ATTACH_MAX_BYTES", str(10 * 1024 * 1024)))
 RIPIANO_OCR_LANGUAGES = os.environ.get("RIPIANO_OCR_LANGUAGES", "eng+ita")

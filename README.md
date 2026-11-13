@@ -225,6 +225,51 @@ Create a bot with BotFather. Set `RIPIANO_TELEGRAM_BOT_TOKEN` and `RIPIANO_TELEG
 
 Telegram's [Bot API limits standard bot downloads to 20 MB](https://core.telegram.org/bots/api#getfile). Telegram handles the file before Ripiano downloads it, so use the direct app upload when the document must never pass through Telegram. Updates remain on Telegram for at most 24 hours; prolonged NAS downtime can miss messages. The bot token must remain secret.
 
+### Move to a new server
+
+`docker compose exec maintenance_worker .venv/bin/python manage.py export_archive /backup/export-2026-11` writes a portable folder:
+- `manifest.json` lists every account, document, tag, note, paper copy, workflow, and setting, with stable IDs.
+- `media/` holds every original, older version, and searchable PDF, each listed with its SHA-256.
+
+On the new server, start an empty stack, copy the folder to a mounted path, and run `manage.py import_archive /path/to/export --yes`. The import refuses a non-empty instance, and it refuses any file whose checksum differs from the export.
+- **Passwords:** account passwords carry over.
+- **Encrypted secrets:** mailbox and two-step secrets decrypt only with the same `RIPIANO_MAIL_KEY` or `RIPIANO_SECRET_KEY`.
+- **Not exported:** backup history, cleanup jobs, and input cursors.
+
+Scheduled snapshots (see Backups) remain the disaster-recovery path. This export is for moving or upgrading.
+
+### Two-step sign-in
+
+Open **Security**, confirm your password, and scan the QR code with any authenticator app. After that, Ripiano asks for a 6-digit code after your password.
+- **Recovery codes:** you get 10 single-use codes for a lost phone. They are shown once and stored hashed.
+- **Lockout:** after 5 wrong codes, code entry locks for 15 minutes.
+- **Storage:** the authenticator secret is encrypted with the same key as mailbox passwords (`RIPIANO_MAIL_KEY`, or one derived from `RIPIANO_SECRET_KEY`). When rotating it, keep the old key listed after the new one in `RIPIANO_MAIL_KEY`.
+- **Agents:** agent tokens are separate and unaffected.
+- **Admin:** Django admin (`/admin/`) has no separate password form. Sign in to Ripiano first, then open it.
+- **Throttling:** failed sign-ins are limited per username and per client address.
+- **Lost phone, no recovery codes:** run `manage.py reset_two_factor <username>`.
+
+### Workflows
+
+Open **Workflows** to automate routine filing. A workflow runs:
+- when a document is added (after its first processing);
+- when you change a document;
+- or each morning for documents a chosen number of days after their added date, document date, or follow-up due date.
+
+**Conditions** are optional and can combine words in the title or OCR text, a tag, a sender, a type, a file-name pattern, and where the document came from.
+
+**Actions** can:
+- add or remove tags;
+- set a sender or type, but never over one you chose yourself;
+- mark the document as needing action;
+- add a note;
+- call a webhook;
+- send an email.
+
+**Run history:** added and scheduled workflows act once per document, and every run is listed with what it changed.
+
+**Notifications:** webhooks and emails include the title, tags, sender, type, and a link, never the OCR text. An email attaches the original only when you tick the option, up to `RIPIANO_EMAIL_ATTACH_MAX_BYTES` (10 MB by default). Webhooks to private, loopback, or link-local addresses are refused unless `RIPIANO_WEBHOOK_ALLOW_PRIVATE=1`, for example for home automation on your LAN. Each webhook call has a 15-second limit. Notes, webhooks, and emails happen once per workflow and document, and "updated" workflows run only after title, date, sender, type, or tag changes. A completed follow-up is never reopened. A new scheduled workflow applies to documents that become due after it was created. Email needs `RIPIANO_SMTP_HOST`, `RIPIANO_SMTP_PORT`, `RIPIANO_SMTP_USER`, `RIPIANO_SMTP_PASSWORD`, `RIPIANO_SMTP_SECURITY` (`starttls`, `ssl`, or `none`), and `RIPIANO_SMTP_FROM`.
+
 ### Pages and versions
 
 Open a document and choose **Open pages & versions**:

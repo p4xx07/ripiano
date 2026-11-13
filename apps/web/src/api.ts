@@ -166,6 +166,12 @@ function csrfToken() {
   );
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public data: Record<string, unknown>) {
+    super(message);
+  }
+}
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -185,7 +191,7 @@ export async function request<T>(
   });
   const result = await response.json();
   if (!response.ok)
-    throw new Error(result.error ?? `Request failed (${response.status})`);
+    throw new ApiError(result.error ?? `Request failed (${response.status})`, response.status, result);
   return result as T;
 }
 

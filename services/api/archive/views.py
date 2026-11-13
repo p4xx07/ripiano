@@ -21,7 +21,11 @@ from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
 from .models import BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, ShareLink, Tag, TagOverride
+from . import two_factor
+from .throttle import record_sign_in_failure, sign_in_blocked, sign_in_throttle_key
 from .classification import filing_suggestions
+from .models import Workflow
+from .workflows import run_for_document
 from .custom_field_views import normalize_filter_range, normalize_filter_value
 from .physical_views import copy_json
 from .ingestion import ingest_document
@@ -257,10 +261,23 @@ def session(request):
     body = _payload(request)
     if not body:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
+    throttle_key = sign_in_throttle_key(request, body.get("username"))
+    if sign_in_blocked(throttle_key):
+        return JsonResponse({"error": "Too many sign-in attempts. Wait a few minutes and try again."}, status=429)
     user = authenticate(request, username=body.get("username"), password=body.get("password"))
     if user is None:
+        record_sign_in_failure(throttle_key)
         return JsonResponse({"error": "Invalid credentials"}, status=401)
+    if two_factor.is_enabled(user):
+        code = str(body.get("code") or "").strip()
+        if not code:
+            return JsonResponse({"error": "Enter the 6-digit code from your authenticator app", "two_factor_required": True}, status=401)
+        ok, message = two_factor.verify(user, code)
+        if not ok:
+            record_sign_in_failure(throttle_key)
+            return JsonResponse({"error": message, "two_factor_required": True}, status=401)
     login(request, user)
+    request.session[two_factor.SESSION_FLAG] = True
     return JsonResponse({"authenticated": True, "username": user.get_username()})
 
 
@@ -275,10 +292,11 @@ def documents(request):
         requested_view = request.GET.get("view")
         if requested_view not in (None, "documents", "actions", "exceptions", "trash"):
             return JsonResponse({"error": "Invalid document view"}, status=400)
-        queryset = Document.objects.filter(owner=request.user, trashed_at__isnull=requested_view != "trash")
+        queryset = Document.objects.filter(owner=request.user, trashed_at__isnull=requested_view != "trash").select_related(
+            "duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location")
         if requested_view not in ("trash", "exceptions"):
             # A scan split at separator sheets is reached from its parts; it still shows in Trash and Exceptions.
-            queryset = queryset.filter(is_split_source=False).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location")
+            queryset = queryset.filter(is_split_source=False)
         query = request.GET.get("q", "").strip()[:200]
         try:
             free_query, clauses = _parse_search(query)
@@ -832,6 +850,10 @@ def document_detail(request, document_id):
                 for tag in chosen:
                     TagOverride.objects.filter(document=document, tag=tag).delete()
                     DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
+        # Filing changes trigger "updated" workflows; follow-up, ASN, and review clicks do not.
+        if set(changes) & {"title", "document_date", "correspondent", "document_type"} or chosen is not None:
+            # Workflow actions run after the owner's own change and never re-trigger themselves.
+            run_for_document(document, Workflow.Trigger.UPDATED)
         document = Document.objects.filter(pk=document.id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location").get()
     return JsonResponse(_document_json(document))
 

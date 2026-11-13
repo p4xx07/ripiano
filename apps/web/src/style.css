@@ -3292,3 +3292,55 @@ button:disabled {
   font-size: var(--type-small);
   overflow-wrap: anywhere;
 }
+.workflow-choices {
+  display: grid;
+  gap: var(--space-1);
+}
+.workflow-choices > span {
+  color: var(--color-heading);
+  font-size: var(--type-label);
+  font-weight: 600;
+}
+.agent-create-card textarea {
+  width: 100%;
+  font: inherit;
+}
+.agent-events .text-action {
+  padding: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.mail-oauth .button {
+  white-space: normal;
+  text-align: left;
+  justify-content: flex-start;
+  height: auto;
+  min-height: 44px;
+}
+.workflow-remove summary {
+  color: var(--color-heading);
+  font-size: var(--type-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.security-qr {
+  display: grid;
+  place-items: center;
+  margin: var(--space-3) 0;
+}
+.security-qr svg {
+  width: 196px;
+  height: 196px;
+  background: #ffffff;
+  border-radius: var(--radius-soft);
+}
+.security-secret,
+.security-recovery code {
+  overflow-wrap: anywhere;
+  font-size: var(--type-body);
+}
+.security-recovery ol {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-1);
+}

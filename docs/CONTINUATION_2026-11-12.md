@@ -12,6 +12,22 @@ Work in `/Users/debotta/dbrepos/ripiano` on `codex/initial-implementation`, draf
 - More formats: legacy DOC/XLS/PPT (OLE signature check), OpenDocument ODT/ODS/ODP (declared mimetype; macros refused), RTF, and EML. An EML is titled by its subject and rendered to a searchable PDF from escaped text only. Mail rules can import attachments, the email itself, or both. One shared extension list now drives web upload, the watched folder, and mail attachments. Real conversion of .doc, .odt, and .eml passed in desktop and mobile journeys (`e2e/formats.spec.ts`).
 - Barcodes: `archive/barcodes.py` rasterizes up to 100 pages with Ghostscript and decodes with zxing-cpp. Separator pages split a PDF into parts (`split_parent`); the source keeps `is_split_source` and is excluded from Library, MCP search, and filing suggestions. ASN is unique per owner, editable in the document dialog, and searchable with `asn:`. TAG: codes add existing tags with origin `source`. Fixtures `barcode-batch-*.pdf` drive `e2e/barcodes.spec.ts`.
 - Versions and page tools: `Document.original_*` always describe the current version, and `DocumentVersion` keeps older files. `archive/versions.py` implements adding, restoring, page editing, splitting into new documents, and merging. The endpoints are in `version_views.py`. Page previews are Ghostscript PNGs cached under `previews/`. Purge jobs carry `version_files`, and exports include `versions/`. The UI is `PagesPanel.tsx` in the document dialog plus a Library bulk "Merge into one PDF".
+- Workflows:
+  - Code: `archive/workflows.py` (engine), `workflow_views.py` (API), and `WorkflowsPanel.tsx` (UI).
+  - Triggers: "added" runs after a document's first processing, "updated" after a document PATCH, and "scheduled" from a daily beat task at 06:15.
+  - Runs: `WorkflowRun` keeps the history; added and scheduled runs are unique per workflow and document.
+  - Notifications: webhooks and emails go out on the maintenance queue and carry metadata only.
+  - Deep links: `/?document=<id>` opens a document.
+- Two-step sign-in:
+  - Code: `archive/two_factor.py`, `security_views.py`, and `SecurityPanel.tsx`.
+  - Admin access needs a session from Ripiano's sign-in.
+  - Sign-in is throttled using the Valkey cache.
+  - `reset_two_factor` is the operator escape hatch.
+  - Browser test `e2e/two-factor.spec.ts` needs its own disposable non-admin account via `RIPIANO_E2E_2FA_USERNAME/PASSWORD`.
+- Portable export/import:
+  - Commands: `export_archive <dir>` and `import_archive <dir> --yes` (`archive/portable.py`).
+  - A live check exported the local stack (2,850 documents, 5,713 checksum-verified files, 143 MB).
+  - Importing it into a fresh PostgreSQL 17 reproduced the same document, tag-link, paper-copy, and account counts, and new rows got fresh sequence IDs.
 - The local Compose test stack is on port 18080. Set both `RIPIANO_PORT=18080` and `RIPIANO_PUBLIC_ORIGIN=http://localhost:18080` for local browser tests; otherwise CSRF origin checking rejects sign-in. The test archives contain synthetic documents. Do not use the former temporary checkout.
 
 - Selected-document collection export packages up to 20 documents with original checksums, available searchable PDFs, OCR text, and metadata in a stable ZIP layout. Owner/Trash isolation and changed-file rejection are tested; desktop/mobile download journeys and screenshots are in `qa-artifacts/20261112-collection-export`.

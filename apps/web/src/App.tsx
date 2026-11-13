@@ -13,6 +13,8 @@ import {
   Bot,
   Layers,
   Mail,
+  ShieldCheck,
+  Workflow,
   Camera,
   Check,
   Clock3,
@@ -37,12 +39,14 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { CustomField, Document, FilingItem, formatDate, LibraryFilters, request, Session, Tag, tagPathLabel } from "./api";
+import { ApiError, CustomField, Document, FilingItem, formatDate, LibraryFilters, request, Session, Tag, tagPathLabel } from "./api";
 import DocumentPanel from "./DocumentPanel";
 import ActionPanel from "./ActionPanel";
 import InboxPanel from "./InboxPanel";
 import AgentPanel from "./AgentPanel";
 import MailPanel from "./MailPanel";
+import WorkflowsPanel from "./WorkflowsPanel";
+import SecurityPanel from "./SecurityPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
 import SavedSearchBar from "./SavedSearchBar";
@@ -134,6 +138,8 @@ function AuthScreen({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [setupKey, setSetupKey] = useState("");
+  const [code, setCode] = useState("");
+  const [needsCode, setNeedsCode] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -148,10 +154,18 @@ function AuthScreen({
           username,
           password,
           ...(setup ? { setup_key: setupKey } : {}),
+          ...(needsCode ? { code } : {}),
         }),
       });
       onAuthenticated(await request<Session>("/api/session"));
     } catch (cause) {
+      if (cause instanceof ApiError && cause.data.two_factor_required) {
+        if (!needsCode) {
+          setNeedsCode(true);
+          return;
+        }
+        setCode("");
+      }
       setError(cause instanceof Error ? cause.message : "Could not sign in");
     } finally {
       setBusy(false);
@@ -181,7 +195,7 @@ function AuthScreen({
             <input
               autoComplete="username"
               value={username}
-              onChange={(event) => setUsername(event.target.value)}
+              onChange={(event) => { setUsername(event.target.value); setNeedsCode(false); setCode(""); }}
               required
             />
           </Field>
@@ -195,6 +209,20 @@ function AuthScreen({
               required
             />
           </Field>
+          {needsCode && <p className="visually-hidden" role="status">Two-step sign-in is on. Enter the code from your authenticator app.</p>}
+          {needsCode && (
+            <Field label="Authenticator code" hint="The 6-digit code from your authenticator app, or a recovery code">
+              <input
+                autoComplete="one-time-code"
+                inputMode="text"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                maxLength={32}
+                autoFocus
+                required
+              />
+            </Field>
+          )}
           {setup && (
             <Field label="Setup key">
               <input
@@ -456,7 +484,7 @@ function App() {
     return failed ? { kind: "error" as const, text: failed } : { kind: "ok" as const, text: connected ?? "" };
   });
   const [view, setView] = useState<
-    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations"
+    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations" | "workflows" | "security"
   >(initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
@@ -471,6 +499,18 @@ function App() {
   const loadingMoreRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const focusSearchOnView = useRef(false);
+
+  // Links from workflow emails and webhooks open one document: /?document=<id>
+  useEffect(() => {
+    if (!session) return;
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("document");
+    if (!id) return;
+    params.delete("document");
+    window.history.replaceState(null, "", `${window.location.pathname}${params.size ? `?${params}` : ""}${window.location.hash}`);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return;
+    void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch(() => setError("That document is not available."));
+  }, [session]);
 
   useEffect(() => {
     if (view === "documents" && focusSearchOnView.current) {
@@ -921,6 +961,12 @@ function App() {
         >
           <MapPin size={18} /> Paper archive
         </button>
+        <button className={`nav-link ${view === "workflows" ? "active" : ""}`} onClick={() => { setView("workflows"); setMenuOpen(false); }}>
+          <Workflow size={18} /> Workflows
+        </button>
+        <button className={`nav-link ${view === "security" ? "active" : ""}`} onClick={() => { setView("security"); setMenuOpen(false); }}>
+          <ShieldCheck size={18} /> Security
+        </button>
         <button className={`nav-link ${view === "integrations" ? "active" : ""}`} onClick={() => { setView("integrations"); setMenuOpen(false); }}>
           <Mail size={18} /> Email
         </button>
@@ -993,6 +1039,10 @@ function App() {
                 ? "Trash"
               : view === "integrations"
                 ? "Email"
+              : view === "workflows"
+                ? "Workflows"
+              : view === "security"
+                ? "Security"
               : view === "tags"
                 ? "Tags & filing"
                 : view === "physical"
@@ -1016,6 +1066,10 @@ function App() {
             <TrashPanel refreshKey={trashRefresh} onRestored={() => { void loadDocuments(query); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }} />
           ) : view === "agents" ? (
             <AgentPanel />
+          ) : view === "security" ? (
+            <SecurityPanel />
+          ) : view === "workflows" ? (
+            <WorkflowsPanel onOpenDocument={(id) => void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch((cause) => setError(cause.message))} />
           ) : view === "integrations" ? (
             <MailPanel notice={initialMailNotice} />
           ) : view === "tags" ? (

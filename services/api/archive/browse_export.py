@@ -20,7 +20,7 @@ from .storage_paths import fit_bytes, render
 
 logger = logging.getLogger(__name__)
 ORIGINAL_EXTENSIONS = {
-    "application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "message/rfc822": ".eml", **OFFICE_EXTENSIONS,
+    "application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "message/rfc822": ".eml", "application/vnd.ms-outlook": ".msg", **OFFICE_EXTENSIONS,
 }
 
 

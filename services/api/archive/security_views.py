@@ -23,6 +23,31 @@ def _body(request):
     return value if isinstance(value, dict) else None
 
 
+def _password_ok(request, password):
+    """Check the person's password with the same throttle as sign-in."""
+    from .throttle import record_sign_in_failure, sign_in_blocked, sign_in_throttle_key
+
+    keys = sign_in_throttle_key(request, request.user.get_username())
+    if sign_in_blocked(keys):
+        return False, JsonResponse({"error": "Too many attempts. Wait a few minutes and try again."}, status=429)
+    if not request.user.check_password(str(password or "")):
+        record_sign_in_failure(keys)
+        return False, JsonResponse({"error": "Your password is not correct"}, status=400)
+    return True, None
+
+
+def _sign_out_other_sessions(request):
+    """End every other session of this person (their other devices must sign in again with a code)."""
+    from django.contrib.sessions.models import Session
+    from django.utils import timezone
+
+    current = request.session.session_key
+    user_id = str(request.user.pk)
+    for session in Session.objects.filter(expire_date__gt=timezone.now()).iterator():
+        if session.session_key != current and str(session.get_decoded().get("_auth_user_id")) == user_id:
+            session.delete()
+
+
 def _status(user):
     return {"two_factor": two_factor.is_enabled(user), "recovery_remaining": two_factor.remaining_recovery_codes(user)}
 
@@ -39,8 +64,9 @@ def security_setup(request):
     if denied:
         return denied
     body = _body(request) or {}
-    if not request.user.check_password(str(body.get("password", ""))):
-        return JsonResponse({"error": "Your password is not correct"}, status=400)
+    ok, refused = _password_ok(request, body.get("password"))
+    if not ok:
+        return refused
     if two_factor.is_enabled(request.user):
         return JsonResponse({"error": "Two-step sign-in is already on"}, status=409)
     secret = two_factor.begin_setup(request.user)
@@ -56,13 +82,15 @@ def security_enable(request):
     codes = two_factor.finish_setup(request.user, str((_body(request) or {}).get("code", "")))
     if codes is None:
         return JsonResponse({"error": "That code is not valid. Check the time on your phone and try the newest code."}, status=400)
+    _sign_out_other_sessions(request)
     return JsonResponse({**_status(request.user), "recovery_codes": codes})
 
 
 def _confirm(request):
     body = _body(request) or {}
-    if not request.user.check_password(str(body.get("password", ""))):
-        return JsonResponse({"error": "Your password is not correct"}, status=400)
+    ok, refused = _password_ok(request, body.get("password"))
+    if not ok:
+        return refused
     ok, message = two_factor.verify(request.user, str(body.get("code", "")))
     if not ok:
         return JsonResponse({"error": message}, status=400)

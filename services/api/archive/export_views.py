@@ -40,7 +40,7 @@ def _add_file(bundle, source, name, mime):
 
 
 def _write_files(bundle, document, prefix=""):
-    extension = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "message/rfc822": ".eml", **OFFICE_EXTENSIONS}.get(document.original_mime, ".bin")
+    extension = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "message/rfc822": ".eml", "application/vnd.ms-outlook": ".msg", **OFFICE_EXTENSIONS}.get(document.original_mime, ".bin")
     original = _add_file(bundle, _media_path(document.original_path, "originals"), f"{prefix}original{extension}", document.original_mime)
     if original["sha256"] != document.original_sha256 or original["size"] != document.original_size:
         raise ValueError("Original checksum does not match the archive record")

@@ -234,7 +234,7 @@ export default function PagesPanel({ documentId, ready, editable, onChanged, onO
           </ul>
           <label className={`pages-upload button button-secondary${busy || !editable ? " is-disabled" : ""}`}>
             <Upload size={16} aria-hidden="true" /> Upload a new version
-            <input className="visually-hidden" type="file" accept="application/pdf,image/jpeg,image/png,.eml,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.odt,.ods,.odp,.rtf"
+            <input className="visually-hidden" type="file" accept="application/pdf,image/jpeg,image/png,.eml,.msg,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.odt,.ods,.odp,.rtf"
               disabled={busy || !editable} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) uploadVersion(file); }} />
           </label>
         </div>

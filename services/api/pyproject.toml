@@ -11,6 +11,7 @@ dependencies = [
   "httpx>=0.28,<0.29",
   "mcp==2.3.0",
   "ocrmypdf>=17.12,<18",
+  "olefile>=0.47",
   "pillow>=11,<13",
   "psycopg[binary]>=3.3,<3.4",
   "pypdf>=6,<7",

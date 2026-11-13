@@ -15,10 +15,10 @@ def ingest_document(owner, upload, *, source=Document.Source.WEB, source_ref="",
     """Shared durable entry point for browser and external document inputs."""
     original_path, mime, digest, size = save_original(upload)
     name = Path(upload.name).name[:500]
-    if not title and mime == EML_TYPE[1]:
+    if not title and mime in (EML_TYPE[1], "application/vnd.ms-outlook"):
         try:
             title = subject_of(Path(settings.MEDIA_ROOT) / original_path)
-        except OSError:
+        except Exception:  # noqa: BLE001 - a title is optional; never fail an upload over it
             title = ""
     try:
         document = Document.objects.create(

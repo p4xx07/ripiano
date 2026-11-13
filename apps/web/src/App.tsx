@@ -1520,7 +1520,7 @@ function App() {
               className="visually-hidden"
               tabIndex={-1}
               type="file"
-              accept="application/pdf,image/jpeg,image/png,.eml,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.odt,.ods,.odp,.rtf"
+              accept="application/pdf,image/jpeg,image/png,.eml,.msg,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.odt,.ods,.odp,.rtf"
               multiple
               onChange={(event) => void upload(event.target.files)}
             />
@@ -1566,7 +1566,7 @@ function App() {
                 </span>
                 <span>
                   <strong>Browse files</strong>
-                  <small>PDF, JPG, PNG, emails (.eml), and Word, Excel, PowerPoint, OpenDocument, or RTF files</small>
+                  <small>PDF, JPG, PNG, emails (.eml, .msg), and Word, Excel, PowerPoint, OpenDocument, or RTF files</small>
                 </span>
                 <ArrowRight size={18} />
               </button>

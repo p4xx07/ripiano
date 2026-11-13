@@ -55,6 +55,7 @@ def test_two_step_sign_in_setup_login_recovery_and_lockout():
     assert other.post("/api/session", {"username": "owner", "password": "wrong-password", "code": future}, content_type="application/json").json()["error"] == "Invalid credentials"
 
     AccountSecurity.objects.filter(user=user).update(locked_until=None)
+    __import__("django.core.cache", fromlist=["cache"]).cache.clear()  # the attempts above also count toward the password throttle
     later = two_factor._code(setup["secret"], int(time.time() // 30) + 1)
     with patch("archive.two_factor.time.time", return_value=time.time() + 30):
         assert client.post("/api/account/security/disable", {"password": "secure-password-1", "code": later}, content_type="application/json").json()["two_factor"] is False
@@ -94,3 +95,22 @@ def test_admin_needs_a_ripiano_sign_in_and_recovery_beats_lockout_and_password_g
     blocked = guesser.post("/api/session", {"username": "admin-owner", "password": "secure-password-1"}, content_type="application/json")
     assert blocked.status_code == 429
     cache.clear()
+
+
+@pytest.mark.django_db
+def test_turning_on_two_step_ends_other_sessions_and_password_checks_are_throttled():
+    user = get_user_model().objects.create_user("owner", password="secure-password-1")
+    laptop, phone = Client(), Client()
+    laptop.force_login(user)
+    phone.force_login(user)
+    assert phone.get("/api/session").json()["authenticated"] is True
+    secret = laptop.post("/api/account/security/setup", {"password": "secure-password-1"}, content_type="application/json").json()["secret"]
+    laptop.post("/api/account/security/enable", {"code": two_factor._code(secret, int(time.time() // 30))}, content_type="application/json")
+    assert laptop.get("/api/session").json()["authenticated"] is True
+    assert phone.get("/api/session").json()["authenticated"] is False
+
+    guesser = Client()
+    guesser.force_login(get_user_model().objects.create_user("other", password="secure-password-2"))
+    for _ in range(10):
+        guesser.post("/api/account/security/setup", {"password": "wrong"}, content_type="application/json")
+    assert guesser.post("/api/account/security/setup", {"password": "secure-password-2"}, content_type="application/json").status_code == 429

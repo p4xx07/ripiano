@@ -8,6 +8,7 @@ const fixtures = [
   { file: "office-legacy.doc", mime: "application/msword", word: "marmellata" },
   { file: "office-open.odt", mime: "application/vnd.oasis.opendocument.text", word: "girasole" },
   { file: "email-notice.eml", mime: "message/rfc822", word: "lampone", title: "Avviso TARI 2026 lampone" },
+  { file: "outlook-notice.msg", mime: "application/vnd.ms-outlook", word: "mirtillo", title: "Avviso condominio mirtillo" },
 ];
 
 test("older Word, OpenDocument, and email files become searchable with originals intact", async ({ page }, testInfo) => {
@@ -25,7 +26,7 @@ test("older Word, OpenDocument, and email files become searchable with originals
     const add = page.getByRole("button", { name: "Add document", exact: true });
     if (await add.isVisible()) await add.click();
     else await page.getByRole("button", { name: "Add", exact: true }).click();
-    await expect(page.getByText(/emails \(\.eml\), and Word, Excel, PowerPoint, OpenDocument, or RTF/)).toBeVisible();
+    await expect(page.getByText(/emails \(\.eml, \.msg\), and Word, Excel, PowerPoint, OpenDocument, or RTF/)).toBeVisible();
     const upload = page.waitForResponse((response) => response.url().endsWith("/api/documents") && response.request().method() === "POST" && response.status() === 202);
     const chooser = page.waitForEvent("filechooser");
     await page.getByRole("button", { name: /Browse files/ }).click();

@@ -19,8 +19,8 @@ It confirmed the following are correct:
 | MEDIUM | "Updated" side effects repeated after a failed delivery, and there was a first-time race. | "First time" means no run of any status for that workflow and document, decided under a document row lock. |
 | LOW | Slow TOTP brute force at 5 guesses per 15 minutes. | Partly addressed: sign-in throttling also counts wrong codes. Escalating locks remain open. |
 | LOW | Recovery codes were unsalted SHA-256 over 48 bits. | Raised to 80-bit codes. A keyed hash is not used, so `SECRET_KEY` rotation cannot break recovery. |
-| LOW | Password confirmations on the Security screen were unthrottled. | Open. The confirmation needs an authenticated session; recorded. |
-| LOW | Other sessions survive enabling 2FA. | Open; recorded. |
+| LOW | Password confirmations on the Security screen were unthrottled. | Fixed in a later commit: setup, disable, and new recovery codes share the sign-in throttle (429). Tested. |
+| LOW | Other sessions survive enabling 2FA. | Fixed in a later commit: enabling ends every other session of the person. Tested. |
 | LOW | The pending secret never expires. | Open (it is encrypted and replaced on the next setup). |
 | LOW | Scheduled scans grow over time. | Open; bounded per run by the keyset loop. A high-water mark is a follow-up. |
 | LOW | The setup field truncated pasted codes. | Whitespace is stripped and up to 7 characters are allowed. |

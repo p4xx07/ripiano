@@ -18,7 +18,7 @@ from .backup import BackupError, backup_media_lock, create_snapshot
 from .browse_export import build_browse_tree, prune_old_browse_trees
 from .classification import apply_rules
 from .models import BackupRun, BrowseExportRun, Document, DocumentTag, FilingRule, PurgeJob, TrashRetentionPolicy
-from .email_render import EML_TYPE, render_html
+from .email_render import EML_TYPE, MSG_TYPE, render_html
 from .office import OFFICE_EXTENSIONS, convert_office
 from .purge import record_purge, remove_job_media
 
@@ -52,9 +52,9 @@ def process_document(document_id):
                 input_file = work_dir / "input.pdf"
                 with Image.open(original) as image:
                     image.convert("RGB").save(input_file, "PDF", resolution=300)
-            elif document.original_mime == EML_TYPE[1]:
+            elif document.original_mime in (EML_TYPE[1], MSG_TYPE[1]):
                 page = work_dir / "message.html"
-                page.write_text(render_html(original), encoding="utf-8")
+                page.write_text(render_html(original, document.original_mime), encoding="utf-8")
                 input_file = work_dir / "input.pdf"
                 convert_office(page, "message.html", "text/html", input_file)
                 output_type = "pdf"

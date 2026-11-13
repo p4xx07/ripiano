@@ -225,6 +225,13 @@ Create a bot with BotFather. Set `RIPIANO_TELEGRAM_BOT_TOKEN` and `RIPIANO_TELEG
 
 Telegram's [Bot API limits standard bot downloads to 20 MB](https://core.telegram.org/bots/api#getfile). Telegram handles the file before Ripiano downloads it, so use the direct app upload when the document must never pass through Telegram. Updates remain on Telegram for at most 24 hours; prolonged NAS downtime can miss messages. The bot token must remain secret.
 
+### Storage paths
+
+Under **Tags & filing → Storage paths**, define folder layouts such as `{correspondent}/{year}/{month}`. Choose one on a document, and the next NAS browse copy places it there instead of under its year.
+- **Placeholders:** `{year}`, `{month}`, `{day}`, `{added_year}`, `{added_month}`, `{correspondent}`, `{document_type}`, `{title}`, `{asn}`, `{tag}`, and `{source}`.
+- **Safe names:** values are made into safe single folder names. Slashes and reserved names such as `CON` are replaced.
+- **Originals:** Ripiano's managed originals never move.
+
 ### Matching rules
 
 Tag, sender, and document-type rules are under **Tags & filing**. Each rule can match in one of five ways:

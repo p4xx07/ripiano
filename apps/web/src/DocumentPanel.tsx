@@ -50,6 +50,8 @@ export default function DocumentPanel({
   const [asn, setAsn] = useState(initial.asn ? String(initial.asn) : "");
   const [correspondentId, setCorrespondentId] = useState(initial.correspondent?.id ?? "");
   const [documentTypeId, setDocumentTypeId] = useState(initial.document_type?.id ?? "");
+  const [storagePathId, setStoragePathId] = useState(initial.storage_path?.id ?? "");
+  const [storagePaths, setStoragePaths] = useState<FilingItem[]>([]);
   const [correspondents, setCorrespondents] = useState<FilingItem[]>([]);
   const [documentTypes, setDocumentTypes] = useState<FilingItem[]>([]);
   const [newCorrespondent, setNewCorrespondent] = useState("");
@@ -113,6 +115,7 @@ export default function DocumentPanel({
     Promise.all([
       request<{ correspondents: FilingItem[] }>("/api/correspondents"),
       request<{ document_types: FilingItem[] }>("/api/document-types"),
+      request<{ storage_paths: FilingItem[] }>("/api/storage-paths").then((result) => setStoragePaths(result.storage_paths)).catch(() => undefined),
     ]).then(([senders, types]) => {
       setCorrespondents(senders.correspondents);
       setDocumentTypes(types.document_types);
@@ -243,6 +246,7 @@ export default function DocumentPanel({
       if (asnText !== (current.asn ? String(current.asn) : "")) changes.asn = asnText ? Number(asnText) : null;
       if (correspondentId !== (current.correspondent?.id ?? "")) changes.correspondent_id = correspondentId || null;
       if (documentTypeId !== (current.document_type?.id ?? "")) changes.document_type_id = documentTypeId || null;
+      if (storagePathId !== (current.storage_path?.id ?? "")) changes.storage_path_id = storagePathId || null;
       const updated = await request<Document>(`/api/documents/${current.id}`, {
         method: "PATCH",
         body: JSON.stringify(changes),
@@ -489,6 +493,14 @@ export default function DocumentPanel({
               <button type="button" aria-label="Cancel new type" onClick={() => setCreatingDocumentType(false)}><X size={16} /></button>
             </div>
           ) : <button type="button" className="text-action" onClick={() => setCreatingDocumentType(true)}><Plus size={15} /> Add a type</button>}
+          {storagePaths.length > 0 && (
+            <Field label="Storage path" hint="Folder in the readable NAS copy" className="detail-label">
+              <select value={storagePathId} onChange={(event) => setStoragePathId(event.target.value)}>
+                <option value="">By year (default)</option>
+                {storagePaths.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </Field>
+          )}
           <Field label="Follow-up" hint="Optional" className="detail-label">
             <select value={actionStatus} onChange={(event) => setActionStatus(event.target.value as Document["action_status"])}>
               <option value="none">Nothing to do</option>

@@ -38,3 +38,4 @@ def test_overview_counts_only_the_owners_visible_documents():
     assert {row["name"] for row in data["top_tags"]} == {"Bills", "Home"}
     assert len(data["monthly"]) == 12 and sum(row["count"] for row in data["monthly"]) == 3
     assert data["health"]["backup"] is None and data["health"]["mailboxes"] == {"total": 0, "with_errors": 0}
+    assert data["health"]["queues"] is None  # only the archive owner sees queue depths

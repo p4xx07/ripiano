@@ -16,6 +16,7 @@ from .backup import backup_media_lock
 from .export_views import _media_path, _metadata
 from .models import BrowseExportRun, Document
 from .office import OFFICE_EXTENSIONS
+from .storage_paths import fit_bytes, render
 
 logger = logging.getLogger(__name__)
 ORIGINAL_EXTENSIONS = {
@@ -30,7 +31,7 @@ class BrowseExportError(RuntimeError):
 def _component(value):
     value = unicodedata.normalize("NFC", value)
     value = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', "-", value)
-    value = re.sub(r"\s+", " ", value).strip(" .")[:80].rstrip(" .")
+    value = fit_bytes(re.sub(r"\s+", " ", value).strip(" .")[:80]).rstrip(" .")
     return value or "Untitled"
 
 
@@ -67,8 +68,11 @@ def _copy_file(source, destination, *, expected_size=None, expected_hash=None):
 
 
 def _document_folder(stage, document):
+    leaf = f"{_component(document.title)}--{document.id}"
+    if document.storage_path_id:
+        return stage.joinpath("documents", *render(document.storage_path.template, document), leaf)
     year = document.document_date.year if document.document_date else document.created_at.year
-    return stage / "documents" / f"{year:04d}" / f"{_component(document.title)}--{document.id}"
+    return stage / "documents" / f"{year:04d}" / leaf
 
 
 def _write_document(stage, document):
@@ -173,7 +177,7 @@ def build_browse_tree(run):
             shutil.rmtree(stage)
         stage.mkdir()
         try:
-            documents = Document.objects.filter(owner_id=run.owner_id, trashed_at__isnull=True, is_split_source=False).select_related("correspondent", "document_type")
+            documents = Document.objects.filter(owner_id=run.owner_id, trashed_at__isnull=True, is_split_source=False).select_related("correspondent", "document_type", "storage_path")
             entries = [_write_document(stage, document) for document in documents.order_by("id").iterator(chunk_size=100)]
             manifest = {
                 "format_version": 1, "kind": "nas_browse_copy", "created_at": datetime.now(timezone.utc).isoformat(),

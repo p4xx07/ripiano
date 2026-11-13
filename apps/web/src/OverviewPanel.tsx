@@ -12,6 +12,7 @@ type Overview = {
     backup: { status: string; at: string } | null;
     mailboxes: { total: number; with_errors: number };
     workflows: { enabled: number; failed_last_week: number };
+    queues: { celery: number; maintenance: number } | null;
   };
 };
 
@@ -99,6 +100,7 @@ export default function OverviewPanel({ onNavigate }: { onNavigate: (view: "inbo
               {data.health.backup ? `Last backup: ${data.health.backup.status === "complete" ? "completed" : data.health.backup.status} ${new Date(data.health.backup.at).toLocaleString()}` : "Backups are visible to the archive owner."}
               {" · "}{data.health.mailboxes.total} mailbox{data.health.mailboxes.total === 1 ? "" : "es"} · {data.health.workflows.enabled} active workflow{data.health.workflows.enabled === 1 ? "" : "s"}
               {" · "}{docs.untagged.toLocaleString()} without tags
+              {data.health.queues && <>{" · "}Background queues: {data.health.queues.celery.toLocaleString()} OCR, {data.health.queues.maintenance.toLocaleString()} maintenance waiting</>}
             </p>
           </section>
 

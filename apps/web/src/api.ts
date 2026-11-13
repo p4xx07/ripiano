@@ -137,6 +137,7 @@ export type Document = {
   asn: number | null;
   split_parent: { id: string; title: string } | null;
   is_split_source: boolean;
+  storage_path: { id: string; name: string } | null;
 };
 
 export type FilingSuggestion = {

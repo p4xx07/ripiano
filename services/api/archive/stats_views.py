@@ -55,6 +55,7 @@ def overview(request):
     last_backup = BackupRun.objects.order_by("-created_at").first() if owner.is_superuser else None
     mailboxes = MailAccount.objects.filter(owner=owner)
     failed_runs = WorkflowRun.objects.filter(workflow__owner=owner, status=WorkflowRun.Status.FAILED, created_at__gte=timezone.now() - timedelta(days=7)).count()
+    queues = queue_depths() if owner.is_superuser else None
     return JsonResponse({
         "documents": {key: value or 0 for key, value in totals.items()},
         "monthly": monthly, "by_type": by_type, "by_source": by_source, "top_tags": top_tags,
@@ -62,5 +63,18 @@ def overview(request):
             "backup": {"status": last_backup.status, "at": (last_backup.completed_at or last_backup.created_at).isoformat()} if last_backup else None,
             "mailboxes": {"total": mailboxes.count(), "with_errors": mailboxes.exclude(last_error="").count()},
             "workflows": {"enabled": Workflow.objects.filter(owner=owner, enabled=True).count(), "failed_last_week": failed_runs},
+            "queues": queues,
         },
     })
+
+
+def queue_depths():
+    """Jobs waiting in each background queue (archive owner only); None if the broker is unreachable."""
+    from ripiano.celery import app
+
+    try:
+        with app.connection_for_read() as connection:
+            client = connection.default_channel.client
+            return {name: int(client.llen(name)) for name in ("celery", "maintenance")}
+    except Exception:  # noqa: BLE001 - the overview must load even when the broker is down
+        return None

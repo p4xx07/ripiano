@@ -20,7 +20,7 @@ from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
-from .models import BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, ShareLink, Tag, TagOverride
+from .models import StoragePath, BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, ShareLink, Tag, TagOverride
 from . import two_factor
 from .bundle_views import revoke_bundles_containing
 from .throttle import record_sign_in_failure, sign_in_blocked, sign_in_throttle_key
@@ -202,6 +202,7 @@ def _document_json(document, query=""):
         "asn": document.asn,
         "split_parent": {"id": str(document.split_parent_id), "title": document.split_parent.title} if document.split_parent_id else None,
         "is_split_source": document.is_split_source,
+        "storage_path": {"id": str(document.storage_path_id), "name": document.storage_path.name} if document.storage_path_id else None,
     }
 
 
@@ -294,7 +295,7 @@ def documents(request):
         if requested_view not in (None, "documents", "actions", "exceptions", "trash"):
             return JsonResponse({"error": "Invalid document view"}, status=400)
         queryset = Document.objects.filter(owner=request.user, trashed_at__isnull=requested_view != "trash").select_related(
-            "duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location")
+            "duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location")
         if requested_view not in ("trash", "exceptions"):
             # A scan split at separator sheets is reached from its parts; it still shows in Trash and Exceptions.
             queryset = queryset.filter(is_split_source=False)
@@ -513,7 +514,7 @@ def documents(request):
             scan_id = str(UUID(scan_id))
         except ValueError:
             return JsonResponse({"error": "Invalid scan ID"}, status=400)
-        existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location").first()
+        existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").first()
         if existing:
             if existing.trashed_at:
                 return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
@@ -522,7 +523,7 @@ def documents(request):
         document = ingest_document(request.user, upload, source=Document.Source.ANDROID if scan_id else Document.Source.WEB, source_ref=scan_id)
     except IntegrityError:
         if scan_id:
-            existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location").first()
+            existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").first()
             if existing:
                 if existing.trashed_at:
                     return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
@@ -753,7 +754,7 @@ def document_detail(request, document_id):
     queryset = Document.objects
     if request.method == "PATCH":
         queryset = queryset.select_for_update(of=("self",))
-    document = queryset.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location").first()
+    document = queryset.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").first()
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if request.method == "PATCH":
@@ -804,6 +805,18 @@ def document_detail(request, document_id):
             except (TypeError, ValueError):
                 return JsonResponse({"error": "Use an ISO due date (YYYY-MM-DD)"}, status=400)
             changes.append("action_due_date")
+        if "storage_path_id" in body:
+            raw = body["storage_path_id"]
+            path = None
+            if raw not in (None, ""):
+                try:
+                    path = StoragePath.objects.filter(pk=UUID(str(raw)), owner=request.user).first()
+                except ValueError:
+                    path = None
+                if path is None:
+                    return JsonResponse({"error": "Storage path not found"}, status=400)
+            document.storage_path = path
+            changes.append("storage_path")
         if "asn" in body:
             asn = body["asn"]
             if asn is not None and (not isinstance(asn, int) or isinstance(asn, bool) or not 1 <= asn <= 999_999_999):
@@ -856,7 +869,7 @@ def document_detail(request, document_id):
         if set(changes) & {"title", "document_date", "correspondent", "document_type"} or chosen is not None:
             # Workflow actions run after the owner's own change and never re-trigger themselves.
             run_for_document(document, Workflow.Trigger.UPDATED)
-        document = Document.objects.filter(pk=document.id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent").prefetch_related("tag_links__tag", "physical_copies__location").get()
+        document = Document.objects.filter(pk=document.id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").get()
     return JsonResponse(_document_json(document))
 
 

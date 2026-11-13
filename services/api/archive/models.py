@@ -72,6 +72,8 @@ class Document(models.Model):
     # A scan split at separator sheets stays as the hidden source of its parts.
     split_parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="split_parts")
     is_split_source = models.BooleanField(default=False)
+    # Folder template for the NAS browse copy; managed originals never move.
+    storage_path = models.ForeignKey("StoragePath", null=True, blank=True, on_delete=models.SET_NULL, related_name="documents")
     # The original_* fields always describe the current version; older files live in DocumentVersion.
     version_number = models.PositiveIntegerField(default=1)
     version_note = models.CharField(max_length=200, default="Original upload")
@@ -728,3 +730,17 @@ class ApiToken(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-id"]
+
+
+class StoragePath(models.Model):
+    """A named folder template for the NAS browse copy, e.g. "{correspondent}/{year}"."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="storage_paths")
+    name = models.CharField(max_length=100)
+    template = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        constraints = [models.UniqueConstraint(Lower("name"), "owner", name="unique_storage_path_name_per_owner")]

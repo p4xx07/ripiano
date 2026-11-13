@@ -2880,6 +2880,19 @@ button:disabled {
   margin-top: var(--space-1);
   overflow-wrap: anywhere;
 }
+.location-missing-contents {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-warning-border);
+}
+.location-missing-contents h4 {
+  margin: 0;
+  color: var(--color-warning);
+  font-size: var(--type-small);
+}
+.location-missing-contents li {
+  border-color: var(--color-warning-border);
+}
 .location-marker {
   width: 30px;
   height: 30px;

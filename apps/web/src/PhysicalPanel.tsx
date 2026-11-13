@@ -4,7 +4,15 @@ import { Location, PhysicalCopy, request } from "./api";
 import { Button } from "./ui";
 
 type Lookup = { copy: PhysicalCopy; document: { id: string; title: string } };
-type LocationLookup = { location: Location; copies: Lookup[]; total: number; next_cursor: string | null };
+type LocationLookup = {
+  location: Location;
+  copies: Lookup[];
+  total: number;
+  next_cursor: string | null;
+  missing_copies: Lookup[];
+  missing_count: number;
+  missing_next_cursor: string | null;
+};
 
 export default function PhysicalPanel({
   initialSticker,
@@ -79,17 +87,23 @@ export default function PhysicalPanel({
     }
   }
 
-  async function loadMoreContents() {
-    if (!foundLocation?.next_cursor || loadingContents) return;
+  async function loadMoreContents(kind: "present" | "missing") {
+    const location = foundLocation;
+    if (!location || loadingContents) return;
+    const cursor = kind === "present" ? location.next_cursor : location.missing_next_cursor;
+    if (!cursor) return;
     setLoadingContents(true);
     setError("");
     try {
-      const code = foundLocation.location.sticker_code;
-      const next = await request<LocationLookup>(`/api/locations/lookup/${code}?cursor=${encodeURIComponent(foundLocation.next_cursor)}`);
+      const code = location.location.sticker_code;
+      const parameter = kind === "present" ? "cursor" : "missing_cursor";
+      const next = await request<LocationLookup>(`/api/locations/lookup/${code}?${parameter}=${encodeURIComponent(cursor)}`);
       setFoundLocation((current) => current?.location.sticker_code === code ? {
         ...current,
-        copies: [...current.copies, ...next.copies],
-        next_cursor: next.next_cursor,
+        copies: kind === "present" ? [...current.copies, ...next.copies] : current.copies,
+        next_cursor: kind === "present" ? next.next_cursor : current.next_cursor,
+        missing_copies: kind === "missing" ? [...current.missing_copies, ...next.missing_copies] : current.missing_copies,
+        missing_next_cursor: kind === "missing" ? next.missing_next_cursor : current.missing_next_cursor,
       } : current);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load more contents");
@@ -165,12 +179,23 @@ export default function PhysicalPanel({
             <div className="sticker-code">{foundLocation.location.sticker_code}</div>
             <h3>{foundLocation.location.name}</h3>
             <p><MapPin size={16} /> {foundLocation.location.path.join(" / ")}</p>
-            <strong>{foundLocation.total} {foundLocation.total === 1 ? "paper copy" : "paper copies"} recorded here or inside nested locations</strong>
+            <strong>{foundLocation.total} {foundLocation.total === 1 ? "paper copy" : "paper copies"} listed as present here or inside nested locations</strong>
+            {foundLocation.missing_count > 0 && <p className="copy-missing-label">
+              {foundLocation.missing_count} {foundLocation.missing_count === 1 ? "copy was" : "copies were"} last recorded here or inside nested locations, then reported missing.
+            </p>}
             {foundLocation.copies.length > 0 && <ul className="location-contents">{foundLocation.copies.map((item) => <li key={item.copy.id}>
               <button type="button" onClick={() => onOpenDocument(item.document.id)}>{item.document.title} <ArrowRight size={15} /></button>
-              <small>{item.copy.sticker_code} · {item.copy.location_path.join(" / ")}{item.copy.missing_at ? " · Reported missing" : ""}</small>
+              <small>{item.copy.sticker_code} · {item.copy.location_path.join(" / ")}</small>
             </li>)}</ul>}
-            {foundLocation.next_cursor && <Button type="button" variant="secondary" disabled={loadingContents} onClick={() => void loadMoreContents()}>{loadingContents ? "Loading…" : "Show more copies"}</Button>}
+            {foundLocation.next_cursor && <Button type="button" variant="secondary" disabled={loadingContents} onClick={() => void loadMoreContents("present")}>{loadingContents ? "Loading…" : "Show more copies"}</Button>}
+            {foundLocation.missing_copies.length > 0 && <div className="location-missing-contents">
+              <h4>Reported missing from this location</h4>
+              <ul className="location-contents">{foundLocation.missing_copies.map((item) => <li key={item.copy.id}>
+                <button type="button" onClick={() => onOpenDocument(item.document.id)}>{item.document.title} <ArrowRight size={15} /></button>
+                <small>{item.copy.sticker_code} · Last known: {item.copy.location_path.join(" / ")}</small>
+              </li>)}</ul>
+            </div>}
+            {foundLocation.missing_next_cursor && <Button type="button" variant="secondary" disabled={loadingContents} onClick={() => void loadMoreContents("missing")}>{loadingContents ? "Loading…" : "Show more missing copies"}</Button>}
           </div>}
           <div className="section-heading location-heading">
             <div>

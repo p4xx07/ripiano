@@ -6,6 +6,7 @@ import segno
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
+from django.utils import timezone
 
 from archive.models import Document, Location, Movement, PhysicalCopy
 
@@ -37,6 +38,7 @@ def test_sticker_location_move_and_owner_isolation():
     container = client.get(f"/api/locations/lookup/{shelf.json()['sticker_code']}")
     assert container.status_code == 200
     assert container.json()["total"] == 1
+    assert container.json()["missing_count"] == 0
     assert container.json()["copies"][0]["copy"]["sticker_code"] == copy["sticker_code"]
     with patch("archive.physical_views.segno.make_qr", wraps=segno.make_qr) as make_location_qr:
         location_label = client.get(f"/api/locations/{box.json()['id']}/label")
@@ -62,12 +64,19 @@ def test_sticker_location_move_and_owner_isolation():
     assert client.patch(f"/api/copies/{copy['id']}/status", json.dumps({"missing": True}), content_type="application/json").status_code == 409
     assert client.patch(f"/api/copies/{copy['id']}", json.dumps({"location_id": box.json()["id"]}), content_type="application/json").status_code == 409
     assert client.get(f"/api/stickers/{copy['sticker_code']}").json()["copy"]["missing_at"] is not None
-    assert client.get(f"/api/locations/lookup/{shelf.json()['sticker_code']}").json()["copies"][0]["copy"]["missing_at"] is not None
+    missing_container = client.get(f"/api/locations/lookup/{shelf.json()['sticker_code']}").json()
+    assert missing_container["total"] == 0
+    assert missing_container["missing_count"] == 1
+    assert missing_container["copies"] == []
+    assert [item["document"]["title"] for item in missing_container["missing_copies"]] == ["Contract <private>"]
     assert client.get(f"/api/copies/{copy['id']}/history").json()["movements"][0]["kind"] == "missing"
     found = client.patch(f"/api/copies/{copy['id']}/status", json.dumps({"missing": False}), content_type="application/json")
     assert found.status_code == 200
     assert found.json()["missing_at"] is None
     assert found.json()["location_path"] == ["Shelf A"]
+    found_container = client.get(f"/api/locations/lookup/{shelf.json()['sticker_code']}").json()
+    assert found_container["total"] == 1 and found_container["missing_count"] == 0
+    assert found_container["missing_copies"] == []
     assert client.get(f"/api/copies/{copy['id']}/history").json()["movements"][0]["kind"] == "found"
     assert Movement.objects.filter(physical_copy_id=copy["id"]).count() == 4
     assert client.delete(f"/api/locations/{shelf.json()['id']}").status_code == 409
@@ -101,6 +110,7 @@ def test_location_label_escapes_name_and_lookup_hides_trashed_documents():
     assert b"<private>" not in label.content
     result = client.get(f"/api/locations/lookup/{location.sticker_code}").json()
     assert result["total"] == 1
+    assert result["missing_count"] == 0
     assert [item["document"]["title"] for item in result["copies"]] == ["Kept"]
 
 
@@ -112,18 +122,26 @@ def test_location_lookup_pages_more_than_fifty_copies():
         owner=owner, title=f"Paper {index}", original_name=f"paper-{index}.pdf",
         original_path=f"originals/paper-{index}.pdf", original_mime="application/pdf",
         original_sha256=f"{index:064x}", original_size=1, status=Document.Status.READY,
-    ) for index in range(51)]
+    ) for index in range(102)]
     Document.objects.bulk_create(documents)
     PhysicalCopy.objects.bulk_create([
-        PhysicalCopy(document=document, location=location, sticker_code=f"R-{index:08d}")
+        PhysicalCopy(document=document, location=location, sticker_code=f"R-{index:08d}",
+                     missing_at=timezone.now() if index >= 51 else None)
         for index, document in enumerate(documents)
     ])
     client = Client()
     client.force_login(owner)
     first = client.get(f"/api/locations/lookup/{location.sticker_code}").json()
     assert first["total"] == 51 and len(first["copies"]) == 50
+    assert first["missing_count"] == 51 and len(first["missing_copies"]) == 50
     assert first["next_cursor"] == "R-00000049"
+    assert first["missing_next_cursor"] == "R-00000100"
     second = client.get(f"/api/locations/lookup/{location.sticker_code}", {"cursor": first["next_cursor"]}).json()
     assert second["total"] == 51 and len(second["copies"]) == 1
     assert second["next_cursor"] is None
+    missing_second = client.get(f"/api/locations/lookup/{location.sticker_code}", {"missing_cursor": first["missing_next_cursor"]}).json()
+    assert missing_second["missing_count"] == 51 and len(missing_second["missing_copies"]) == 1
+    assert missing_second["missing_copies"][0]["copy"]["sticker_code"] == "R-00000101"
+    assert missing_second["missing_next_cursor"] is None
     assert client.get(f"/api/locations/lookup/{location.sticker_code}", {"cursor": "../../outside"}).status_code == 400
+    assert client.get(f"/api/locations/lookup/{location.sticker_code}", {"missing_cursor": "../../outside"}).status_code == 400

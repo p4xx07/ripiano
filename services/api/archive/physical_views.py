@@ -7,6 +7,7 @@ from uuid import UUID
 import segno
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import Count, Q
 from django.db.models.deletion import ProtectedError
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
@@ -134,20 +135,32 @@ def location_lookup(request, sticker_code):
             continue
         ids.add(current)
         pending.extend(children.get(current, []))
-    copies = PhysicalCopy.objects.filter(location_id__in=ids, document__owner=request.user, document__trashed_at__isnull=True).select_related("document", "location__parent__parent").order_by("sticker_code")
-    total = copies.count()
+    copies = PhysicalCopy.objects.filter(location_id__in=ids, document__owner=request.user, document__trashed_at__isnull=True)
+    counts = copies.aggregate(
+        total=Count("id", filter=Q(missing_at__isnull=True)),
+        missing_count=Count("id", filter=Q(missing_at__isnull=False)),
+    )
+    present = copies.filter(missing_at__isnull=True).select_related("document", "location__parent__parent").order_by("sticker_code")
+    missing = copies.filter(missing_at__isnull=False).select_related("document", "location__parent__parent").order_by("sticker_code")
     cursor = request.GET.get("cursor", "")
+    missing_cursor = request.GET.get("missing_cursor", "")
+    if any(value and not re.fullmatch(r"R-[A-Z0-9]{8}", value) for value in (cursor, missing_cursor)):
+        return JsonResponse({"error": "Invalid container page cursor"}, status=400)
     if cursor:
-        if not re.fullmatch(r"R-[A-Z0-9]{8}", cursor):
-            return JsonResponse({"error": "Invalid container page cursor"}, status=400)
-        copies = copies.filter(sticker_code__gt=cursor)
-    page = list(copies[:51])
+        present = present.filter(sticker_code__gt=cursor)
+    if missing_cursor:
+        missing = missing.filter(sticker_code__gt=missing_cursor)
+    page = list(present[:51])
     visible = page[:50]
+    missing_page = list(missing[:51])
+    missing_visible = missing_page[:50]
     return JsonResponse({
         "location": location_json(location),
         "copies": [{"copy": copy_json(copy), "document": {"id": str(copy.document_id), "title": copy.document.title}} for copy in visible],
         "next_cursor": visible[-1].sticker_code if len(page) > 50 else None,
-        "total": total,
+        "missing_copies": [{"copy": copy_json(copy), "document": {"id": str(copy.document_id), "title": copy.document.title}} for copy in missing_visible],
+        "missing_next_cursor": missing_visible[-1].sticker_code if len(missing_page) > 50 else None,
+        **counts,
     })
 
 

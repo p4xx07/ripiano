@@ -33,7 +33,7 @@ Milestones: **R1** = safe daily archive; **R2** = full daily workflow and physic
 
 ## Additional Ripiano capabilities
 
-These are not substitutes for parity rows: physical-copy hierarchy, printable document/container stickers, movement history, exception-only Inbox, first-class Needs action/reminders, installable iOS/Android PWA, Android native scanner, named per-agent MCP grants, optional daily local-PC worker, and scheduled backups visible in the app.
+These are not substitutes for parity rows: physical-copy hierarchy, printable document/container stickers, movement history, location contents that separate present copies from those reported missing, exception-only Inbox, first-class Needs action/reminders, installable iOS/Android PWA, Android native scanner, named per-agent MCP grants, optional daily local-PC worker, and scheduled backups visible in the app.
 
 ## Evidence required at R4
 

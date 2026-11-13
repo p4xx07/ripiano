@@ -36,6 +36,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "archive.api_tokens.ApiTokenMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -114,6 +115,9 @@ CELERY_TASK_ROUTES = {
     "archive.tasks.purge_expired_trash": {"queue": "maintenance"},
     "archive.tasks.poll_mail_accounts": {"queue": "maintenance"},
     "archive.tasks.send_workflow_notifications": {"queue": "maintenance"},
+    "archive.tasks.send_document_email": {"queue": "maintenance"},
+    "archive.tasks.build_share_bundle": {"queue": "maintenance"},
+    "archive.tasks.expire_share_bundles": {"queue": "maintenance"},
     "archive.tasks.run_scheduled_workflows": {"queue": "maintenance"},
     "archive.tasks.poll_mail_account": {"queue": "maintenance"},
 }
@@ -152,5 +156,7 @@ EMAIL_TIMEOUT = 20
 DEFAULT_FROM_EMAIL = os.environ.get("RIPIANO_SMTP_FROM", "ripiano@localhost")
 # Webhooks to LAN services (e.g. home automation) must be allowed explicitly.
 RIPIANO_WEBHOOK_ALLOW_PRIVATE = os.environ.get("RIPIANO_WEBHOOK_ALLOW_PRIVATE", "0") == "1"
+# Emailing documents from the app is off unless the operator turns it on (SMTP alone is not enough).
+RIPIANO_DOCUMENT_EMAIL = os.environ.get("RIPIANO_DOCUMENT_EMAIL", "0") == "1"
 RIPIANO_EMAIL_ATTACH_MAX_BYTES = int(os.environ.get("RIPIANO_EMAIL_ATTACH_MAX_BYTES", str(10 * 1024 * 1024)))
 RIPIANO_OCR_LANGUAGES = os.environ.get("RIPIANO_OCR_LANGUAGES", "eng+ita")

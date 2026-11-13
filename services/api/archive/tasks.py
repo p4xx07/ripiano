@@ -269,17 +269,15 @@ def reclassify_owner(owner_id):
 
 
 @shared_task(name="archive.tasks.reclassify_filing_candidates")
-def reclassify_filing_candidates(owner_id, kind, target_id, pattern, field="either", deleted=False):
+def reclassify_filing_candidates(owner_id, kind, target_id, pattern, field="either", deleted=False, match="phrase"):
     documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True)
     if deleted:
         field = "correspondent" if kind == FilingRule.Kind.CORRESPONDENT else "document_type"
         documents = documents.filter(**{f"{field}_id": target_id, f"{field}_origin": Document.FilingOrigin.RULE})
-    needle = pattern.casefold()
+    from .classification import rule_matches
+
     for document in documents.iterator():
-        if not deleted and not (
-            (field in (FilingRule.Field.TITLE, FilingRule.Field.EITHER) and needle in document.title.casefold())
-            or (field in (FilingRule.Field.TEXT, FilingRule.Field.EITHER) and needle in document.extracted_text.casefold())
-        ):
+        if not deleted and not rule_matches(pattern, match, field, document.title.casefold(), document.extracted_text.casefold()):
             continue
         try:
             apply_rules(document)
@@ -292,16 +290,13 @@ def reclassify_tag_candidates(owner_id, tag_id, phrases, deleted=False):
     documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True)
     if deleted:
         documents = documents.filter(tag_links__tag_id=tag_id, tag_links__origin=DocumentTag.Origin.RULE)
-    compiled = [(entry["pattern"].casefold(), entry["field"]) for entry in phrases]
+    from .classification import rule_matches
+
     for document in documents.iterator():
         if not deleted:
             title = document.title.casefold()
             text = document.extracted_text.casefold()
-            if not any(
-                (field in ("title", "either") and pattern in title)
-                or (field in ("text", "either") and pattern in text)
-                for pattern, field in compiled
-            ):
+            if not any(rule_matches(entry["pattern"], entry.get("match", "phrase"), entry["field"], title, text) for entry in phrases):
                 continue
         try:
             apply_rules(document)
@@ -433,3 +428,63 @@ def run_scheduled_workflows():
     from .workflows import run_scheduled
 
     return run_scheduled()
+
+
+@shared_task(name="archive.tasks.build_share_bundle", time_limit=30 * 60)
+def build_share_bundle(bundle_id):
+    from .bundle_views import build_bundle
+
+    build_bundle(bundle_id)
+
+
+@shared_task(name="archive.tasks.expire_share_bundles")
+def expire_share_bundles():
+    from .bundle_views import expire_bundles
+
+    return expire_bundles()
+
+
+@shared_task(name="archive.tasks.send_document_email", bind=True, soft_time_limit=60, time_limit=90, max_retries=3)
+def send_document_email(self, send_id):
+    """Send a queued document email with a verified attachment; retry transient mail-server failures."""
+    import hashlib
+    import smtplib
+
+    from django.core.mail import EmailMessage
+
+    from .export_views import _media_path
+    from .models import DocumentEmailSend
+
+    send = DocumentEmailSend.objects.select_related("document", "owner").filter(pk=send_id, status=DocumentEmailSend.Status.QUEUED).first()
+    if send is None:
+        return
+    document = send.document
+
+    def fail(detail):
+        DocumentEmailSend.objects.filter(pk=send.pk).update(status=DocumentEmailSend.Status.FAILED, detail=detail)
+
+    if document.trashed_at:
+        return fail("Not sent: the document was moved to Trash.")
+    try:
+        if send.attachment == "searchable":
+            path, name, mime, expected = _media_path(document.archive_path, "archive"), f"{Path(document.original_name).stem}.pdf", "application/pdf", None
+        else:
+            path, name, mime, expected = _media_path(document.original_path, "originals"), Path(document.original_name).name, document.original_mime, document.original_sha256
+        data = path.read_bytes()
+    except (OSError, ValueError):
+        return fail("Not sent: the file is unavailable.")
+    if expected and hashlib.sha256(data).hexdigest() != expected:
+        return fail("Not sent: the original no longer matches its checksum.")
+    sender = send.owner.get_full_name() or send.owner.get_username()
+    body = (send.message + "\n\n" if send.message else "") + f"{sender} sent you “{document.title}” from Ripiano.\n"
+    message = EmailMessage(subject=" ".join(document.title.split())[:200], body=body, to=[item.strip() for item in send.recipients.split(",")],
+                           reply_to=[send.owner.email] if send.owner.email else None)
+    message.attach(name, data, mime)
+    try:
+        message.send(fail_silently=False)
+    except (smtplib.SMTPException, OSError) as exc:
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
+        logger.warning("Document email %s failed", send_id, exc_info=True)
+        return fail("The mail server did not accept the message.")
+    DocumentEmailSend.objects.filter(pk=send.pk).update(status=DocumentEmailSend.Status.SENT, detail="")

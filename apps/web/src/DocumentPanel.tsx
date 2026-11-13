@@ -24,6 +24,8 @@ import DocumentLinks from "./DocumentLinks";
 import CustomFieldsPanel from "./CustomFieldsPanel";
 import ShareLinksPanel from "./ShareLinksPanel";
 import PagesPanel from "./PagesPanel";
+import SimilarPanel from "./SimilarPanel";
+import EmailDocumentPanel from "./EmailDocumentPanel";
 
 export default function DocumentPanel({
   initial,
@@ -609,7 +611,9 @@ export default function DocumentPanel({
             }}
           />
         )}
+        <SimilarPanel documentId={current.id} ready={current.status === "ready"} onOpenDocument={onOpenDuplicate} />
         <ShareLinksPanel documentId={current.id} />
+        <EmailDocumentPanel documentId={current.id} searchableReady={current.archive_available} />
         <div className="detail-files physical-copies">
           <h3>
             <MapPin size={17} /> Paper copies

@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { KeyRound, ShieldCheck, X } from "lucide-react";
 import { request } from "./api";
 import { Button, Field } from "./ui";
+import TokensPanel from "./TokensPanel";
 
 type Status = { two_factor: boolean; recovery_remaining: number };
 type Setup = { secret: string; uri: string; qr_svg: string };
@@ -94,6 +95,7 @@ export default function SecurityPanel() {
                 : "Use any authenticator app (for example the one built into your password manager). Agent tokens are not affected."}</span>
             </div>
           </article>
+          <TokensPanel />
           {recovery.length > 0 && (
             <div className="agent-token-card security-recovery">
               <div className="agent-token-head"><KeyRound size={19} aria-hidden="true" /><strong>Recovery codes</strong></div>

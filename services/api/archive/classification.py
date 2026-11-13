@@ -1,5 +1,6 @@
 """Local, explainable rules that never delay document availability."""
 
+import logging
 import re
 from collections import Counter
 
@@ -10,6 +11,8 @@ from django.db.models.functions import Substr
 
 from .models import ClassificationRule, Document, DocumentTag, FilingRule, TagOverride
 
+
+logger = logging.getLogger(__name__)
 
 # Common English/Italian filler words are not evidence that two documents match.
 STOPWORDS = frozenset(
@@ -92,29 +95,135 @@ def filing_suggestions(document):
     return result
 
 
+MATCH_MODES = ("phrase", "any", "all", "regex", "fuzzy")
+REGEX_TEXT_LIMIT = 100_000
+REGEX_TIMEOUT_SECONDS = 0.25
+FUZZY_TOKEN_LIMIT = 20_000
+FUZZY_MAX_WORDS = 6
+FUZZY_THRESHOLD = 0.85
+
+
+def _compile(pattern):
+    import regex
+
+    # FULLCASE: "Straße" also matches casefolded "strasse", like phrase rules do.
+    return regex.compile(pattern, regex.IGNORECASE | regex.FULLCASE)
+
+
+def validate_pattern(pattern, match):
+    """Return an error message for an unusable rule, or "" when it is fine."""
+    import regex
+
+    if match not in MATCH_MODES:
+        return "Choose how the rule matches"
+    if match == "regex":
+        try:
+            compiled = _compile(pattern)
+        except regex.error as exc:
+            return f"This is not a valid regular expression: {exc}"
+        try:
+            if compiled.search("", timeout=REGEX_TIMEOUT_SECONDS) is not None:
+                return "This pattern matches empty text, so it would match every document"
+        except TimeoutError:
+            return "This pattern is too slow. Simplify it."
+    if match in ("any", "all", "fuzzy") and not _words(pattern):
+        return "Add at least one word"
+    if match == "fuzzy" and len(_words(pattern)) > FUZZY_MAX_WORDS:
+        return f"Similar-spelling rules can have up to {FUZZY_MAX_WORDS} words"
+    return ""
+
+
+def _words(value):
+    return re.findall(r"[^\W_]+", value.casefold())
+
+
+def _fuzzy(pattern, text):
+    from difflib import SequenceMatcher
+
+    wanted = _words(pattern)[:FUZZY_MAX_WORDS]
+    if not wanted:
+        return False
+    tokens = _words(text)[:FUZZY_TOKEN_LIMIT]
+    target = " ".join(wanted)
+    width = len(wanted)
+    matcher = SequenceMatcher(None, autojunk=False)
+    matcher.set_seq2(target)
+    for start in range(0, max(1, len(tokens) - width + 1)):
+        window = " ".join(tokens[start:start + width])
+        if not window:
+            continue
+        matcher.set_seq1(window)
+        # Cheap upper bounds first; the exact ratio only for promising windows.
+        if matcher.real_quick_ratio() < FUZZY_THRESHOLD or matcher.quick_ratio() < FUZZY_THRESHOLD:
+            continue
+        if matcher.ratio() >= FUZZY_THRESHOLD:
+            return True
+    return False
+
+
+def _regex(pattern, value):
+    import regex
+
+    try:
+        return _compile(pattern).search(value[:REGEX_TEXT_LIMIT], timeout=REGEX_TIMEOUT_SECONDS) is not None
+    except TimeoutError:
+        logger.warning("A regular-expression rule took too long and was skipped for one document")
+        return False
+    except regex.error:
+        return False
+
+
+def text_matches(pattern, match, value):
+    """Does one already-casefolded string match a rule pattern?"""
+    if match == "any":
+        words = set(_words(value))
+        return any(word in words for word in _words(pattern))
+    if match == "all":
+        words = set(_words(value))
+        return all(word in words for word in _words(pattern))
+    if match == "regex":
+        return _regex(pattern, value)
+    if match == "fuzzy":
+        return _fuzzy(pattern, value)
+    return pattern.casefold() in value
+
+
+def rule_matches(pattern, match, field, title, text):
+    if field == "title":
+        return text_matches(pattern, match, title)
+    if field == "text":
+        return text_matches(pattern, match, text)
+    return text_matches(pattern, match, title) or text_matches(pattern, match, text)
+
+
 def _matches(rule, title, text):
-    needle = rule.pattern.casefold()
-    if rule.field == "title":
-        return needle in title
-    if rule.field == "text":
-        return needle in text
-    return needle in title or needle in text
+    return rule_matches(rule.pattern, getattr(rule, "match", "phrase"), rule.field, title, text)
 
 
 def apply_rules(document):
+    # Matching can be slow (regex, fuzzy), so it runs before any lock is taken.
+    snapshot = Document.objects.filter(pk=document.pk).values("title", "extracted_text").first()
+    if snapshot is None:
+        return 0
+    title, text = snapshot["title"].casefold(), snapshot["extracted_text"].casefold()
+    tag_rules = [rule for rule in ClassificationRule.objects.filter(owner_id=document.owner_id, enabled=True) if _matches(rule, title, text)]
+    filing_rules = [rule for rule in FilingRule.objects.filter(owner_id=document.owner_id, enabled=True) if _matches(rule, title, text)]
     with transaction.atomic():
         # Rule mutations take the same owner lock, so a queued classifier cannot
-        # commit a rule snapshot after that rule has been deleted.
+        # commit a rule snapshot after that rule has been deleted or disabled.
         get_user_model().objects.select_for_update(no_key=True).get(pk=document.owner_id)
         locked = Document.objects.select_for_update().get(pk=document.pk)
-        if locked.trashed_at:
+        if locked.trashed_at or locked.title != snapshot["title"] or locked.extracted_text != snapshot["extracted_text"]:
+            if locked.trashed_at:
+                return 0
+            transaction.on_commit(lambda: apply_rules(document))  # changed while matching; try again with the new text
             return 0
-        title = locked.title.casefold()
-        text = locked.extracted_text.casefold()
-        matching = [rule.tag for rule in ClassificationRule.objects.filter(owner_id=document.owner_id, enabled=True).select_related("tag") if _matches(rule, title, text)]
+        live_tag_rules = set(ClassificationRule.objects.filter(owner_id=document.owner_id, enabled=True).values_list("id", flat=True))
+        live_filing_rules = set(FilingRule.objects.filter(owner_id=document.owner_id, enabled=True).values_list("id", flat=True))
+        matching = [rule.tag for rule in ClassificationRule.objects.filter(pk__in=[rule.pk for rule in tag_rules if rule.pk in live_tag_rules]).select_related("tag")]
         filing_matches = {}
-        for rule in FilingRule.objects.filter(owner_id=document.owner_id, enabled=True):
-            if not _matches(rule, title, text):
+        for rule in filing_rules:
+            if rule.pk not in live_filing_rules:
                 continue
             current = filing_matches.get(rule.kind)
             if current is None or (-len(rule.pattern), rule.created_at, str(rule.id)) < (-len(current.pattern), current.created_at, str(current.id)):

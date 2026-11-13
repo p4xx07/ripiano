@@ -12,6 +12,7 @@ from django.views.decorators.http import require_http_methods
 
 from .models import ClassificationRule, Correspondent, CustomField, DocumentType, FilingRule, SavedView, Tag
 from .custom_field_views import normalize_filter_range, normalize_filter_value
+from .classification import validate_pattern
 from .tasks import reclassify_filing_candidates, reclassify_tag_candidates
 
 logger = logging.getLogger(__name__)
@@ -39,9 +40,9 @@ def _queue_tag_candidates(owner_id, tag_id, phrases, deleted=False):
         logger.exception("Could not queue tag recheck for owner %s", owner_id)
 
 
-def _queue_filing_candidates(owner_id, kind, target_id, pattern, field, deleted=False):
+def _queue_filing_candidates(owner_id, kind, target_id, pattern, field, deleted=False, match="phrase"):
     try:
-        reclassify_filing_candidates.delay(owner_id, kind, str(target_id), pattern, field, deleted)
+        reclassify_filing_candidates.delay(owner_id, kind, str(target_id), pattern, field, deleted, match=match)
     except Exception:
         logger.exception("Could not queue filing recheck for owner %s", owner_id)
 
@@ -273,7 +274,7 @@ def _filing_rule_json(rule):
     target = rule.correspondent if rule.kind == FilingRule.Kind.CORRESPONDENT else rule.document_type
     return {
         "id": str(rule.id), "kind": rule.kind, "target_id": str(target.id), "target_name": target.name,
-        "pattern": rule.pattern, "field": rule.field, "enabled": rule.enabled,
+        "pattern": rule.pattern, "field": rule.field, "match": rule.match, "enabled": rule.enabled,
     }
 
 
@@ -304,21 +305,27 @@ def filing_rules(request):
     target = model.objects.filter(pk=target_id, owner=request.user).first()
     pattern = body.get("pattern")
     field = body.get("field", FilingRule.Field.EITHER)
+    match = body.get("match", "phrase")
     if target is None or not isinstance(pattern, str) or not pattern.strip() or len(pattern.strip()) > 200 or field not in FilingRule.Field.values:
         return JsonResponse({"error": "Choose an owned target, phrase, and field"}, status=400)
+    problem = validate_pattern(pattern.strip(), match) if isinstance(match, str) else "Choose how the rule matches"
+    if problem:
+        return JsonResponse({"error": problem}, status=400)
     try:
         with transaction.atomic():
             get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
-            if FilingRule.objects.filter(owner=request.user, kind=kind, pattern__iexact=pattern.strip()).exists():
-                return JsonResponse({"error": "This phrase already files another name"}, status=409)
+            same = FilingRule.objects.filter(owner=request.user, kind=kind, match=match)
+            same = same.filter(pattern=pattern.strip()) if match == "regex" else same.filter(pattern__iexact=pattern.strip())
+            if same.exists():
+                return JsonResponse({"error": "A rule with this text and matching already exists"}, status=409)
             rule = FilingRule.objects.create(
-                owner=request.user, kind=kind, pattern=pattern.strip(), field=field,
+                owner=request.user, kind=kind, pattern=pattern.strip(), field=field, match=match,
                 correspondent=target if kind == FilingRule.Kind.CORRESPONDENT else None,
                 document_type=target if kind == FilingRule.Kind.DOCUMENT_TYPE else None,
             )
     except IntegrityError:
         return JsonResponse({"error": "This matching phrase already exists"}, status=409)
-    _queue_filing_candidates(request.user.id, kind, target.id, rule.pattern, rule.field)
+    _queue_filing_candidates(request.user.id, kind, target.id, rule.pattern, rule.field, match=rule.match)
     return JsonResponse(_filing_rule_json(rule), status=201)
 
 
@@ -441,7 +448,7 @@ def rules(request):
     if request.method == "GET":
         return JsonResponse({"rules": [{
             "id": str(rule.id), "tag_id": str(rule.tag_id), "tag_name": rule.tag.name,
-            "pattern": rule.pattern, "field": rule.field, "enabled": rule.enabled,
+            "pattern": rule.pattern, "field": rule.field, "match": rule.match, "enabled": rule.enabled,
         } for rule in ClassificationRule.objects.filter(owner=request.user).select_related("tag")]})
     body = _body(request)
     if body is None:
@@ -452,16 +459,20 @@ def rules(request):
         tag = None
     pattern = body.get("pattern", "")
     field = body.get("field", ClassificationRule.Field.EITHER)
+    match = body.get("match", "phrase")
     if tag is None or not isinstance(pattern, str) or not pattern.strip() or len(pattern.strip()) > 200 or field not in ClassificationRule.Field.values:
         return JsonResponse({"error": "Choose a tag, phrase, and valid field"}, status=400)
+    problem = validate_pattern(pattern.strip(), match) if isinstance(match, str) else "Choose how the rule matches"
+    if problem:
+        return JsonResponse({"error": problem}, status=400)
     try:
         with transaction.atomic():
             get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
-            rule = ClassificationRule.objects.create(owner=request.user, tag=tag, pattern=pattern.strip(), field=field)
+            rule = ClassificationRule.objects.create(owner=request.user, tag=tag, pattern=pattern.strip(), field=field, match=match)
     except IntegrityError:
         return JsonResponse({"error": "This rule already exists"}, status=409)
-    _queue_tag_candidates(request.user.id, tag.id, [{"pattern": rule.pattern, "field": rule.field}])
-    return JsonResponse({"id": str(rule.id), "tag_id": str(tag.id), "tag_name": tag.name, "pattern": rule.pattern, "field": rule.field, "enabled": True}, status=201)
+    _queue_tag_candidates(request.user.id, tag.id, [{"pattern": rule.pattern, "field": rule.field, "match": rule.match}])
+    return JsonResponse({"id": str(rule.id), "tag_id": str(tag.id), "tag_name": tag.name, "pattern": rule.pattern, "field": rule.field, "match": rule.match, "enabled": True}, status=201)
 
 
 @require_http_methods(["DELETE"])

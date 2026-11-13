@@ -9,13 +9,17 @@ admin.site.login = never_cache(lambda request, extra_context=None: redirect("/")
 admin.site.has_permission = admin_has_permission
 from django.urls import path
 
-from archive import agent_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, link_views, metadata_views, physical_views, purge_views, share_views, views
+from archive import agent_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, link_views, metadata_views, physical_views, purge_views, share_views, views
 
 urlpatterns = [
     path("healthz", views.health),
     path("api/setup", views.setup_owner),
     path("api/session", views.session),
+    path("api/overview", stats_views.overview),
     path("api/account/security", security_views.security),
+    path("api/account/tokens", api_tokens.tokens),
+    path("api/account/tokens/<uuid:token_id>", api_tokens.token_detail),
+    path("api/schema.json", api_tokens.schema),
     path("api/account/security/setup", security_views.security_setup),
     path("api/account/security/enable", security_views.security_enable),
     path("api/account/security/disable", security_views.security_disable),
@@ -42,6 +46,7 @@ urlpatterns = [
     path("api/documents/merge", version_views.documents_merge),
     path("api/documents/<uuid:document_id>", views.document_detail),
     path("api/documents/<uuid:document_id>/filing-suggestions", views.document_filing_suggestions),
+    path("api/documents/<uuid:document_id>/similar", similar_views.document_similar),
     path("api/documents/<uuid:document_id>/original", views.download_original),
     path("api/documents/<uuid:document_id>/versions", version_views.document_versions),
     path("api/documents/<uuid:document_id>/versions/<uuid:version_id>/download", version_views.document_version_download),
@@ -54,6 +59,10 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>/shares", share_views.document_shares),
     path("api/documents/<uuid:document_id>/shares/<uuid:share_id>", share_views.document_share_detail),
     path("api/share-links/<str:token>", share_views.shared_original),
+    path("api/share-bundles", bundle_views.share_bundles),
+    path("api/share-bundles/<uuid:bundle_id>", bundle_views.share_bundle_detail),
+    path("api/share-bundles/<str:token>", bundle_views.shared_bundle),
+    path("api/documents/<uuid:document_id>/email", bundle_views.document_email),
     path("api/documents/<uuid:document_id>/retry", views.retry_document),
     path("api/documents/<uuid:document_id>/reprocess", views.reprocess_document),
     path("api/documents/<uuid:document_id>/trash", views.trash_document),

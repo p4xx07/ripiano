@@ -22,6 +22,7 @@ from django.utils import timezone
 
 from .models import BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, ShareLink, Tag, TagOverride
 from . import two_factor
+from .bundle_views import revoke_bundles_containing
 from .throttle import record_sign_in_failure, sign_in_blocked, sign_in_throttle_key
 from .classification import filing_suggestions
 from .models import Workflow
@@ -686,6 +687,7 @@ def bulk_document_trash(request):
             trashed_at = timezone.now()
             Document.objects.filter(owner=request.user, pk__in=document_ids).update(trashed_at=trashed_at)
             ShareLink.objects.filter(document_id__in=document_ids, revoked_at__isnull=True).update(revoked_at=trashed_at)
+            revoke_bundles_containing(document_ids, trashed_at)
         else:
             if any(not document.trashed_at for document in documents_to_change):
                 return JsonResponse({"error": "A selected document is not in Trash"}, status=409)
@@ -969,6 +971,7 @@ def trash_document(request, document_id):
         document.trashed_at = timezone.now()
         document.save(update_fields=["trashed_at"])
         ShareLink.objects.filter(document=document, revoked_at__isnull=True).update(revoked_at=document.trashed_at)
+        revoke_bundles_containing([document.id], document.trashed_at)
     return JsonResponse({"id": str(document.id), "trashed_at": document.trashed_at.isoformat()})
 
 

@@ -225,6 +225,47 @@ Create a bot with BotFather. Set `RIPIANO_TELEGRAM_BOT_TOKEN` and `RIPIANO_TELEG
 
 Telegram's [Bot API limits standard bot downloads to 20 MB](https://core.telegram.org/bots/api#getfile). Telegram handles the file before Ripiano downloads it, so use the direct app upload when the document must never pass through Telegram. Updates remain on Telegram for at most 24 hours; prolonged NAS downtime can miss messages. The bot token must remain secret.
 
+### Matching rules
+
+Tag, sender, and document-type rules are under **Tags & filing**. Each rule can match in one of five ways:
+- the **exact phrase**;
+- **any** of its words (whole words only);
+- **all** of its words;
+- a **similar spelling**, which tolerates OCR mistakes;
+- a **regular expression**, for example `fattura n\. \d+`.
+
+Some limits apply:
+- **Regular expressions** use full Unicode case folding, so `Straße` also matches "STRASSE". Each search stops after 0.25 s, and only the first 100,000 characters are searched.
+- **Similar spelling** compares up to 6 words against the first 20,000 words of a document, at 85% similarity. One wrong letter in a word of six letters or fewer is not tolerated.
+- **Every mode:** rules are evaluated before any database lock is taken.
+
+Existing documents are rechecked in the background when you add a rule.
+
+### Overview
+
+**Overview** shows:
+- totals and storage used;
+- what needs a look (unreadable documents, overdue follow-ups, exact copies, mailbox problems, failed workflow runs), each linking to the right screen;
+- documents added per month over the last year;
+- the most common types, tags, and sources;
+- the last backup (for the archive owner).
+
+### API tokens
+
+Under **Security → API tokens**, create a personal token for your scripts. It is shown once, and you choose an expiry of 7–365 days. Send it as `Authorization: Token rip_…` on `/api/` requests.
+- **Access:** the token acts with your access, needs no CSRF token, and cannot use sign-in or account-security endpoints.
+- **Revoking:** revoke a token at any time. Last use is shown next to each token.
+- **Reference:** `/api/schema.json` is an OpenAPI 3.1 outline of every route.
+- **Agents:** MCP agents keep their own, more limited grants (see Agents).
+
+### Share and email
+
+- **Single document:** a document's **Share original** creates an expiring, revocable link to its original.
+- **Several documents:** in Library selection mode, **Share as one link** gives the selected originals (up to 50 documents, 200 MB) as one ZIP download. The link lasts 1–30 days and can be revoked, and each original is checksum-verified while the ZIP is built.
+- **New versions:** adding a new version of a document revokes the links and bundles that include it.
+- **Email:** **Email this document** sends the original (checksum-verified) or the searchable PDF through the server's SMTP settings. It is off unless the operator sets `RIPIANO_DOCUMENT_EMAIL=1`; SMTP alone (for workflows) does not enable it. Each account can email up to 30 recipients per hour, replies go to the account's email address, and the send history is shown on the document.
+- **Bundle ZIPs:** each bundle's ZIP is built once in the background and deleted when the link ends. Moving a bundled document to Trash or adding a new version revokes the bundle, and restoring the document does not re-share it.
+
 ### Move to a new server
 
 `docker compose exec maintenance_worker .venv/bin/python manage.py export_archive /backup/export-2026-11` writes a portable folder:

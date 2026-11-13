@@ -278,6 +278,8 @@ class FilingRule(models.Model):
     document_type = models.ForeignKey(DocumentType, null=True, blank=True, on_delete=models.CASCADE, related_name="rules")
     pattern = models.CharField(max_length=200)
     field = models.CharField(max_length=10, choices=Field.choices, default=Field.EITHER)
+    # phrase | any (word) | all (words) | regex | fuzzy — see classification.text_matches
+    match = models.CharField(max_length=10, default="phrase")
     enabled = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -317,6 +319,8 @@ class ClassificationRule(models.Model):
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name="rules")
     pattern = models.CharField(max_length=200)
     field = models.CharField(max_length=10, choices=Field.choices, default=Field.EITHER)
+    # phrase | any (word) | all (words) | regex | fuzzy — see classification.text_matches
+    match = models.CharField(max_length=10, default="phrase")
     enabled = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -664,3 +668,63 @@ class AccountSecurity(models.Model):
     recovery_hashes = models.JSONField(default=list, blank=True)
     failed_attempts = models.PositiveIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
+
+
+class ShareBundle(models.Model):
+    """An expiring bearer link to a ZIP of several originals; only its hash is stored."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="share_bundles")
+    title = models.CharField(max_length=200)
+    documents = models.ManyToManyField(Document, related_name="share_bundles")
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    downloads = models.PositiveIntegerField(default=0)
+    # The ZIP is built once, verified, and served as a file; it is deleted when the link ends.
+    zip_status = models.CharField(max_length=10, default="building")
+    zip_path = models.CharField(max_length=500, blank=True)
+    zip_size = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+
+class DocumentEmailSend(models.Model):
+    """A record of the owner emailing a document, kept for the history and rate limit."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        SENT = "sent", "Sent"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="email_sends")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    recipients = models.TextField()
+    attachment = models.CharField(max_length=12)
+    message = models.TextField(blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.QUEUED)
+    detail = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+
+class ApiToken(models.Model):
+    """A personal REST API token. Only its hash is stored; it acts with its owner's access."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="api_tokens")
+    name = models.CharField(max_length=100)
+    token_hash = models.CharField(max_length=64, unique=True)
+    prefix = models.CharField(max_length=12)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]

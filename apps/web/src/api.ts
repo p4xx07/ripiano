@@ -25,12 +25,22 @@ export function tagPathLabel(tag: Tag, byId: ReadonlyMap<string, Tag>): string {
   return names.join(" / ");
 }
 
+export type MatchMode = "phrase" | "any" | "all" | "regex" | "fuzzy";
+export const matchModes: Record<MatchMode, string> = {
+  phrase: "Exact phrase",
+  any: "Any of these words",
+  all: "All of these words",
+  fuzzy: "Similar spelling",
+  regex: "Regular expression",
+};
+
 export type Rule = {
   id: string;
   tag_id: string;
   tag_name: string;
   pattern: string;
   field: "title" | "text" | "either";
+  match: MatchMode;
   enabled: boolean;
 };
 
@@ -70,6 +80,7 @@ export type FilingRule = {
   target_name: string;
   pattern: string;
   field: "title" | "text" | "either";
+  match: MatchMode;
   enabled: boolean;
 };
 

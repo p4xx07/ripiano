@@ -13,6 +13,7 @@ import {
   Bot,
   Layers,
   Mail,
+  BarChart3,
   ShieldCheck,
   Workflow,
   Camera,
@@ -47,6 +48,8 @@ import AgentPanel from "./AgentPanel";
 import MailPanel from "./MailPanel";
 import WorkflowsPanel from "./WorkflowsPanel";
 import SecurityPanel from "./SecurityPanel";
+import BundlePanel from "./BundlePanel";
+import OverviewPanel from "./OverviewPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
 import SavedSearchBar from "./SavedSearchBar";
@@ -484,7 +487,7 @@ function App() {
     return failed ? { kind: "error" as const, text: failed } : { kind: "ok" as const, text: connected ?? "" };
   });
   const [view, setView] = useState<
-    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations" | "workflows" | "security"
+    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations" | "workflows" | "security" | "overview"
   >(initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
@@ -961,6 +964,9 @@ function App() {
         >
           <MapPin size={18} /> Paper archive
         </button>
+        <button className={`nav-link ${view === "overview" ? "active" : ""}`} onClick={() => { setView("overview"); setMenuOpen(false); }}>
+          <BarChart3 size={18} /> Overview
+        </button>
         <button className={`nav-link ${view === "workflows" ? "active" : ""}`} onClick={() => { setView("workflows"); setMenuOpen(false); }}>
           <Workflow size={18} /> Workflows
         </button>
@@ -1043,6 +1049,8 @@ function App() {
                 ? "Workflows"
               : view === "security"
                 ? "Security"
+              : view === "overview"
+                ? "Overview"
               : view === "tags"
                 ? "Tags & filing"
                 : view === "physical"
@@ -1066,6 +1074,8 @@ function App() {
             <TrashPanel refreshKey={trashRefresh} onRestored={() => { void loadDocuments(query); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }} />
           ) : view === "agents" ? (
             <AgentPanel />
+          ) : view === "overview" ? (
+            <OverviewPanel onNavigate={(target) => setView(target)} />
           ) : view === "security" ? (
             <SecurityPanel />
           ) : view === "workflows" ? (
@@ -1309,6 +1319,7 @@ function App() {
                       </Button>
                     </div>
                   </details>
+                  <BundlePanel selectedIds={selectedIds} />
                   <details className="bulk-filing-details">
                     <summary>Export selected</summary>
                     <div className="bulk-filing">

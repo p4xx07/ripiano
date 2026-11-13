@@ -15,6 +15,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PyPdfError
 
 from .models import Document, DocumentVersion, ShareLink
+from .bundle_views import revoke_bundles_containing
 from .storage import InvalidDocument, save_original
 
 MAX_PAGES_EDITABLE = 500
@@ -147,6 +148,7 @@ def add_version(document_id, owner, upload, note, *, expected_version=None):
             document.save(update_fields=["original_name", "original_path", "original_mime", "original_sha256", "original_size",
                                          "version_number", "version_note", "version_created_at", "status", "error"])
             document.revoked_shares = ShareLink.objects.filter(document=document, revoked_at__isnull=True, expires_at__gt=timezone.now()).update(revoked_at=timezone.now())
+            document.revoked_shares += revoke_bundles_containing([document.id])
             transaction.on_commit(lambda: process_document.delay(str(document.id)), robust=True)
     except Exception:
         _media(path).unlink(missing_ok=True)

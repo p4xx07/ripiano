@@ -34,7 +34,7 @@ test("two-step sign-in can be turned on, used with a recovery code, and turned o
   await signIn();
   await page.getByRole("button", { name: "Security", exact: true }).click();
   await expect(page.getByText("Two-step sign-in is off")).toBeVisible();
-  await page.getByLabel("Your password").fill(password!);
+  await page.getByRole("form", { name: "Turn on two-step sign-in" }).getByLabel("Your password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("img", { name: "QR code for your authenticator app" })).toBeVisible();
   const secret = (await page.locator(".security-secret").textContent())!.trim();
@@ -59,7 +59,7 @@ test("two-step sign-in can be turned on, used with a recovery code, and turned o
 
   await page.getByRole("button", { name: "Security", exact: true }).click();
   await expect(page.getByText("9 recovery codes left")).toBeVisible();
-  await page.getByLabel("Your password").fill(password!);
+  await page.getByRole("form", { name: "New recovery codes" }).getByLabel("Your password").fill(password!);
   await page.getByLabel("Authenticator or recovery code").fill(codes[1]);
   await page.getByRole("button", { name: "Turn off two-step sign-in" }).click();
   await expect(page.getByRole("status")).toHaveText("Two-step sign-in is off.");

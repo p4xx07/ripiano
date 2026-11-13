@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ArrowRight, Plus, Tag as TagIcon, Trash2, X } from "lucide-react";
-import { request, Rule, Tag, tagPathLabel } from "./api";
+import { MatchMode, matchModes, request, Rule, Tag, tagPathLabel } from "./api";
 import { Button } from "./ui";
 import FilingVocabularyPanel from "./FilingVocabularyPanel";
 
@@ -14,6 +14,7 @@ export default function TagPanel() {
   const [color, setColor] = useState("#5d8b66");
   const [newRuleTag, setNewRuleTag] = useState<string | null>(null);
   const [newRuleText, setNewRuleText] = useState("");
+  const [newRuleMatch, setNewRuleMatch] = useState<MatchMode>("phrase");
   const [movingTagId, setMovingTagId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -97,10 +98,12 @@ export default function TagPanel() {
           tag_id: newRuleTag,
           pattern: newRuleText,
           field: "either",
+          match: newRuleMatch,
         }),
       });
       setNewRuleTag(null);
       setNewRuleText("");
+      setNewRuleMatch("phrase");
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not add phrase");
@@ -239,6 +242,7 @@ export default function TagPanel() {
                       .filter((rule) => rule.tag_id === tag.id)
                       .map((rule) => (
                         <span className="rule-chip" key={rule.id}>
+                          {rule.match && rule.match !== "phrase" ? <small className="rule-mode">{matchModes[rule.match]}:</small> : null}
                           {rule.pattern}
                           <button
                             onClick={() => void removeRule(rule.id)}
@@ -257,9 +261,13 @@ export default function TagPanel() {
                             setNewRuleText(event.target.value)
                           }
                           placeholder="Phrase to match"
+                          aria-label="Phrase to match"
                           maxLength={200}
                           required
                         />
+                        <select aria-label="How it matches" value={newRuleMatch} onChange={(event) => setNewRuleMatch(event.target.value as MatchMode)}>
+                          {Object.entries(matchModes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
                         <Button
                           disabled={busy}
                         >
@@ -278,7 +286,7 @@ export default function TagPanel() {
                       <button
                         className="add-rule"
                         onClick={() => {
-                          setNewRuleTag(tag.id);
+                          (setNewRuleTag(tag.id), setNewRuleMatch("phrase"));
                           setNewRuleText("");
                         }}
                       >

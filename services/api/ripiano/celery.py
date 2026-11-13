@@ -35,6 +35,10 @@ app.conf.beat_schedule = {
         "task": "archive.tasks.run_scheduled_workflows",
         "schedule": crontab(hour=6, minute=15),
     },
+    "expire-share-bundles": {
+        "task": "archive.tasks.expire_share_bundles",
+        "schedule": 3600.0,
+    },
     "scheduled-backup": {
         "task": "archive.tasks.backup_archive",
         "schedule": crontab(hour=settings.RIPIANO_BACKUP_HOUR, minute=settings.RIPIANO_BACKUP_MINUTE),

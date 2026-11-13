@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
-import { FilingItem, FilingRule, request } from "./api";
+import { FilingItem, FilingRule, MatchMode, matchModes, request } from "./api";
 import { Button } from "./ui";
 
 export default function FilingVocabularyPanel({ kind }: { kind: "correspondents" | "document-types" }) {
@@ -16,6 +16,7 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
   const [editedName, setEditedName] = useState("");
   const [newRuleTarget, setNewRuleTarget] = useState<string | null>(null);
   const [newRuleText, setNewRuleText] = useState("");
+  const [newRuleMatch, setNewRuleMatch] = useState<MatchMode>("phrase");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -115,11 +116,12 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
     try {
       await request("/api/filing-rules", { method: "POST", body: JSON.stringify({
         kind: isSender ? "correspondent" : "document_type",
-        target_id: newRuleTarget, pattern: newRuleText, field: "either",
+        target_id: newRuleTarget, pattern: newRuleText, field: "either", match: newRuleMatch,
       }) });
       focusAfterPhrase.current = newRuleTarget;
       setNewRuleTarget(null);
       setNewRuleText("");
+      setNewRuleMatch("phrase");
       setNotice("Matching phrase added. Existing documents will be checked in the background.");
       await load();
     } catch (cause) {
@@ -169,12 +171,15 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
           </>}
         </div>
         <div className="filing-rule-list">
-          {rules.filter((rule) => rule.target_id === item.id).map((rule) => <span className="rule-chip" key={rule.id}>{rule.pattern}<button type="button" aria-label={`Remove phrase ${rule.pattern} from ${item.name}`} disabled={busy} onClick={() => void removeRule(rule)}><X size={13} /></button></span>)}
+          {rules.filter((rule) => rule.target_id === item.id).map((rule) => <span className="rule-chip" key={rule.id}>{rule.match && rule.match !== "phrase" ? <small className="rule-mode">{matchModes[rule.match]}:</small> : null}{rule.pattern}<button type="button" aria-label={`Remove phrase ${rule.pattern} from ${item.name}`} disabled={busy} onClick={() => void removeRule(rule)}><X size={13} /></button></span>)}
           {newRuleTarget === item.id ? <form className="filing-rule-form" onSubmit={addRule}>
             <input autoFocus aria-label={`Matching phrase for ${item.name}`} value={newRuleText} onChange={(event) => setNewRuleText(event.target.value)} maxLength={200} placeholder="Phrase in title or text" required />
+            <select aria-label={`How the phrase for ${item.name} matches`} value={newRuleMatch} onChange={(event) => setNewRuleMatch(event.target.value as MatchMode)}>
+              {Object.entries(matchModes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
             <Button disabled={busy}>Add</Button>
             <button type="button" aria-label="Cancel phrase" onClick={() => { focusAfterPhrase.current = item.id; setNewRuleTarget(null); }}><X size={16} /></button>
-          </form> : <button ref={(node) => { if (node) addPhraseButtons.current.set(item.id, node); else addPhraseButtons.current.delete(item.id); }} type="button" className="text-action" onClick={() => { setNewRuleTarget(item.id); setNewRuleText(""); }}><Plus size={14} /> Add matching phrase</button>}
+          </form> : <button ref={(node) => { if (node) addPhraseButtons.current.set(item.id, node); else addPhraseButtons.current.delete(item.id); }} type="button" className="text-action" onClick={() => { setNewRuleTarget(item.id); setNewRuleText(""); setNewRuleMatch("phrase"); }}><Plus size={14} /> Add matching phrase</button>}
         </div>
       </li>)}
     </ul>}

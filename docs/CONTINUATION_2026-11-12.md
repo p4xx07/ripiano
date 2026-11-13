@@ -28,6 +28,14 @@ Work in `/Users/debotta/dbrepos/ripiano` on `codex/initial-implementation`, draf
   - Commands: `export_archive <dir>` and `import_archive <dir> --yes` (`archive/portable.py`).
   - A live check exported the local stack (2,850 documents, 5,713 checksum-verified files, 143 MB).
   - Importing it into a fresh PostgreSQL 17 reproduced the same document, tag-link, paper-copy, and account counts, and new rows got fresh sequence IDs.
+- Sharing:
+  - Bundles and emails live in `archive/bundle_views.py` (`ShareBundle`, `DocumentEmailSend`, task `send_document_email`). The UI is `BundlePanel.tsx` and `EmailDocumentPanel.tsx`.
+  - For browser tests, the local stack sends mail through GreenMail: set `RIPIANO_SMTP_HOST=mailtest`, `PORT=3025`, `SECURITY=none` in the stack env.
+- API tokens: `archive/api_tokens.py` (middleware after AuthenticationMiddleware; blocked prefixes; password-change revocation via a signal in `apps.py`). `/api/schema.json` is generated from URL patterns and `require_http_methods` closures.
+- Overview: `archive/stats_views.py` (`/api/overview`) and `OverviewPanel.tsx`.
+- `archive/conftest.py` clears the cache before each test, because sign-in throttling uses it.
+- Match modes: `classification.text_matches` (phrase/any/all/regex/fuzzy). Regex uses the `regex` package with a timeout and FULLCASE. `apply_rules` matches before locking.
+- Similar documents: `archive/similar.py` and `/api/documents/<id>/similar`.
 - The local Compose test stack is on port 18080. Set both `RIPIANO_PORT=18080` and `RIPIANO_PUBLIC_ORIGIN=http://localhost:18080` for local browser tests; otherwise CSRF origin checking rejects sign-in. The test archives contain synthetic documents. Do not use the former temporary checkout.
 
 - Selected-document collection export packages up to 20 documents with original checksums, available searchable PDFs, OCR text, and metadata in a stable ZIP layout. Owner/Trash isolation and changed-file rejection are tested; desktop/mobile download journeys and screenshots are in `qa-artifacts/20261112-collection-export`.

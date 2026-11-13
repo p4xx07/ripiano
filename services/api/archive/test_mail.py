@@ -313,13 +313,14 @@ def nested_messages():
 def test_attachments_inside_signed_alternative_and_forwarded_mail_are_found_but_inline_logos_are_not(owner, tmp_path):
     account = account_for(owner)
     MailRule.objects.create(owner=owner, account=account, name="All", title_from=MailRule.Title.FILENAME)
-    assert poll(FakeMailbox({"INBOX": nested_messages()}), account, tmp_path) == 3
+    mailbox = nested_messages()  # built once: generated PDFs embed a timestamp, so rebuilding changes their bytes
+    assert poll(FakeMailbox({"INBOX": mailbox}), account, tmp_path) == 3
     assert sorted(Document.objects.filter(owner=owner).values_list("title", flat=True)) == ["fattura", "forwarded", "statement"]
     assert ProcessedMail.objects.get(uid=4).status == ProcessedMail.Status.NO_MATCH
 
     inline_rule = MailRule.objects.create(owner=owner, account=account, name="Images too", include_inline=True)
     account.rules.exclude(pk=inline_rule.pk).update(enabled=False)
-    assert poll(FakeMailbox({"INBOX": nested_messages()}), account, tmp_path) == 1
+    assert poll(FakeMailbox({"INBOX": mailbox}), account, tmp_path) == 1
     assert Document.objects.filter(owner=owner, original_name="logo.png").exists()
 
 

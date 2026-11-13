@@ -73,6 +73,34 @@ def test_manual_examples_suggest_filing_without_changing_document():
 
 
 @pytest.mark.django_db
+def test_add_tag_patch_is_atomic_addition_and_keeps_other_filing_fields():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    document = ready_document(owner)
+    existing = Tag.objects.create(owner=owner, name="Existing")
+    suggested = Tag.objects.create(owner=owner, name="Suggested")
+    foreign = Tag.objects.create(owner=other, name="Private")
+    DocumentTag.objects.create(document=document, tag=existing, origin=DocumentTag.Origin.MANUAL)
+    TagOverride.objects.create(document=document, tag=suggested)
+    client = Client()
+    client.force_login(owner)
+    endpoint = f"/api/documents/{document.id}"
+
+    response = client.patch(endpoint, json.dumps({"add_tag_id": str(suggested.id)}), content_type="application/json")
+    assert response.status_code == 200
+    assert {item["name"] for item in response.json()["tags"]} == {"Existing", "Suggested"}
+    assert response.json()["title"] == document.title
+    assert DocumentTag.objects.get(document=document, tag=suggested).origin == DocumentTag.Origin.MANUAL
+    assert not TagOverride.objects.filter(document=document, tag=suggested).exists()
+
+    assert client.patch(endpoint, json.dumps({"add_tag_id": str(suggested.id)}), content_type="application/json").status_code == 200
+    assert DocumentTag.objects.filter(document=document).count() == 2
+    assert client.patch(endpoint, json.dumps({"add_tag_id": str(foreign.id)}), content_type="application/json").status_code == 400
+    assert client.patch(endpoint, json.dumps({"add_tag_id": str(suggested.id), "tags": []}), content_type="application/json").status_code == 400
+    assert DocumentTag.objects.filter(document=document).count() == 2
+
+
+@pytest.mark.django_db
 def test_filing_suggestions_require_owner_ready_and_manual_example():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     other = get_user_model().objects.create_user("other", password="secure-password-2")

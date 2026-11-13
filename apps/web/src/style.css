@@ -1929,6 +1929,10 @@ button:disabled {
 .filing-suggestions button:focus-visible {
   border-color: var(--color-primary);
 }
+.filing-suggestions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
 .filing-suggestions .suggestion-action {
   display: flex;
   align-items: flex-start;

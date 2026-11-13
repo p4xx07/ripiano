@@ -837,6 +837,19 @@ def document_detail(request, document_id):
             document.duplicate_reviewed_at = timezone.now() if body["duplicate_reviewed"] else None
             changes.append("duplicate_reviewed_at")
         chosen = None
+        added_tag = None
+        if "add_tag_id" in body:
+            if "tags" in body:
+                return JsonResponse({"error": "Choose either tags or add_tag_id"}, status=400)
+            try:
+                added_tag_id = UUID(body["add_tag_id"]) if isinstance(body["add_tag_id"], str) else None
+            except ValueError:
+                added_tag_id = None
+            added_tag = Tag.objects.filter(owner=request.user, pk=added_tag_id).first() if added_tag_id else None
+            if added_tag is None:
+                return JsonResponse({"error": "Tag not found"}, status=400)
+            if not DocumentTag.objects.filter(document=document, tag=added_tag).exists() and DocumentTag.objects.filter(document=document).count() >= 100:
+                return JsonResponse({"error": "A document can have up to 100 tags"}, status=400)
         if "tags" in body:
             if not isinstance(body["tags"], list) or len(body["tags"]) > 100:
                 return JsonResponse({"error": "Tags must be a list of up to 100 IDs"}, status=400)
@@ -865,8 +878,11 @@ def document_detail(request, document_id):
                 for tag in chosen:
                     TagOverride.objects.filter(document=document, tag=tag).delete()
                     DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
+            if added_tag is not None:
+                TagOverride.objects.filter(document=document, tag=added_tag).delete()
+                DocumentTag.objects.update_or_create(document=document, tag=added_tag, defaults={"origin": DocumentTag.Origin.MANUAL})
         # Filing changes trigger "updated" workflows; follow-up, ASN, and review clicks do not.
-        if set(changes) & {"title", "document_date", "correspondent", "document_type"} or chosen is not None:
+        if set(changes) & {"title", "document_date", "correspondent", "document_type"} or chosen is not None or added_tag is not None:
             # Workflow actions run after the owner's own change and never re-trigger themselves.
             run_for_document(document, Workflow.Trigger.UPDATED)
         document = Document.objects.filter(pk=document.id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").get()

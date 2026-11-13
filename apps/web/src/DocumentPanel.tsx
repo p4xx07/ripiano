@@ -18,7 +18,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Document, DocumentNote, FilingItem, FilingSuggestions, Location, PhysicalCopy, request, Tag, tagPathLabel } from "./api";
+import { Document, DocumentNote, FilingItem, FilingSuggestion, FilingSuggestions, Location, PhysicalCopy, request, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 import CustomFieldsPanel from "./CustomFieldsPanel";
@@ -371,10 +371,32 @@ export default function DocumentPanel({
   const suggestedTags = suggestions?.tags.filter((item) => !selected.includes(item.id)) ?? [];
   const suggestedSenders = correspondentId ? [] : suggestions?.correspondents ?? [];
   const suggestedTypes = documentTypeId ? [] : suggestions?.document_types ?? [];
-  function acceptSuggestion(fieldId: string, message: string, apply: () => void) {
-    apply();
-    setSuggestionStatus(`${message} Save to keep it.`);
-    requestAnimationFrame(() => document.getElementById(fieldId)?.focus());
+  async function acceptSuggestion(kind: "tag" | "sender" | "type", item: FilingSuggestion) {
+    setBusy(true);
+    setError("");
+    setSuggestionStatus("");
+    const fieldId = kind === "tag" ? `detail-tag-${item.id}` : kind === "sender" ? "detail-correspondent" : "detail-document-type";
+    try {
+      const body = kind === "tag" ? { add_tag_id: item.id } : kind === "sender" ? { correspondent_id: item.id } : { document_type_id: item.id };
+      const updated = await request<Document>(`/api/documents/${current.id}`, { method: "PATCH", body: JSON.stringify(body) });
+      const oldTags = new Set(current.tags.map((tag) => tag.id));
+      setSelected((draft) => {
+        const next = new Set(updated.tags.map((tag) => tag.id));
+        for (const id of oldTags) if (!draft.includes(id)) next.delete(id);
+        for (const id of draft) if (!oldTags.has(id)) next.add(id);
+        return [...next];
+      });
+      setCorrespondentId((draft) => kind === "sender" || draft === (current.correspondent?.id ?? "") ? updated.correspondent?.id ?? "" : draft);
+      setDocumentTypeId((draft) => kind === "type" || draft === (current.document_type?.id ?? "") ? updated.document_type?.id ?? "" : draft);
+      setCurrent(updated);
+      onSaved(updated);
+      setSuggestionStatus(`${kind === "tag" ? "Tag" : kind === "sender" ? "Sender" : "Type"} ${item.name} saved. Other edits still need Save changes.`);
+      requestAnimationFrame(() => document.getElementById(fieldId)?.focus());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save suggestion");
+    } finally {
+      setBusy(false);
+    }
   }
   const visibleSuggestions = suggestedTags.length + suggestedSenders.length + suggestedTypes.length > 0;
 
@@ -445,21 +467,21 @@ export default function DocumentPanel({
           {visibleSuggestions && (
             <section className="filing-suggestions" aria-labelledby="filing-suggestions-heading">
               <h3 id="filing-suggestions-heading">Suggested from your documents</h3>
-              <p>Based on documents you filed yourself. Nothing changes until you save.</p>
+              <p>Based on documents you filed yourself. Tap a suggestion to save it; other edits still need Save changes.</p>
               {suggestedTags.map((item) => (
-                <button type="button" key={`tag-${item.id}`} aria-label={`Add tag: ${item.name}`} aria-describedby={`suggestion-tag-${item.id}`} onClick={() => acceptSuggestion(`detail-tag-${item.id}`, `Tag ${item.name} selected.`, () => setSelected((value) => [...value, item.id]))}>
+                <button type="button" disabled={busy} key={`tag-${item.id}`} aria-label={`Add tag: ${item.name}`} aria-describedby={`suggestion-tag-${item.id}`} onClick={() => void acceptSuggestion("tag", item)}>
                   <span className="suggestion-action"><TagIcon size={16} aria-hidden="true" /><span>Add tag: {item.name}</span></span>
                   <small id={`suggestion-tag-${item.id}`}>Like “{item.example.title}” · shared: {item.shared_terms.join(", ")}</small>
                 </button>
               ))}
               {suggestedSenders.map((item) => (
-                <button type="button" key={`sender-${item.id}`} aria-label={`Set sender: ${item.name}`} aria-describedby={`suggestion-sender-${item.id}`} onClick={() => acceptSuggestion("detail-correspondent", `Sender set to ${item.name}.`, () => setCorrespondentId(item.id))}>
+                <button type="button" disabled={busy} key={`sender-${item.id}`} aria-label={`Set sender: ${item.name}`} aria-describedby={`suggestion-sender-${item.id}`} onClick={() => void acceptSuggestion("sender", item)}>
                   <span className="suggestion-action"><Building2 size={16} aria-hidden="true" /><span>Set sender: {item.name}</span></span>
                   <small id={`suggestion-sender-${item.id}`}>Like “{item.example.title}” · shared: {item.shared_terms.join(", ")}</small>
                 </button>
               ))}
               {suggestedTypes.map((item) => (
-                <button type="button" key={`type-${item.id}`} aria-label={`Set type: ${item.name}`} aria-describedby={`suggestion-type-${item.id}`} onClick={() => acceptSuggestion("detail-document-type", `Type set to ${item.name}.`, () => setDocumentTypeId(item.id))}>
+                <button type="button" disabled={busy} key={`type-${item.id}`} aria-label={`Set type: ${item.name}`} aria-describedby={`suggestion-type-${item.id}`} onClick={() => void acceptSuggestion("type", item)}>
                   <span className="suggestion-action"><FileText size={16} aria-hidden="true" /><span>Set type: {item.name}</span></span>
                   <small id={`suggestion-type-${item.id}`}>Like “{item.example.title}” · shared: {item.shared_terms.join(", ")}</small>
                 </button>

@@ -26,6 +26,7 @@ const scopeNames: Record<string, string> = {
   "documents:search": "Find document titles and tags",
   "documents:text": "Read OCR text",
   "documents:tag": "Add or remove tags",
+  "documents:filing": "Set sender and document type",
 };
 
 export default function AgentPanel() {

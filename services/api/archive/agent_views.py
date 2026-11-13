@@ -14,6 +14,7 @@ SCOPES = {
     "documents:search": "Find document titles and filing metadata",
     "documents:text": "Read extracted document text",
     "documents:tag": "Change document tags",
+    "documents:filing": "Set sender and document type",
 }
 
 

@@ -489,7 +489,7 @@ export default function DocumentPanel({
             </section>
           )}
           {suggestionStatus && <p className="visually-hidden" role="status">{suggestionStatus}</p>}
-          <Field label="From" hint={current.correspondent_origin === "rule" ? "Added by matching phrase · change it if needed" : current.correspondent_origin === "source" ? "Added by email rule · change it if needed" : "Optional sender or organization"} className="detail-label">
+          <Field label="From" hint={current.correspondent_origin === "rule" ? "Added by matching phrase · change it if needed" : current.correspondent_origin === "source" ? "Added by input or workflow rule · change it if needed" : current.correspondent_origin === "model" ? "Set by an agent · change it if needed" : "Optional sender or organization"} className="detail-label">
             <select id="detail-correspondent" value={correspondentId} onChange={(event) => setCorrespondentId(event.target.value)}>
               <option value="">No sender</option>
               {correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -502,7 +502,7 @@ export default function DocumentPanel({
               <button type="button" aria-label="Cancel new sender" onClick={() => setCreatingCorrespondent(false)}><X size={16} /></button>
             </div>
           ) : <button type="button" className="text-action" onClick={() => setCreatingCorrespondent(true)}><Plus size={15} /> Add a sender</button>}
-          <Field label="Document type" hint={current.document_type_origin === "rule" ? "Added by matching phrase · change it if needed" : current.document_type_origin === "source" ? "Added by email rule · change it if needed" : "Optional"} className="detail-label">
+          <Field label="Document type" hint={current.document_type_origin === "rule" ? "Added by matching phrase · change it if needed" : current.document_type_origin === "source" ? "Added by input or workflow rule · change it if needed" : current.document_type_origin === "model" ? "Set by an agent · change it if needed" : "Optional"} className="detail-label">
             <select id="detail-document-type" value={documentTypeId} onChange={(event) => setDocumentTypeId(event.target.value)}>
               <option value="">No type</option>
               {documentTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}

@@ -34,6 +34,7 @@ class Document(models.Model):
     class FilingOrigin(models.TextChoices):
         NONE = "none", "Unassigned"
         RULE = "rule", "Matching phrase"
+        MODEL = "model", "Agent suggestion"
         MANUAL = "manual", "Set by user"
         SOURCE = "source", "Input rule"
 

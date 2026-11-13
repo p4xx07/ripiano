@@ -17,7 +17,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 from pydantic import AnyHttpUrl
 
-from .models import AgentAudit, AgentGrant, Document, DocumentTag, Tag, TagOverride
+from .models import AgentAudit, AgentGrant, Correspondent, Document, DocumentTag, DocumentType, Tag, TagOverride
 
 TOOLS = {
     "search_documents": (
@@ -51,6 +51,22 @@ TOOLS = {
                 "add": {"type": "array", "items": {"type": "string", "format": "uuid"}, "maxItems": 20},
                 "remove": {"type": "array", "items": {"type": "string", "format": "uuid"}, "maxItems": 20},
             }, "required": ["document_id"], "additionalProperties": False,
+        }),
+    ),
+    "list_filing_options": (
+        "documents:filing",
+        Tool(name="list_filing_options", description="List existing senders and document types available for filing, 200 of each per page.", inputSchema={
+            "type": "object", "properties": {"offset": {"type": "integer", "minimum": 0}}, "additionalProperties": False,
+        }),
+    ),
+    "set_document_filing": (
+        "documents:filing",
+        Tool(name="set_document_filing", description="Set one existing sender or document type. Human and input-rule choices are protected.", inputSchema={
+            "type": "object", "properties": {
+                "document_id": {"type": "string", "format": "uuid"},
+                "correspondent_id": {"type": "string", "format": "uuid"},
+                "document_type_id": {"type": "string", "format": "uuid"},
+            }, "required": ["document_id"], "oneOf": [{"required": ["correspondent_id"]}, {"required": ["document_type_id"]}], "additionalProperties": False,
         }),
     ),
 }
@@ -122,7 +138,7 @@ def _execute(grant, name, args):
         offset = args.get("offset", 0)
         if not isinstance(query, str) or len(query) > 200 or status not in (None, *Document.Status.values) or not isinstance(offset, int) or isinstance(offset, bool) or not 0 <= offset <= 1_000_000:
             return None, {"error": "Invalid query, status, or offset"}
-        docs = _documents(grant).prefetch_related("tag_links__tag")
+        docs = _documents(grant).select_related("correspondent", "document_type").prefetch_related("tag_links__tag")
         if query:
             if "documents:text" in grant.scopes:
                 docs = docs.filter(Q(title__icontains=query) | Q(extracted_text__icontains=query))
@@ -135,10 +151,24 @@ def _execute(grant, name, args):
             "id": str(doc.id), "title": doc.title, "status": doc.status,
             "document_date": doc.document_date.isoformat() if doc.document_date else None,
             "tags": [{"id": str(link.tag_id), "name": link.tag.name} for link in doc.tag_links.all()],
+            "correspondent": {"id": str(doc.correspondent_id), "name": doc.correspondent.name} if doc.correspondent_id else None,
+            "document_type": {"id": str(doc.document_type_id), "name": doc.document_type.name} if doc.document_type_id else None,
         } for doc in page], "next_offset": offset + 20 if len(page) == 20 else None}
 
     if name == "list_tags":
         return None, {"tags": [{"id": str(tag.id), "name": tag.name, "description": tag.description} for tag in Tag.objects.filter(owner=grant.owner)[:200]]}
+
+    if name == "list_filing_options":
+        offset = args.get("offset", 0)
+        if not isinstance(offset, int) or isinstance(offset, bool) or not 0 <= offset <= 1_000_000:
+            return None, {"error": "Invalid offset"}
+        correspondents = list(Correspondent.objects.filter(owner=grant.owner)[offset:offset + 201])
+        types = list(DocumentType.objects.filter(owner=grant.owner)[offset:offset + 201])
+        return None, {
+            "correspondents": [{"id": str(item.id), "name": item.name} for item in correspondents[:200]],
+            "document_types": [{"id": str(item.id), "name": item.name} for item in types[:200]],
+            "next_offset": offset + 200 if len(correspondents) > 200 or len(types) > 200 else None,
+        }
 
     document_id = _uuid(args.get("document_id"))
     if document_id is None:
@@ -180,6 +210,29 @@ def _execute(grant, name, args):
             for tag_id in add - suppressed:
                 DocumentTag.objects.get_or_create(document=document, tag_id=tag_id, defaults={"origin": DocumentTag.Origin.MODEL})
         return document, {"document_id": str(document.id), "added": [str(x) for x in add - suppressed], "suppressed": [str(x) for x in suppressed], "removed": [str(x) for x in remove]}
+
+    if name == "set_document_filing":
+        choices = {"correspondent_id": ("correspondent", Correspondent), "document_type_id": ("document_type", DocumentType)}
+        provided = [key for key in choices if key in args]
+        if len(provided) != 1:
+            return document, {"error": "Choose exactly one sender or document type"}
+        key = provided[0]
+        field, model = choices[key]
+        choice_id = _uuid(args[key])
+        choice = model.objects.filter(pk=choice_id, owner=grant.owner).first() if choice_id else None
+        if choice is None:
+            return document, {"error": f"{field.replace('_', ' ').title()} not found"}
+        with transaction.atomic():
+            document = _documents(grant).select_for_update(of=("self",)).filter(pk=document_id).first()
+            if document is None:
+                return None, {"error": "Document no longer within this grant"}
+            origin_field = f"{field}_origin"
+            if getattr(document, origin_field) in (Document.FilingOrigin.MANUAL, Document.FilingOrigin.SOURCE):
+                return document, {"error": "A human or input rule already chose this field"}
+            setattr(document, field, choice)
+            setattr(document, origin_field, Document.FilingOrigin.MODEL)
+            document.save(update_fields=[field, origin_field])
+        return document, {"document_id": str(document.id), key: str(choice.id), "origin": Document.FilingOrigin.MODEL}
 
     return None, {"error": "Unknown tool"}
 

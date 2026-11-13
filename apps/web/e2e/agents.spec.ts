@@ -27,16 +27,21 @@ test("create a limited agent and revoke its access", async ({
   await expect(page.getByLabel("Find document titles and tags")).toBeChecked();
   await expect(page.getByLabel("Read OCR text")).not.toBeChecked();
   await expect(page.getByLabel("Add or remove tags")).not.toBeChecked();
+  await expect(page.getByLabel("Set sender and document type")).not.toBeChecked();
+  await page.getByLabel("Set sender and document type").check();
   await page.getByRole("button", { name: "Create agent token" }).click();
   await expect(page.getByText("Copy this token now")).toBeVisible();
   const token = await page.getByLabel("New agent token").inputValue();
   expect(token).toMatch(/^rpa_/);
   const card = page.locator(".agent-card").filter({ hasText: name });
   await expect(card).toContainText("Find document titles and tags");
+  await expect(card).toContainText("Set sender and document type");
   await expect(card).not.toContainText("Read OCR text");
   await page.screenshot({
     path: testInfo.outputPath("agents.png"),
     fullPage: true,
+    mask: [page.getByLabel("New agent token")],
+    maskColor: "#dce8d8",
   });
   await card.getByRole("button", { name: "Revoke" }).click();
   await expect(card).toContainText("Revoked");

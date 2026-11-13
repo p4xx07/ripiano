@@ -79,6 +79,8 @@ Every agent is a separate principal/grant linked to a human owner. The user sign
 
 Each grant also records allowed collections/tags, expiry, device/client name, and last use. The server enforces scopes on every call and audits actor, tool, document IDs, action, and outcome without logging full document text. Bulk/destructive operations require explicit approval and support dry-run previews. Revocation is immediate. Multiple agents can have unrelated scopes, even when owned by the same human. The MCP endpoint exposes only tools allowed to the current grant.
 
+Current MCP permissions separate document search, OCR text, tag changes, and sender/type filing. The filing scope lists existing choices and sets one field at a time on an allowed document; it never replaces a human or input-rule choice. Agent-assigned sender/type values are marked as model-origin so matching rules do not erase them, and a human can correct them normally. The bundled Mac classifier still files tags only. Other organize, add, and sensitive scopes in the table above remain planned.
+
 The local model worker is conceptually separate from agent identity. An internal NAS classifier can run as a trusted service without MCP; an external Mac/Pi worker uses an individually named grant. A cloud-model agent may receive content returned by tools despite the MCP server being self-hosted; the connection screen must explain this.
 
 ## Scheduling and connectivity

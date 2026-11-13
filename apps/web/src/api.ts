@@ -118,8 +118,8 @@ export type Document = {
   document_date: string | null;
   correspondent: FilingItem | null;
   document_type: FilingItem | null;
-  correspondent_origin: "none" | "rule" | "manual" | "source";
-  document_type_origin: "none" | "rule" | "manual" | "source";
+  correspondent_origin: "none" | "rule" | "model" | "manual" | "source";
+  document_type_origin: "none" | "rule" | "model" | "manual" | "source";
   action_status: "none" | "open" | "done";
   action_due_date: string | null;
   action_note: string;

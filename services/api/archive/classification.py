@@ -237,7 +237,7 @@ def apply_rules(document):
         changes = []
         for kind, field in ((FilingRule.Kind.CORRESPONDENT, "correspondent"), (FilingRule.Kind.DOCUMENT_TYPE, "document_type")):
             origin_field = f"{field}_origin"
-            if getattr(locked, origin_field) in (Document.FilingOrigin.MANUAL, Document.FilingOrigin.SOURCE):
+            if getattr(locked, origin_field) in (Document.FilingOrigin.MANUAL, Document.FilingOrigin.SOURCE, Document.FilingOrigin.MODEL):
                 continue
             rule = filing_matches.get(kind)
             target_id = getattr(rule, f"{field}_id") if rule else None

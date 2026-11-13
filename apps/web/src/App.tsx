@@ -38,6 +38,8 @@ import {
   SlidersHorizontal,
   Tag as TagIcon,
   Trash2,
+  UserCog,
+  Users,
   UploadCloud,
   X,
 } from "lucide-react";
@@ -49,6 +51,9 @@ import AgentPanel from "./AgentPanel";
 import MailPanel from "./MailPanel";
 import WorkflowsPanel from "./WorkflowsPanel";
 import SecurityPanel from "./SecurityPanel";
+import PeoplePanel from "./PeoplePanel";
+import SharedPanel from "./SharedPanel";
+import SharedDocumentPanel from "./SharedDocumentPanel";
 import BundlePanel from "./BundlePanel";
 import OverviewPanel from "./OverviewPanel";
 import PhysicalPanel from "./PhysicalPanel";
@@ -545,7 +550,7 @@ function App() {
     return failed ? { kind: "error" as const, text: failed } : { kind: "ok" as const, text: connected ?? "" };
   });
   const [view, setView] = useState<
-    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations" | "workflows" | "security" | "overview"
+    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations" | "workflows" | "security" | "overview" | "shared" | "people"
   >(initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
@@ -553,6 +558,7 @@ function App() {
   const [actionRefresh, setActionRefresh] = useState(0);
   const [inboxRefresh, setInboxRefresh] = useState(0);
   const [trashRefresh, setTrashRefresh] = useState(0);
+  const [sharedRefresh, setSharedRefresh] = useState(0);
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -920,6 +926,9 @@ function App() {
       await request("/api/session", { method: "DELETE" });
       setSession(await request<Session>("/api/session"));
       setDocuments([]);
+      // The next person to sign in on this device starts at the Library, with nothing left open.
+      setSelectedDocument(null);
+      setView("documents");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not sign out");
     }
@@ -1034,6 +1043,9 @@ function App() {
         <button className={`nav-link ${view === "integrations" ? "active" : ""}`} onClick={() => { setView("integrations"); setMenuOpen(false); }}>
           <Mail size={18} /> Email
         </button>
+        <button className={`nav-link ${view === "shared" ? "active" : ""}`} onClick={() => { setView("shared"); setMenuOpen(false); }}>
+          <Users size={18} /> Shared with me
+        </button>
         <button className={`nav-link ${view === "trash" ? "active" : ""}`} onClick={() => { setView("trash"); setMenuOpen(false); }}>
           <Trash2 size={18} /> Trash
         </button>
@@ -1046,6 +1058,11 @@ function App() {
             }}
           >
             <Bot size={18} /> Agents
+          </button>
+        )}
+        {session.owner && (
+          <button className={`nav-link ${view === "people" ? "active" : ""}`} onClick={() => { setView("people"); setMenuOpen(false); }}>
+            <UserCog size={18} /> People
           </button>
         )}
         {session.owner && (
@@ -1076,7 +1093,7 @@ function App() {
           </span>
           <span className="profile-name">
             {session.username}
-            <small>Archive owner</small>
+            <small>{session.owner ? "Admin" : "Your archive"}</small>
           </span>
           <LogOut size={16} />
         </button>
@@ -1101,6 +1118,10 @@ function App() {
                 ? "Needs action"
               : view === "trash"
                 ? "Trash"
+              : view === "shared"
+                ? "Shared with me"
+              : view === "people"
+                ? "People"
               : view === "integrations"
                 ? "Email"
               : view === "workflows"
@@ -1124,6 +1145,10 @@ function App() {
         <section className="page-content">
           {view === "backups" ? (
             <BackupPanel />
+          ) : view === "shared" ? (
+            <SharedPanel refreshKey={sharedRefresh} onOpenDocument={setSelectedDocument} />
+          ) : view === "people" ? (
+            <PeoplePanel currentUsername={session.username} />
           ) : view === "inbox" ? (
             <InboxPanel refreshKey={inboxRefresh} onOpenDocument={setSelectedDocument} />
           ) : view === "actions" ? (
@@ -1634,7 +1659,16 @@ function App() {
             </div>
         </Modal>
       )}
-      {selectedDocument && (
+      {selectedDocument && selectedDocument.access !== "owner" && (
+        <SharedDocumentPanel
+          key={selectedDocument.id}
+          initial={selectedDocument}
+          username={session.username}
+          onClose={() => setSelectedDocument(null)}
+          onSaved={() => setSharedRefresh((value) => value + 1)}
+        />
+      )}
+      {selectedDocument && selectedDocument.access === "owner" && (
         <DocumentPanel
           key={selectedDocument.id}
           initial={selectedDocument}

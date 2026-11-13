@@ -297,6 +297,15 @@ Open **Security**, confirm your password, and scan the QR code with any authenti
 - **Throttling:** failed sign-ins are limited per username and per client address.
 - **Lost phone, no recovery codes:** run `manage.py reset_two_factor <username>`.
 
+### People and sharing
+
+The first account is the admin. Under **People**, the admin adds people (each gets a private archive), resets passwords, turns accounts off, and creates groups such as "Family".
+- **Share a document:** open it, then **People with access → Manage access**. Choose a person or a group and either *Can view* or *Can edit details*.
+- **What they get:** the document appears under their **Shared with me**. Viewers can read it, download it, and read its notes. Editors can also change the title, date, and follow-up, and add notes.
+- **What stays with you:** filing, tags, files, pages, versions, share links, paper copies, and Trash.
+- **Ending access:** removing a grant, removing someone from the group, turning the account off, or moving the document to Trash all end access immediately.
+- **Passwords:** a password reset ends that person's other sessions and API tokens. API tokens cannot manage people or groups.
+
 ### Workflows
 
 Open **Workflows** to automate routine filing. A workflow runs:

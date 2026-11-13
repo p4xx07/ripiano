@@ -14,14 +14,14 @@ from .models import ApiToken
 PREFIX = "rip_"
 # Anonymous share downloads stay usable even if a client sends a stale token header.
 PUBLIC_PREFIXES = ("/api/share-links/", "/api/share-bundles/")
-# Tokens cannot mint other credentials, create public links, or change how people sign in.
-BLOCKED_PREFIXES = ("/api/account/", "/api/session", "/api/setup", "/api/agents", "/api/share-bundles")
+# Tokens cannot mint other credentials, create public links, manage people, or change how people sign in.
+BLOCKED_PREFIXES = ("/api/account/", "/api/session", "/api/setup", "/api/agents", "/api/share-bundles", "/api/people", "/api/groups")
 
 
 def _blocked(request):
     if request.path.startswith(BLOCKED_PREFIXES):
         return True
-    return request.method != "GET" and request.path.startswith("/api/documents/") and "/shares" in request.path
+    return request.method != "GET" and request.path.startswith("/api/documents/") and ("/shares" in request.path or "/access" in request.path)
 
 
 def revoke_tokens_on_password_change(sender, instance, **kwargs):

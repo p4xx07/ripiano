@@ -754,3 +754,26 @@ class StoragePath(models.Model):
     class Meta:
         ordering = ["name", "id"]
         constraints = [models.UniqueConstraint(Lower("name"), "owner", name="unique_storage_path_name_per_owner")]
+
+
+class DocumentAccess(models.Model):
+    """The owner lets another person, or everyone in a group, see (or also edit the details of) one document."""
+
+    class Level(models.TextChoices):
+        VIEW = "view", "Can view"
+        EDIT = "edit", "Can edit details"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="access_grants")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="shared_documents")
+    group = models.ForeignKey("auth.Group", null=True, blank=True, on_delete=models.CASCADE, related_name="shared_documents")
+    level = models.CharField(max_length=10, choices=Level.choices, default=Level.VIEW)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.CheckConstraint(condition=Q(user__isnull=False, group__isnull=True) | Q(user__isnull=True, group__isnull=False), name="document_access_one_target"),
+            models.UniqueConstraint(fields=["document", "user"], condition=Q(user__isnull=False), name="unique_document_access_user"),
+            models.UniqueConstraint(fields=["document", "group"], condition=Q(group__isnull=False), name="unique_document_access_group"),
+        ]

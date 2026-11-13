@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import CommandError, call_command
 from django.test import override_settings
@@ -52,6 +53,10 @@ def build_archive(media):
     PhysicalCopy.objects.create(document=first, sticker_code="R-TESTCOPY", location=box)
     flow = Workflow.objects.create(owner=owner, name="Tag", trigger=Workflow.Trigger.ADDED)
     flow.add_tags.add(child)
+    family = Group.objects.create(name="Family")
+    reader = get_user_model().objects.create_user("reader", password="secure-password-2")
+    reader.groups.add(family)
+    first.access_grants.create(group=family, level="edit")
     return owner, first, copy
 
 
@@ -86,6 +91,8 @@ def test_export_then_import_restores_records_and_byte_identical_files(tmp_path):
     assert PhysicalCopy.objects.get(document=restored).location.parent.name == "Shelf"
     assert list(Workflow.objects.get(name="Tag").add_tags.values_list("name", flat=True)) == ["Bills"]
     assert get_user_model().objects.get(username="owner").check_password("secure-password-1")
+    assert list(get_user_model().objects.get(username="reader").groups.values_list("name", flat=True)) == ["Family"]
+    assert list(restored.access_grants.values_list("group__name", "level")) == [("Family", "edit")]
     for relative in (restored.original_path, restored.archive_path, "originals/zz/old.pdf"):
         assert (fresh / relative).read_bytes() == (media / relative).read_bytes()
 
@@ -97,7 +104,7 @@ def test_import_refuses_tampered_or_unsafe_exports(tmp_path):
     export = tmp_path / "export"
     with override_settings(MEDIA_ROOT=media):
         export_archive(export)
-    get_user_model().objects.all().update(username="still-here")
+    get_user_model().objects.filter(username="owner").update(username="still-here")
     with override_settings(MEDIA_ROOT=tmp_path / "fresh"), pytest.raises(PortableError, match="empty"):
         import_archive(export)
     manifest = json.loads((export / "manifest.json").read_text())

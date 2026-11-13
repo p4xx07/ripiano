@@ -59,7 +59,7 @@ test("a shelf label finds paper copies inside a nested box", async ({ page }, te
   await page.goto(`/?location=${shelf.sticker_code}`);
   const result = page.locator(".location-result");
   await expect(result).toContainText(`${parent} / ${box}`);
-  await expect(result).toContainText("1 paper copy recorded here or inside nested locations");
+  await expect(result).toContainText("1 paper copy listed as present here or inside nested locations");
   await expect(result.getByRole("button", { name: name })).toBeVisible();
   await result.screenshot({ path: testInfo.outputPath("shelf-contents.png") });
   await result.getByRole("button", { name: name }).click();

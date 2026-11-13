@@ -142,7 +142,23 @@ export type Document = {
   split_parent: { id: string; title: string } | null;
   is_split_source: boolean;
   storage_path: { id: string; name: string } | null;
+  access: "owner" | "edit" | "view";
+  shared_by: string | null;
 };
+
+export type Person = {
+  id: number;
+  username: string;
+  name: string;
+  is_active?: boolean;
+  is_admin?: boolean;
+  last_login?: string | null;
+  groups?: number[];
+};
+
+export type PersonGroup = { id: number; name: string; member_ids?: number[] };
+
+export type People = { people: Person[]; groups: PersonGroup[]; admin: boolean };
 
 export type FilingSuggestion = {
   id: string;

@@ -3,6 +3,7 @@ import { KeyRound, ShieldCheck, X } from "lucide-react";
 import { request } from "./api";
 import { Button, Field } from "./ui";
 import TokensPanel from "./TokensPanel";
+import PasswordPanel from "./PasswordPanel";
 
 type Status = { two_factor: boolean; recovery_remaining: number };
 type Setup = { secret: string; uri: string; qr_svg: string };
@@ -96,6 +97,7 @@ export default function SecurityPanel() {
             </div>
           </article>
           <TokensPanel />
+          <PasswordPanel />
           {recovery.length > 0 && (
             <div className="agent-token-card security-recovery">
               <div className="agent-token-head"><KeyRound size={19} aria-hidden="true" /><strong>Recovery codes</strong></div>

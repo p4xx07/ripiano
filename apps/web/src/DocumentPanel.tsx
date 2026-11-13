@@ -23,6 +23,7 @@ import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 import CustomFieldsPanel from "./CustomFieldsPanel";
 import ShareLinksPanel from "./ShareLinksPanel";
+import DocumentAccessPanel from "./DocumentAccessPanel";
 import PagesPanel from "./PagesPanel";
 import SimilarPanel from "./SimilarPanel";
 import EmailDocumentPanel from "./EmailDocumentPanel";
@@ -646,6 +647,7 @@ export default function DocumentPanel({
           />
         )}
         <SimilarPanel documentId={current.id} ready={current.status === "ready"} onOpenDocument={onOpenDuplicate} />
+        <DocumentAccessPanel documentId={current.id} />
         <ShareLinksPanel documentId={current.id} />
         <EmailDocumentPanel documentId={current.id} searchableReady={current.archive_available} />
         <div className="detail-files physical-copies">

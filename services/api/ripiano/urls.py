@@ -9,7 +9,7 @@ admin.site.login = never_cache(lambda request, extra_context=None: redirect("/")
 admin.site.has_permission = admin_has_permission
 from django.urls import path
 
-from archive import agent_views, storage_path_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
+from archive import agent_views, people_views, storage_path_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
 
 urlpatterns = [
     path("healthz", views.health),
@@ -20,10 +20,15 @@ urlpatterns = [
     path("api/account/tokens", api_tokens.tokens),
     path("api/account/tokens/<uuid:token_id>", api_tokens.token_detail),
     path("api/schema.json", api_tokens.schema),
+    path("api/account/password", security_views.change_password),
     path("api/account/security/setup", security_views.security_setup),
     path("api/account/security/enable", security_views.security_enable),
     path("api/account/security/disable", security_views.security_disable),
     path("api/account/security/recovery-codes", security_views.security_recovery_codes),
+    path("api/people", people_views.people),
+    path("api/people/<int:person_id>", people_views.person_detail),
+    path("api/groups", people_views.groups),
+    path("api/groups/<int:group_id>", people_views.group_detail),
     path("api/workflows", workflow_views.workflows),
     path("api/workflows/<uuid:workflow_id>", workflow_views.workflow_detail),
     path("api/workflows/<uuid:workflow_id>/run", workflow_views.workflow_run_now),
@@ -57,6 +62,8 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>/split", version_views.document_split),
     path("api/documents/<uuid:document_id>/archive", views.download_archive),
     path("api/documents/<uuid:document_id>/export", export_views.export_document),
+    path("api/documents/<uuid:document_id>/access", people_views.document_access),
+    path("api/documents/<uuid:document_id>/access/<uuid:grant_id>", people_views.document_access_detail),
     path("api/documents/<uuid:document_id>/shares", share_views.document_shares),
     path("api/documents/<uuid:document_id>/shares/<uuid:share_id>", share_views.document_share_detail),
     path("api/share-links/<str:token>", share_views.shared_original),

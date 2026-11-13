@@ -13,7 +13,7 @@ from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import IntegrityError, connection, transaction
-from django.db.models import BigIntegerField, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, prefetch_related_objects
+from django.db.models import BigIntegerField, BooleanField, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, Value, prefetch_related_objects
 from django.db.models.functions import Cast, Lower, Substr
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
@@ -26,6 +26,7 @@ from .bundle_views import revoke_bundles_containing
 from .throttle import record_sign_in_failure, sign_in_blocked, sign_in_throttle_key
 from .classification import filing_suggestions
 from .models import Workflow
+from . import access as document_access
 from .workflows import run_for_document
 from .custom_field_views import normalize_filter_range, normalize_filter_value
 from .physical_views import copy_json
@@ -36,6 +37,8 @@ from .tasks import backup_archive
 logger = logging.getLogger(__name__)
 CURSOR_SALT = "ripiano-document-page-v2"
 SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date", "field", "asn", "is"}
+# What someone with an "edit" share may change; filing, tags, ASN, and paths stay with the owner.
+SHARED_EDIT_FIELDS = {"title", "document_date", "action_status", "action_due_date", "action_note"}
 LIBRARY_SORTS = {"relevance", "newest", "oldest", "document_newest", "document_oldest", "title_asc", "title_desc"}
 
 
@@ -173,9 +176,9 @@ def _note_json(note):
     return {"id": str(note.id), "body": note.body, "author": note.author.get_username(), "created_at": note.created_at.isoformat()}
 
 
-def _document_json(document, query=""):
+def _document_json(document, query="", access="owner"):
     snippet, snippet_source = _search_snippet(document, query)
-    return {
+    payload = {
         "id": str(document.id),
         "title": document.title,
         "original_name": document.original_name,
@@ -206,7 +209,18 @@ def _document_json(document, query=""):
         "split_parent": {"id": str(document.split_parent_id), "title": document.split_parent.title} if document.split_parent_id else None,
         "is_split_source": document.is_split_source,
         "storage_path": {"id": str(document.storage_path_id), "name": document.storage_path.name} if document.storage_path_id else None,
+        "access": access,
+        "shared_by": None,
     }
+    if access != "owner":
+        # Someone the owner shared one document with sees the document, not the owner's wider archive.
+        payload.update(
+            shared_by=document.owner.get_username(), duplicate_of=None, split_parent=None, physical_copies=[],
+            storage_path=None, asn=None, error="",
+            snippet=snippet if snippet_source in ("document", "note") else "",
+            snippet_source=snippet_source if snippet_source in ("document", "note") else None, email={**payload["email"], "account": ""} if payload["email"] else None,
+        )
+    return payload
 
 
 def _email_json(document):
@@ -295,10 +309,12 @@ def documents(request):
         if "offset" in request.GET:
             return JsonResponse({"error": "Use a page cursor"}, status=400)
         requested_view = request.GET.get("view")
-        if requested_view not in (None, "documents", "actions", "exceptions", "trash"):
+        if requested_view not in (None, "documents", "actions", "exceptions", "trash", "shared"):
             return JsonResponse({"error": "Invalid document view"}, status=400)
-        queryset = Document.objects.filter(owner=request.user, trashed_at__isnull=requested_view != "trash").select_related(
-            "duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location")
+        shared = requested_view == "shared"
+        base = document_access.shared_with(request.user) if shared else Document.objects.filter(owner=request.user)
+        queryset = base.filter(trashed_at__isnull=requested_view != "trash").select_related(
+            "owner", "duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location")
         if requested_view not in ("trash", "exceptions"):
             # A scan split at separator sheets is reached from its parts; it still shows in Trash and Exceptions.
             queryset = queryset.filter(is_split_source=False)
@@ -329,6 +345,8 @@ def documents(request):
             filters["copy_status"] = copy_status
         if filters.get("date_from") and filters.get("date_to") and filters["date_from"] > filters["date_to"]:
             return JsonResponse({"error": "Start date must be before end date"}, status=400)
+        if shared and (set(filters) - {"date_from", "date_to"} or any(field in {"field", "sticker", "asn", "is"} for field, _ in clauses)):
+            return JsonResponse({"error": "Shared documents can be searched by text and date"}, status=400)
         custom_value = request.GET.get("custom_value", "").strip()
         custom_min = request.GET.get("custom_min", "").strip()
         custom_max = request.GET.get("custom_max", "").strip()
@@ -421,6 +439,10 @@ def documents(request):
                     queryset = queryset.filter(Exists(CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field=definition, value=normalized)))
             else:
                 queryset = queryset.filter(document_date=value)
+        if shared:
+            # Kept in the signed cursor so a page from one list can't continue the other.
+            filters["scope"] = "shared"
+            queryset = queryset.annotate(can_edit=document_access.edit_grant_exists(request.user))
         view = "trash" if requested_view == "trash" else "actions" if requested_view == "actions" else "exceptions" if requested_view == "exceptions" else "search" if free_query else "documents"
         requested_sort = request.GET.get("sort", "")
         if requested_sort and requested_sort not in LIBRARY_SORTS:
@@ -440,9 +462,9 @@ def documents(request):
         if free_query:
             queryset = queryset.annotate(
                 tag_match=Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=free_query)),
-                sticker_match=Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=free_query)),
+                sticker_match=Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=free_query)) if not shared else Value(False, output_field=BooleanField()),
                 note_match=Exists(DocumentNote.objects.filter(document_id=OuterRef("pk"), body__icontains=free_query)),
-                field_match=Exists(CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field__owner=request.user, value__icontains=free_query)),
+                field_match=Exists(CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field__owner=request.user, value__icontains=free_query)) if not shared else Value(False, output_field=BooleanField()),
             )
             if connection.vendor == "postgresql":
                 vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
@@ -517,7 +539,7 @@ def documents(request):
             prefetch_related_objects(visible, Prefetch("notes", queryset=DocumentNote.objects.filter(body__icontains=snippet_query), to_attr="matching_notes"))
             prefetch_related_objects(visible, Prefetch("custom_values", queryset=CustomFieldValue.objects.filter(field__owner=request.user, value__icontains=snippet_query).select_related("field"), to_attr="matching_custom_fields"))
         return JsonResponse({
-            "documents": [_document_json(doc, query=snippet_query) for doc in visible],
+            "documents": [_document_json(doc, query=snippet_query, access=("edit" if doc.can_edit else "view") if shared else "owner") for doc in visible],
             "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, sort, counts) if len(page) > 50 else None,
             "counts": counts,
         })
@@ -771,13 +793,18 @@ def document_detail(request, document_id):
     queryset = Document.objects
     if request.method == "PATCH":
         queryset = queryset.select_for_update(of=("self",))
-    document = queryset.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").first()
+    document, level = document_access.readable(request.user, document_id, queryset.select_related(
+        "owner", "duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location"))
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if request.method == "PATCH":
         body = _payload(request)
         if body is None:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
+        if level == document_access.VIEW:
+            return JsonResponse({"error": "You can view this document but not change it"}, status=403)
+        if level == document_access.EDIT and set(body) - SHARED_EDIT_FIELDS:
+            return JsonResponse({"error": "Only the owner can change filing, tags, and archive details"}, status=403)
         changes = []
         if "title" in body:
             if not isinstance(body["title"], str) or not body["title"].strip() or len(body["title"].strip()) > 300:
@@ -899,11 +926,12 @@ def document_detail(request, document_id):
                 TagOverride.objects.filter(document=document, tag=added_tag).delete()
                 DocumentTag.objects.update_or_create(document=document, tag=added_tag, defaults={"origin": DocumentTag.Origin.MANUAL})
         # Filing changes trigger "updated" workflows; follow-up, ASN, and review clicks do not.
-        if set(changes) & {"title", "document_date", "correspondent", "document_type"} or chosen is not None or added_tag is not None:
+        # The owner's workflows (webhooks, email, tagging) run on the owner's own changes, not on someone they share with.
+        if level == document_access.OWNER and (set(changes) & {"title", "document_date", "correspondent", "document_type"} or chosen is not None or added_tag is not None):
             # Workflow actions run after the owner's own change and never re-trigger themselves.
             run_for_document(document, Workflow.Trigger.UPDATED)
-        document = Document.objects.filter(pk=document.id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").get()
-    return JsonResponse(_document_json(document))
+        document = Document.objects.filter(pk=document.id).select_related("owner", "duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").get()
+    return JsonResponse(_document_json(document, access=level))
 
 
 @require_http_methods(["GET"])
@@ -924,9 +952,11 @@ def document_notes(request, document_id):
     if unauthorized:
         return unauthorized
     queryset = Document.objects.select_for_update() if request.method == "POST" else Document.objects
-    document = queryset.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
+    document, level = document_access.readable(request.user, document_id, queryset)
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
+    if request.method == "POST" and level == document_access.VIEW:
+        return JsonResponse({"error": "You can view this document but not add notes"}, status=403)
     if request.method == "GET":
         try:
             offset = int(request.GET.get("offset", "0"))
@@ -949,11 +979,13 @@ def document_note_detail(request, document_id, note_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    if not Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=True).exists():
-        return JsonResponse({"error": "Note not found"}, status=404)
-    note = DocumentNote.objects.filter(pk=note_id, document_id=document_id).first()
+    document, level = document_access.readable(request.user, document_id, Document.objects.select_for_update())
+    note = DocumentNote.objects.filter(pk=note_id, document_id=document_id).first() if document else None
     if note is None:
         return JsonResponse({"error": "Note not found"}, status=404)
+    # The owner tidies any note; someone it is shared with removes only their own, while they can still edit.
+    if level != document_access.OWNER and not (level == document_access.EDIT and note.author_id == request.user.pk):
+        return JsonResponse({"error": "Only the owner or the note's author can remove it"}, status=403)
     note.delete()
     return JsonResponse({"deleted": True})
 
@@ -963,7 +995,7 @@ def download_original(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
+    document, _ = document_access.readable(request.user, document_id)
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     return FileResponse(
@@ -979,7 +1011,7 @@ def download_archive(request, document_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    document = Document.objects.filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
+    document, _ = document_access.readable(request.user, document_id)
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if document.status != Document.Status.READY or not document.archive_path:

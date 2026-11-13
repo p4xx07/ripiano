@@ -15,6 +15,7 @@ from pathlib import Path
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core import serializers
 from django.db import connection, transaction
 
@@ -31,7 +32,8 @@ class PortableError(Exception):
 def _models():
     user = get_user_model()
     archive = [model for model in apps.get_app_config("archive").get_models() if model.__name__ not in SKIPPED]
-    return [user, *archive]
+    # Groups first: people refer to them, and documents can be shared with them.
+    return [Group, user, *archive]
 
 
 def _hash(path):
@@ -64,7 +66,12 @@ def export_archive(destination):
     (destination / "media").mkdir(parents=True, exist_ok=True)
     records = []
     for model in _models():
-        records.extend(json.loads(serializers.serialize("json", model.objects.all().order_by("pk"))))
+        batch = json.loads(serializers.serialize("json", model.objects.all().order_by("pk")))
+        for record in batch:
+            # Django permission IDs differ between databases, and Ripiano does not use them.
+            record["fields"].pop("permissions", None)
+            record["fields"].pop("user_permissions", None)
+        records.extend(batch)
     listed = []
     for relative, expected in sorted(_media_files().items()):
         source = media_root / relative

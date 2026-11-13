@@ -3759,3 +3759,171 @@ button:disabled {
   font-size: var(--type-small);
   overflow-wrap: anywhere;
 }
+
+/* Sharing with people and groups */
+.access-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.access-actions select {
+  min-height: 44px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font: inherit;
+  padding: 0 var(--space-2);
+}
+.access-actions button {
+  min-height: 44px;
+}
+.shared-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-4) 0;
+}
+.shared-facts dt {
+  color: var(--color-muted);
+}
+.shared-facts dd {
+  margin: 0;
+  color: var(--color-heading);
+  overflow-wrap: anywhere;
+}
+.shared-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+.shared-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--color-heading);
+  font: inherit;
+}
+.shared-search input:focus-visible {
+  outline: none;
+}
+.shared-search:focus-within {
+  box-shadow: 0 0 0 3px var(--color-focus-halo);
+  border-color: var(--color-focus);
+}
+.people-section {
+  margin-bottom: var(--space-8);
+}
+.people-section h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-heading);
+}
+.people-list {
+  list-style: none;
+  margin: 0 0 var(--space-6);
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.people-list > li {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+.people-list > li.person-off {
+  background: var(--color-surface-tint);
+}
+.person-head {
+  display: grid;
+  gap: var(--space-1);
+}
+.person-head strong {
+  color: var(--color-heading);
+}
+.person-head small {
+  color: var(--color-muted);
+}
+.person-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.person-groups legend {
+  width: 100%;
+  margin-bottom: var(--space-1);
+  color: var(--color-muted);
+}
+.person-groups label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  color: var(--color-heading);
+}
+.person-actions,
+.person-reset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.people-form {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 520px;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+.people-form h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-heading);
+}
+.people-form p {
+  margin: 0;
+  color: var(--color-muted);
+}
+.password-panel {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 520px;
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+.password-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-heading);
+}
+.people-confirm {
+  max-width: 520px;
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-tint);
+}

@@ -116,3 +116,32 @@ def security_recovery_codes(request):
     codes, hashes = two_factor.new_recovery_codes()
     AccountSecurity.objects.filter(user=request.user).update(recovery_hashes=hashes)
     return JsonResponse({**_status(request.user), "recovery_codes": codes})
+
+
+@require_http_methods(["POST"])
+def change_password(request):
+    """Replace your own password; other devices sign out, this one stays signed in."""
+    from django.contrib.auth import update_session_auth_hash
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError
+
+    denied = _signed_in(request)
+    if denied:
+        return denied
+    body = _body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    ok, refused = _password_ok(request, body.get("current_password"))
+    if not ok:
+        return refused
+    new = body.get("new_password")
+    if not isinstance(new, str) or len(new) < 12:
+        return JsonResponse({"error": "Use a new password of at least 12 characters"}, status=400)
+    try:
+        validate_password(new, request.user)
+    except ValidationError as exc:
+        return JsonResponse({"error": " ".join(exc.messages)}, status=400)
+    request.user.set_password(new)
+    request.user.save(update_fields=["password"])
+    update_session_auth_hash(request, request.user)
+    return JsonResponse({"changed": True})

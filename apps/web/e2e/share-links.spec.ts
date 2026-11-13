@@ -23,7 +23,7 @@ test("create an expiring original link and revoke anonymous access", async ({ pa
   await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: original });
   await page.getByRole("button", { name, exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Keep it in place." });
-  const share = dialog.locator(".share-panel");
+  const share = dialog.getByRole("region", { name: "Share original" });
   await share.getByText("Manage share links").click();
   await expect(share.getByRole("combobox", { name: "Link expires after" })).toBeVisible();
   await share.getByRole("combobox", { name: "Link expires after" }).selectOption("1");

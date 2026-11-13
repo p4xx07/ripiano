@@ -62,21 +62,36 @@ import SavedSearchBar from "./SavedSearchBar";
 import TrashPanel from "./TrashPanel";
 import { Button, Field, Modal } from "./ui";
 import { applyTheme, readThemePreference, saveThemePreference, ThemePreference } from "./theme";
+import { setLanguagePreference, useLanguagePreference, useMessages, type LanguagePreference } from "./i18n";
+import appMessages from "./locales/App";
+import backupMessages from "./locales/AppBackups";
 
 function AppearanceControl({ preference, onChange }: {
   preference: ThemePreference;
   onChange: (preference: ThemePreference) => void;
 }) {
+  const m = useMessages(appMessages);
+  const languagePreference = useLanguagePreference();
   return (
+    <>
     <label className="appearance-control">
-      <span>Appearance</span>
+      <span>{m.appearance}</span>
       <select value={preference} onChange={(event) => onChange(event.target.value as ThemePreference)}>
-        <option value="system">Use device setting</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-        <option value="amoled">AMOLED black</option>
+        <option value="system">{m.themeSystem}</option>
+        <option value="light">{m.themeLight}</option>
+        <option value="dark">{m.themeDark}</option>
+        <option value="amoled">{m.themeAmoled}</option>
       </select>
     </label>
+    <label className="appearance-control">
+      <span>{m.language}</span>
+      <select value={languagePreference} onChange={(event) => setLanguagePreference(event.target.value as LanguagePreference)}>
+        <option value="system">{m.languageSystem}</option>
+        <option value="en">English</option>
+        <option value="it">Italiano</option>
+      </select>
+    </label>
+    </>
   );
 }
 
@@ -109,6 +124,7 @@ const emptyLibraryFilters: LibraryFilters = {
 };
 
 function TagSummary({ tags }: { tags: Document["tags"] }) {
+  const m = useMessages(appMessages);
   const priority = { manual: 0, source: 1, model: 2, rule: 3 };
   const visibleFirst = [...tags].sort((a, b) =>
     priority[a.origin] - priority[b.origin] || a.name.localeCompare(b.name));
@@ -122,7 +138,7 @@ function TagSummary({ tags }: { tags: Document["tags"] }) {
       ))}
       {visibleFirst.length > limit && (
         <span className="more-tags" title={visibleFirst.slice(limit).map((tag) => tag.name).join(", ")}>
-          +{visibleFirst.length - limit} more
+          {m.moreTags(visibleFirst.length - limit)}
         </span>
       )}
     </>;
@@ -134,17 +150,18 @@ function TagSummary({ tags }: { tags: Document["tags"] }) {
 }
 
 function PaperCopySummary({ copies }: { copies: Document["physical_copies"] }) {
+  const m = useMessages(appMessages);
   const located = copies.filter((copy) => !copy.missing_at);
   const missingCount = copies.length - located.length;
   return <div className="document-physical">
     {located.length > 0 && <span className="physical-location">
       <MapPin size={13} />
-      {located[0].location_path.join(" / ") || "Paper copy awaiting a location"}
+      {located[0].location_path.join(" / ") || m.paperAwaitingLocation}
       {located.length > 1 && ` +${located.length - 1}`}
     </span>}
     {missingCount > 0 && <span className="physical-missing">
       <CircleAlert size={13} />
-      {missingCount === 1 ? "Paper copy reported missing" : `${missingCount} paper copies reported missing`}
+      {m.paperMissing(missingCount)}
     </span>}
   </div>;
 }
@@ -166,6 +183,7 @@ function AuthScreen({
   appearance: ThemePreference;
   onAppearanceChange: (preference: ThemePreference) => void;
 }) {
+  const m = useMessages(appMessages);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [setupKey, setSetupKey] = useState("");
@@ -197,7 +215,7 @@ function AuthScreen({
         }
         setCode("");
       }
-      setError(cause instanceof Error ? cause.message : "Could not sign in");
+      setError(cause instanceof Error ? cause.message : m.signInError);
     } finally {
       setBusy(false);
     }
@@ -213,16 +231,16 @@ function AuthScreen({
       </div>
       <div className="auth-card">
         <div className="eyebrow">
-          <span className="eyebrow-line" /> PRIVATE DOCUMENT HOME
+          <span className="eyebrow-line" /> {m.authEyebrow}
         </div>
-        <h1>{setup ? "Make room for what matters." : "Welcome back."}</h1>
+        <h1>{setup ? m.setupTitle : m.signInTitle}</h1>
         <p>
           {setup
-            ? "Create the first account for your archive. Your setup key is in your Portainer configuration."
-            : "Sign in to find and keep your documents in place."}
+            ? m.setupIntro
+            : m.signInIntro}
         </p>
         <form onSubmit={submit}>
-          <Field label="Username">
+          <Field label={m.username}>
             <input
               autoComplete="username"
               value={username}
@@ -230,7 +248,7 @@ function AuthScreen({
               required
             />
           </Field>
-          <Field label="Password">
+          <Field label={m.password}>
             <input
               type="password"
               autoComplete={setup ? "new-password" : "current-password"}
@@ -240,9 +258,9 @@ function AuthScreen({
               required
             />
           </Field>
-          {needsCode && <p className="visually-hidden" role="status">Two-step sign-in is on. Enter the code from your authenticator app.</p>}
+          {needsCode && <p className="visually-hidden" role="status">{m.twoStepOn}</p>}
           {needsCode && (
-            <Field label="Authenticator code" hint="The 6-digit code from your authenticator app, or a recovery code">
+            <Field label={m.authenticatorCode} hint={m.authenticatorHint}>
               <input
                 autoComplete="one-time-code"
                 inputMode="text"
@@ -255,7 +273,7 @@ function AuthScreen({
             </Field>
           )}
           {setup && (
-            <Field label="Setup key">
+            <Field label={m.setupKey}>
               <input
                 type="password"
                 value={setupKey}
@@ -270,13 +288,13 @@ function AuthScreen({
             </div>
           )}
           <Button className="auth-submit" disabled={busy}>
-            {busy ? "Please wait…" : setup ? "Create archive" : "Sign in"}{" "}
+            {busy ? m.pleaseWait : setup ? m.createArchive : m.signIn}{" "}
             <ArrowRight size={18} />
           </Button>
         </form>
       </div>
       <div className="auth-foot">
-        <LockKeyhole size={14} /> Stored on your own server
+        <LockKeyhole size={14} /> {m.storedOnServer}
       </div>
       <AppearanceControl preference={appearance} onChange={onAppearanceChange} />
     </main>
@@ -284,6 +302,7 @@ function AuthScreen({
 }
 
 function BackupPanel() {
+  const m = useMessages(backupMessages);
   const [runs, setRuns] = useState<BackupRun[]>([]);
   const [browseRuns, setBrowseRuns] = useState<BrowseExportRun[]>([]);
   const [schedule, setSchedule] = useState("");
@@ -303,10 +322,10 @@ function BackupPanel() {
       setSchedule(result.schedule);
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not load backups",
+        cause instanceof Error ? cause.message : m.loadError,
       );
     }
-  }, []);
+  }, [m]);
   useEffect(() => {
     void load();
     const timer = window.setInterval(load, 10000);
@@ -329,7 +348,7 @@ function BackupPanel() {
       await load();
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not start backup",
+        cause instanceof Error ? cause.message : m.startError,
       );
     } finally {
       setBusy(false);
@@ -343,7 +362,7 @@ function BackupPanel() {
       await request("/api/browse-exports", { method: "POST" });
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not build the NAS browse copy");
+      setError(cause instanceof Error ? cause.message : m.browseError);
     } finally {
       setBrowseBusy(false);
     }
@@ -358,7 +377,7 @@ function BackupPanel() {
       await load();
       setJobFocus(`${kind}-${action === "cancel" ? id + "-retry" : result.id + "-status"}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : `Could not ${action} this job`);
+      setError(cause instanceof Error ? cause.message : m.jobError(action));
     } finally {
       setJobBusy("");
     }
@@ -371,28 +390,28 @@ function BackupPanel() {
       <div className="page-heading">
         <div>
           <div className="eyebrow">
-            <span className="eyebrow-line" /> ARCHIVE SAFETY
+            <span className="eyebrow-line" /> {m.eyebrow}
           </div>
           <h1>
-            Backups<span className="heading-period">.</span>
+            {m.heading}<span className="heading-period">.</span>
           </h1>
-          <p>Verified snapshots of your database and original documents.</p>
+          <p>{m.intro}</p>
         </div>
         <Button
           onClick={start}
           disabled={busy}
         >
-          <DatabaseBackup size={18} /> {busy ? "Starting…" : "Back up now"}
+          <DatabaseBackup size={18} /> {busy ? m.starting : m.backUpNow}
         </Button>
       </div>
       <div className="backup-summary">
         <div>
-          <strong>Automatic schedule</strong>
-          <span>Every day at {schedule || "…"}</span>
+          <strong>{m.schedule}</strong>
+          <span>{m.everyDay(schedule || "…")}</span>
         </div>
         <div>
-          <strong>Backup output</strong>
-          <span>Mounted backup volume · complete folder</span>
+          <strong>{m.output}</strong>
+          <span>{m.outputText}</span>
         </div>
       </div>
       {error && (
@@ -400,14 +419,14 @@ function BackupPanel() {
           {error}
         </div>
       )}
-      <section className="browse-section" aria-label="NAS browse copies">
+      <section className="browse-section" aria-label={m.browseSection}>
         <div className="section-heading browse-heading">
           <div>
-            <h2>Browse on your NAS</h2>
-            <p>Create a separate, readable copy grouped by year and tag. Your Ripiano originals stay protected.</p>
+            <h2>{m.browseHeading}</h2>
+            <p>{m.browseIntro}</p>
           </div>
           <Button variant="secondary" onClick={startBrowse} disabled={browseBusy || browseActive}>
-            <FolderOpen size={18} /> {browseBusy ? "Starting…" : browseActive ? "Building copy…" : "Build browse copy"}
+            <FolderOpen size={18} /> {browseBusy ? m.starting : browseActive ? m.buildingCopy : m.buildCopy}
           </Button>
         </div>
         {browseRuns.length ? (
@@ -416,18 +435,18 @@ function BackupPanel() {
               <div className="document-row" key={run.id}>
                 <div className="document-icon"><FolderOpen size={20} /></div>
                 <div className="document-info">
-                  <h3>{run.folder ? `${run.document_count} ${run.document_count === 1 ? "document" : "documents"} ready on NAS` : `Browse copy ${formatDate(run.created_at)}`}</h3>
-                  <div className="document-meta">Created {formatDate(run.created_at)}{run.retry_of ? " · Retry" : ""}</div>
+                  <h3>{run.folder ? m.readyOnNas(run.document_count) : m.browseCopyOn(formatDate(run.created_at))}</h3>
+                  <div className="document-meta">{m.created(formatDate(run.created_at))}{run.retry_of ? m.retrySuffix : ""}</div>
                   {run.folder && <p className="browse-folder"><code>{run.folder}</code></p>}
                   {run.error && <p className="doc-error">{run.error}</p>}
-                  {run.status === "running" && <p className="job-running-hint">Finishing safely; active jobs cannot be stopped.</p>}
+                  {run.status === "running" && <p className="job-running-hint">{m.runningHint}</p>}
                 </div>
                 <span tabIndex={-1} data-job-focus={`browse-${run.id}-status`} className={`status status-${run.status === "complete" ? "ready" : run.status === "failed" ? "failed" : run.status === "cancelled" ? "cancelled" : "pending"}`}>
-                  {run.status === "complete" && !run.folder ? "Removed" : run.status}
+                  {run.status === "complete" && !run.folder ? m.removed : m.status(run.status)}
                 </span>
                 {(run.can_cancel || (run.can_retry && !browseActive)) && <div className="job-controls">
-                  {run.can_cancel && <button type="button" aria-label={`Cancel queued NAS copy ${run.id.slice(0, 8)}`} disabled={!!jobBusy} onClick={() => void controlJob("browse", run.id, "cancel")}>Cancel queued</button>}
-                  {run.can_retry && !browseActive && <button type="button" data-job-focus={`browse-${run.id}-retry`} aria-label={`Retry NAS copy ${run.id.slice(0, 8)}`} disabled={!!jobBusy} onClick={() => void controlJob("browse", run.id, "retry")}>Try again</button>}
+                  {run.can_cancel && <button type="button" aria-label={m.cancelBrowseLabel(run.id.slice(0, 8))} disabled={!!jobBusy} onClick={() => void controlJob("browse", run.id, "cancel")}>{m.cancelQueued}</button>}
+                  {run.can_retry && !browseActive && <button type="button" data-job-focus={`browse-${run.id}-retry`} aria-label={m.retryBrowseLabel(run.id.slice(0, 8))} disabled={!!jobBusy} onClick={() => void controlJob("browse", run.id, "retry")}>{m.tryAgain}</button>}
                 </div>}
               </div>
             ))}
@@ -435,15 +454,15 @@ function BackupPanel() {
         ) : (
           <div className="empty-state browse-empty">
             <div className="empty-icon"><FolderOpen size={32} /></div>
-            <h3>No browse copy yet</h3>
-            <p>Build one when you want ordinary files and tag folders on the mounted NAS volume.</p>
+            <h3>{m.noBrowseTitle}</h3>
+            <p>{m.noBrowseText}</p>
           </div>
         )}
       </section>
       <div className="section-heading">
         <div>
-          <h2>Recent snapshots</h2>
-          <p>A snapshot appears here after its checksums pass.</p>
+          <h2>{m.recentHeading}</h2>
+          <p>{m.recentIntro}</p>
         </div>
       </div>
       {runs.length ? (
@@ -457,23 +476,23 @@ function BackupPanel() {
                 <h3>
                   {run.snapshot_name ||
                     (run.trigger === "manual"
-                      ? "Manual backup"
-                      : run.trigger === "retry" ? "Backup retry" : "Scheduled backup")}
+                      ? m.manualBackup
+                      : run.trigger === "retry" ? m.backupRetry : m.scheduledBackup)}
                 </h3>
                 <div className="document-meta">
-                  {formatDate(run.created_at)} <span>·</span> {run.trigger}
+                  {formatDate(run.created_at)} <span>·</span> {m.trigger(run.trigger)}
                 </div>
                 {run.error && <p className="doc-error">{run.error}</p>}
-                {run.status === "running" && <p className="job-running-hint">Finishing safely; active jobs cannot be stopped.</p>}
+                {run.status === "running" && <p className="job-running-hint">{m.runningHint}</p>}
               </div>
               <span tabIndex={-1} data-job-focus={`backup-${run.id}-status`}
                 className={`status status-${run.status === "complete" ? "ready" : run.status === "failed" ? "failed" : run.status === "cancelled" ? "cancelled" : "pending"}`}
               >
-                {run.status}
+                {m.status(run.status)}
               </span>
               {(run.can_cancel || run.can_retry) && <div className="job-controls">
-                {run.can_cancel && <button type="button" aria-label={`Cancel queued backup ${run.id.slice(0, 8)}`} disabled={!!jobBusy} onClick={() => void controlJob("backup", run.id, "cancel")}>Cancel queued</button>}
-                {run.can_retry && <button type="button" data-job-focus={`backup-${run.id}-retry`} aria-label={`Retry backup ${run.id.slice(0, 8)}`} disabled={!!jobBusy} onClick={() => void controlJob("backup", run.id, "retry")}>Try again</button>}
+                {run.can_cancel && <button type="button" aria-label={m.cancelBackupLabel(run.id.slice(0, 8))} disabled={!!jobBusy} onClick={() => void controlJob("backup", run.id, "cancel")}>{m.cancelQueued}</button>}
+                {run.can_retry && <button type="button" data-job-focus={`backup-${run.id}-retry`} aria-label={m.retryBackupLabel(run.id.slice(0, 8))} disabled={!!jobBusy} onClick={() => void controlJob("backup", run.id, "retry")}>{m.tryAgain}</button>}
               </div>}
             </div>
           ))}
@@ -483,11 +502,8 @@ function BackupPanel() {
           <div className="empty-icon">
             <DatabaseBackup size={32} />
           </div>
-          <h3>No snapshots yet</h3>
-          <p>
-            Run the first backup to verify the mounted volume and create a
-            restorable snapshot.
-          </p>
+          <h3>{m.noSnapshotsTitle}</h3>
+          <p>{m.noSnapshotsText}</p>
         </div>
       )}
     </>
@@ -495,6 +511,7 @@ function BackupPanel() {
 }
 
 function App() {
+  const m = useMessages(appMessages);
   const [appearance, setAppearance] = useState<ThemePreference>(readThemePreference);
   useEffect(() => {
     applyTheme(appearance);
@@ -576,8 +593,8 @@ function App() {
     params.delete("document");
     window.history.replaceState(null, "", `${window.location.pathname}${params.size ? `?${params}` : ""}${window.location.hash}`);
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return;
-    void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch(() => setError("That document is not available."));
-  }, [session]);
+    void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch(() => setError(m.documentUnavailable));
+  }, [session, m]);
 
   useEffect(() => {
     if (view === "documents" && focusSearchOnView.current) {
@@ -930,7 +947,7 @@ function App() {
       setSelectedDocument(null);
       setView("documents");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not sign out");
+      setError(cause instanceof Error ? cause.message : m.signOutError);
     }
   }
 
@@ -945,12 +962,12 @@ function App() {
     }
   }
 
-  if (loading) return <div className="loading-screen">Opening Ripiano…</div>;
+  if (loading) return <div className="loading-screen">{m.opening}</div>;
   if (!session)
     return (
       <div className="loading-screen error-screen">
-        {error || "Could not connect to Ripiano"}{" "}
-        <button onClick={() => location.reload()}>Try again</button>
+        {error || m.connectError}{" "}
+        <button onClick={() => location.reload()}>{m.tryAgain}</button>
       </div>
     );
   if (!session.authenticated)
@@ -965,6 +982,12 @@ function App() {
   const tagById = new Map(filterOptions.tags.map((tag) => [tag.id, tag]));
   const tagOptions = [...filterOptions.tags].sort((a, b) =>
     tagPathLabel(a, tagById).localeCompare(tagPathLabel(b, tagById)));
+  const viewLabels = {
+    documents: m.allDocuments, inbox: m.inbox, actions: m.needsAction, tags: m.tags,
+    physical: m.physical, backups: m.backups, agents: m.agents, trash: m.trash,
+    integrations: m.email, workflows: m.workflows, security: m.security,
+    overview: m.overview, shared: m.shared, people: m.people,
+  };
 
   return (
     <div
@@ -985,16 +1008,16 @@ function App() {
             <FolderOpen size={22} strokeWidth={2.1} />
           </span>
           <span>ripiano</span>
-          <button className="sidebar-close" aria-label="Dismiss navigation" onClick={() => setMenuOpen(false)}>
+          <button className="sidebar-close" aria-label={m.dismissNavigation} onClick={() => setMenuOpen(false)}>
             <X size={19} />
           </button>
         </div>
-        <div className="sidebar-label">YOUR SPACE</div>
+        <div className="sidebar-label">{m.yourSpace}</div>
         <button
           className={`nav-link ${view === "inbox" ? "active" : ""}`}
           onClick={() => { setView("inbox"); setMenuOpen(false); }}
         >
-          <Inbox size={18} /> Inbox
+          <Inbox size={18} /> {m.inbox}
         </button>
         <button
           className={`nav-link ${view === "documents" ? "active" : ""}`}
@@ -1005,13 +1028,13 @@ function App() {
             setMenuOpen(false);
           }}
         >
-          <FolderOpen size={18} /> All documents
+          <FolderOpen size={18} /> {m.allDocuments}
         </button>
         <button
           className={`nav-link ${view === "actions" ? "active" : ""}`}
           onClick={() => { setView("actions"); setMenuOpen(false); }}
         >
-          <ClipboardList size={18} /> Needs action
+          <ClipboardList size={18} /> {m.needsAction}
         </button>
         <button
           className={`nav-link ${view === "tags" ? "active" : ""}`}
@@ -1020,7 +1043,7 @@ function App() {
             setMenuOpen(false);
           }}
         >
-          <TagIcon size={18} /> Tags & filing
+          <TagIcon size={18} /> {m.tags}
         </button>
         <button
           className={`nav-link ${view === "physical" ? "active" : ""}`}
@@ -1029,25 +1052,25 @@ function App() {
             setMenuOpen(false);
           }}
         >
-          <MapPin size={18} /> Paper archive
+          <MapPin size={18} /> {m.physical}
         </button>
         <button className={`nav-link ${view === "overview" ? "active" : ""}`} onClick={() => { setView("overview"); setMenuOpen(false); }}>
-          <BarChart3 size={18} /> Overview
+          <BarChart3 size={18} /> {m.overview}
         </button>
         <button className={`nav-link ${view === "workflows" ? "active" : ""}`} onClick={() => { setView("workflows"); setMenuOpen(false); }}>
-          <Workflow size={18} /> Workflows
+          <Workflow size={18} /> {m.workflows}
         </button>
         <button className={`nav-link ${view === "security" ? "active" : ""}`} onClick={() => { setView("security"); setMenuOpen(false); }}>
-          <ShieldCheck size={18} /> Security
+          <ShieldCheck size={18} /> {m.security}
         </button>
         <button className={`nav-link ${view === "integrations" ? "active" : ""}`} onClick={() => { setView("integrations"); setMenuOpen(false); }}>
-          <Mail size={18} /> Email
+          <Mail size={18} /> {m.email}
         </button>
         <button className={`nav-link ${view === "shared" ? "active" : ""}`} onClick={() => { setView("shared"); setMenuOpen(false); }}>
-          <Users size={18} /> Shared with me
+          <Users size={18} /> {m.shared}
         </button>
         <button className={`nav-link ${view === "trash" ? "active" : ""}`} onClick={() => { setView("trash"); setMenuOpen(false); }}>
-          <Trash2 size={18} /> Trash
+          <Trash2 size={18} /> {m.trash}
         </button>
         {session.owner && (
           <button
@@ -1057,12 +1080,12 @@ function App() {
               setMenuOpen(false);
             }}
           >
-            <Bot size={18} /> Agents
+            <Bot size={18} /> {m.agents}
           </button>
         )}
         {session.owner && (
           <button className={`nav-link ${view === "people" ? "active" : ""}`} onClick={() => { setView("people"); setMenuOpen(false); }}>
-            <UserCog size={18} /> People
+            <UserCog size={18} /> {m.people}
           </button>
         )}
         {session.owner && (
@@ -1073,7 +1096,7 @@ function App() {
               setMenuOpen(false);
             }}
           >
-            <DatabaseBackup size={18} /> Backups
+            <DatabaseBackup size={18} /> {m.backups}
           </button>
         )}
         <div className="sidebar-spacer" />
@@ -1082,18 +1105,16 @@ function App() {
           <div className="sidebar-note-icon">
             <LockKeyhole size={17} />
           </div>
-          <strong>Made for your space.</strong>
-          <span>
-            Your documents stay on your server, ready when you need them.
-          </span>
+          <strong>{m.sidebarNoteTitle}</strong>
+          <span>{m.sidebarNoteText}</span>
         </div>
-        <button className="profile" onClick={signOut} title="Sign out">
+        <button className="profile" onClick={signOut} title={m.signOut}>
           <span className="avatar">
             {session.username?.slice(0, 1).toUpperCase()}
           </span>
           <span className="profile-name">
             {session.username}
-            <small>{session.owner ? "Admin" : "Your archive"}</small>
+            <small>{session.owner ? m.admin : m.yourArchive}</small>
           </span>
           <LogOut size={16} />
         </button>
@@ -1104,42 +1125,15 @@ function App() {
           <button
             className="icon-button mobile-menu"
             onClick={() => setMenuOpen(!menuOpen)}
-            aria-label="Toggle menu"
+            aria-label={m.toggleMenu}
           >
             <Menu size={21} />
           </button>
           <div className="topbar-crumb">
-            Your archive <span>/</span>{" "}
-            {view === "documents"
-              ? "All documents"
-              : view === "inbox"
-                ? "Inbox"
-              : view === "actions"
-                ? "Needs action"
-              : view === "trash"
-                ? "Trash"
-              : view === "shared"
-                ? "Shared with me"
-              : view === "people"
-                ? "People"
-              : view === "integrations"
-                ? "Email"
-              : view === "workflows"
-                ? "Workflows"
-              : view === "security"
-                ? "Security"
-              : view === "overview"
-                ? "Overview"
-              : view === "tags"
-                ? "Tags & filing"
-                : view === "physical"
-                  ? "Paper archive"
-                  : view === "agents"
-                    ? "Agents"
-                    : "Backups"}
+            {m.yourArchive} <span>/</span> {viewLabels[view]}
           </div>
           <div className="topbar-right">
-            <span className="private-dot" /> Private & yours
+            <span className="private-dot" /> {m.privateAndYours}
           </div>
         </header>
         <section className="page-content">
@@ -1564,8 +1558,8 @@ function App() {
             </>
           )}
           <div className="page-footer">
-            <span>Ripiano · Documents at home</span>
-            <span>Original files are preserved</span>
+            <span>{m.footerBrand}</span>
+            <span>{m.footerOriginals}</span>
           </div>
         </section>
       </main>

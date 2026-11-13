@@ -1,3 +1,5 @@
+import { language, locale } from "./i18n";
+
 export type Session = {
   authenticated: boolean;
   username: string | null;
@@ -226,6 +228,7 @@ export async function request<T>(
       ...(options.method && options.method !== "GET"
         ? { "X-CSRFToken": csrfToken() }
         : {}),
+      "Accept-Language": language(),
       ...options.headers,
     },
   });
@@ -239,9 +242,19 @@ export function formatDate(value: string) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
     ? new Date(`${value}T12:00:00`)
     : new Date(value);
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale(), {
     day: "numeric",
     month: "short",
     year: "numeric",
   }).format(date);
+}
+
+/** Date and time in the interface language, e.g. for "last signed in". */
+export function formatDateTime(value: string | Date) {
+  return new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }).format(typeof value === "string" ? new Date(value) : value);
+}
+
+/** Whole numbers in the interface language (1.234 in Italian, 1,234 in English). */
+export function formatNumber(value: number) {
+  return new Intl.NumberFormat(locale()).format(value);
 }

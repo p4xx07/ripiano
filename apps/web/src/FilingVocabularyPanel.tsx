@@ -2,11 +2,14 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { FilingItem, FilingRule, MatchMode, matchModes, request } from "./api";
 import { Button } from "./ui";
+import { useMessages } from "./i18n";
+import messages from "./locales/FilingVocabularyPanel";
 
 export default function FilingVocabularyPanel({ kind }: { kind: "correspondents" | "document-types" }) {
+  const m = useMessages(messages);
   const isSender = kind === "correspondents";
-  const title = isSender ? "Senders & organizations" : "Document types";
-  const singular = isSender ? "sender" : "type";
+  const title = isSender ? m.titleSender : m.titleType;
+  const loadError = isSender ? m.loadErrorSender : m.loadErrorType;
   const key = isSender ? "correspondents" : "document_types";
   const [items, setItems] = useState<FilingItem[]>([]);
   const [rules, setRules] = useState<FilingRule[]>([]);
@@ -35,9 +38,9 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
       setItems(result[key]);
       setRules(ruleResult.rules);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : `Could not load ${title.toLowerCase()}`);
+      setError(cause instanceof Error ? cause.message : loadError);
     }
-  }, [kind, key, title, isSender]);
+  }, [kind, key, loadError, isSender]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -62,11 +65,11 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
     setError("");
     try {
       await request(`/api/${kind}`, { method: "POST", body: JSON.stringify({ name }) });
-      setNotice(`${name.trim()} added.`);
+      setNotice(m.added(name.trim()));
       setName("");
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : `Could not add ${singular}`);
+      setError(cause instanceof Error ? cause.message : (isSender ? m.addErrorSender : m.addErrorType));
     } finally {
       setBusy(false);
     }
@@ -82,27 +85,27 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
       focusAfterEdit.current = editing;
       setItems((current) => current.map((item) => item.id === editing ? { ...item, name: editedName.trim() } : item));
       setEditing(null);
-      setNotice(`${singular === "sender" ? "Sender" : "Type"} renamed to ${editedName.trim()}.`);
+      setNotice((isSender ? m.renamedSender : m.renamedType)(editedName.trim()));
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : `Could not rename ${singular}`);
+      setError(cause instanceof Error ? cause.message : (isSender ? m.renameErrorSender : m.renameErrorType));
     } finally {
       setBusy(false);
     }
   }
 
   async function remove(item: FilingItem) {
-    if (!window.confirm(`Delete “${item.name}”? Remove it from documents first if it is in use.`)) return;
+    if (!window.confirm(m.confirmDelete(item.name))) return;
     setBusy(true);
     setError("");
     try {
       await request(`/api/${kind}/${item.id}`, { method: "DELETE" });
       focusAfterEdit.current = "filter";
       setItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
-      setNotice(`${item.name} deleted.`);
+      setNotice(m.deleted(item.name));
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : `Could not delete ${singular}`);
+      setError(cause instanceof Error ? cause.message : (isSender ? m.deleteErrorSender : m.deleteErrorType));
     } finally {
       setBusy(false);
     }
@@ -122,10 +125,10 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
       setNewRuleTarget(null);
       setNewRuleText("");
       setNewRuleMatch("phrase");
-      setNotice("Matching phrase added. Existing documents will be checked in the background.");
+      setNotice(m.phraseAdded);
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not add matching phrase");
+      setError(cause instanceof Error ? cause.message : m.phraseAddError);
     } finally {
       setBusy(false);
     }
@@ -138,10 +141,10 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
       await request(`/api/filing-rules/${rule.id}`, { method: "DELETE" });
       focusAfterPhrase.current = rule.target_id;
       setRules((current) => current.filter((item) => item.id !== rule.id));
-      setNotice("Matching phrase removed. Existing documents will be checked in the background.");
+      setNotice(m.phraseRemoved);
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not remove matching phrase");
+      setError(cause instanceof Error ? cause.message : m.phraseRemoveError);
     } finally {
       setBusy(false);
     }
@@ -149,37 +152,37 @@ export default function FilingVocabularyPanel({ kind }: { kind: "correspondents"
 
   return <section className="filing-card">
     <h2>{title}</h2>
-    <p>{isSender ? "Find documents by who sent them." : "Group documents by what they are."}</p>
+    <p>{isSender ? m.introSender : m.introType}</p>
     <div className="visually-hidden" role="status" aria-live="polite">{notice}</div>
-    {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss error"><X size={16} /></button></div>}
+    {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={m.dismissError}><X size={16} /></button></div>}
     <form className="filing-vocabulary-form" onSubmit={create}>
-      <input aria-label={`New ${singular} name`} value={name} onChange={(event) => setName(event.target.value)} maxLength={100} placeholder={isSender ? "e.g. City of Milan" : "e.g. Insurance policy"} required />
-      <Button disabled={busy}><Plus size={16} /> Add</Button>
+      <input aria-label={isSender ? m.newNameSender : m.newNameType} value={name} onChange={(event) => setName(event.target.value)} maxLength={100} placeholder={isSender ? m.placeholderSender : m.placeholderType} required />
+      <Button disabled={busy}><Plus size={16} /> {m.add}</Button>
     </form>
-    <input ref={filterRef} className="filing-filter" aria-label={`Filter ${title.toLowerCase()}`} value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={`Filter ${isSender ? "senders" : "types"}…`} />
-    {items.length === 0 ? <p className="filing-empty">None yet. Add one here or while editing a document.</p> : visibleItems.length === 0 ? <p className="filing-empty">No matches. Try another name.</p> : <ul className="filing-vocabulary-list">
+    <input ref={filterRef} className="filing-filter" aria-label={isSender ? m.filterSender : m.filterType} value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={isSender ? m.filterPlaceholderSender : m.filterPlaceholderType} />
+    {items.length === 0 ? <p className="filing-empty">{m.empty}</p> : visibleItems.length === 0 ? <p className="filing-empty">{m.noMatches}</p> : <ul className="filing-vocabulary-list">
       {visibleItems.map((item) => <li key={item.id}>
         <div className="filing-vocabulary-row">
           {editing === item.id ? <form onSubmit={rename}>
-            <input autoFocus aria-label={`Rename ${item.name}`} value={editedName} onChange={(event) => setEditedName(event.target.value)} maxLength={100} required />
-            <Button disabled={busy}>Save</Button>
-            <button type="button" aria-label="Cancel rename" onClick={() => { focusAfterEdit.current = item.id; setEditing(null); setNotice("Rename cancelled."); }}><X size={16} /></button>
+            <input autoFocus aria-label={m.rename(item.name)} value={editedName} onChange={(event) => setEditedName(event.target.value)} maxLength={100} required />
+            <Button disabled={busy}>{m.save}</Button>
+            <button type="button" aria-label={m.cancelRename} onClick={() => { focusAfterEdit.current = item.id; setEditing(null); setNotice(m.renameCancelled); }}><X size={16} /></button>
           </form> : <>
             <span>{item.name}</span>
-            <button ref={(node) => { if (node) renameButtons.current.set(item.id, node); else renameButtons.current.delete(item.id); }} type="button" aria-label={`Rename ${item.name}`} onClick={() => { setEditing(item.id); setEditedName(item.name); }}><Pencil size={16} /></button>
-            <button type="button" aria-label={`Delete ${item.name}`} disabled={busy} onClick={() => void remove(item)}><Trash2 size={16} /></button>
+            <button ref={(node) => { if (node) renameButtons.current.set(item.id, node); else renameButtons.current.delete(item.id); }} type="button" aria-label={m.rename(item.name)} onClick={() => { setEditing(item.id); setEditedName(item.name); }}><Pencil size={16} /></button>
+            <button type="button" aria-label={m.remove(item.name)} disabled={busy} onClick={() => void remove(item)}><Trash2 size={16} /></button>
           </>}
         </div>
         <div className="filing-rule-list">
-          {rules.filter((rule) => rule.target_id === item.id).map((rule) => <span className="rule-chip" key={rule.id}>{rule.match && rule.match !== "phrase" ? <small className="rule-mode">{matchModes[rule.match]}:</small> : null}{rule.pattern}<button type="button" aria-label={`Remove phrase ${rule.pattern} from ${item.name}`} disabled={busy} onClick={() => void removeRule(rule)}><X size={13} /></button></span>)}
+          {rules.filter((rule) => rule.target_id === item.id).map((rule) => <span className="rule-chip" key={rule.id}>{rule.match && rule.match !== "phrase" ? <small className="rule-mode">{m.matchMode(rule.match)}:</small> : null}{rule.pattern}<button type="button" aria-label={m.removePhrase(rule.pattern, item.name)} disabled={busy} onClick={() => void removeRule(rule)}><X size={13} /></button></span>)}
           {newRuleTarget === item.id ? <form className="filing-rule-form" onSubmit={addRule}>
-            <input autoFocus aria-label={`Matching phrase for ${item.name}`} value={newRuleText} onChange={(event) => setNewRuleText(event.target.value)} maxLength={200} placeholder="Phrase in title or text" required />
-            <select aria-label={`How the phrase for ${item.name} matches`} value={newRuleMatch} onChange={(event) => setNewRuleMatch(event.target.value as MatchMode)}>
-              {Object.entries(matchModes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            <input autoFocus aria-label={m.phraseFor(item.name)} value={newRuleText} onChange={(event) => setNewRuleText(event.target.value)} maxLength={200} placeholder={m.phrasePlaceholder} required />
+            <select aria-label={m.howMatches(item.name)} value={newRuleMatch} onChange={(event) => setNewRuleMatch(event.target.value as MatchMode)}>
+              {(Object.keys(matchModes) as MatchMode[]).map((value) => <option key={value} value={value}>{m.matchMode(value)}</option>)}
             </select>
-            <Button disabled={busy}>Add</Button>
-            <button type="button" aria-label="Cancel phrase" onClick={() => { focusAfterPhrase.current = item.id; setNewRuleTarget(null); }}><X size={16} /></button>
-          </form> : <button ref={(node) => { if (node) addPhraseButtons.current.set(item.id, node); else addPhraseButtons.current.delete(item.id); }} type="button" className="text-action" onClick={() => { setNewRuleTarget(item.id); setNewRuleText(""); setNewRuleMatch("phrase"); }}><Plus size={14} /> Add matching phrase</button>}
+            <Button disabled={busy}>{m.add}</Button>
+            <button type="button" aria-label={m.cancelPhrase} onClick={() => { focusAfterPhrase.current = item.id; setNewRuleTarget(null); }}><X size={16} /></button>
+          </form> : <button ref={(node) => { if (node) addPhraseButtons.current.set(item.id, node); else addPhraseButtons.current.delete(item.id); }} type="button" className="text-action" onClick={() => { setNewRuleTarget(item.id); setNewRuleText(""); setNewRuleMatch("phrase"); }}><Plus size={14} /> {m.addPhrase}</button>}
         </div>
       </li>)}
     </ul>}

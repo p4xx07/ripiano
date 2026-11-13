@@ -1,7 +1,9 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Bot, Check, Copy, LockKeyhole, Plus, Shield, X } from "lucide-react";
-import { request, Tag } from "./api";
+import { formatDate, formatDateTime, request, Tag } from "./api";
 import { Button } from "./ui";
+import { useMessages } from "./i18n";
+import messages from "./locales/AgentPanel";
 
 type Grant = {
   id: string;
@@ -22,14 +24,14 @@ type Event = {
   at: string;
 };
 
-const scopeNames: Record<string, string> = {
-  "documents:search": "Find document titles and tags",
-  "documents:text": "Read OCR text",
-  "documents:tag": "Add or remove tags",
-  "documents:filing": "Set sender and document type",
-};
-
 export default function AgentPanel() {
+  const m = useMessages(messages);
+  const scopeNames: Record<string, string> = {
+    "documents:search": m.scopeSearch,
+    "documents:text": m.scopeText,
+    "documents:tag": m.scopeTag,
+    "documents:filing": m.scopeFiling,
+  };
   const [grants, setGrants] = useState<Grant[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -54,10 +56,10 @@ export default function AgentPanel() {
       setTags(tagsResponse.tags);
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not load agents",
+        cause instanceof Error ? cause.message : m.loadError,
       );
     }
-  }, []);
+  }, [m]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -90,7 +92,7 @@ export default function AgentPanel() {
       await load();
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not create agent",
+        cause instanceof Error ? cause.message : m.createError,
       );
     } finally {
       setBusy(false);
@@ -106,7 +108,7 @@ export default function AgentPanel() {
       await load();
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not revoke agent",
+        cause instanceof Error ? cause.message : m.revokeError,
       );
     } finally {
       setBusy(false);
@@ -118,7 +120,7 @@ export default function AgentPanel() {
       await navigator.clipboard.writeText(newToken);
       setCopied(true);
     } catch {
-      setError("Copy is unavailable here. Select and copy the token manually.");
+      setError(m.copyUnavailable);
     }
   }
 
@@ -127,18 +129,18 @@ export default function AgentPanel() {
       <div className="page-heading">
         <div>
           <div className="eyebrow">
-            <span className="eyebrow-line" /> CONTROLLED ACCESS
+            <span className="eyebrow-line" /> {m.eyebrow}
           </div>
           <h1>
-            Agents<span className="heading-period">.</span>
+            {m.heading}<span className="heading-period">.</span>
           </h1>
-          <p>Give each local or cloud agent its own limited access.</p>
+          <p>{m.intro}</p>
         </div>
       </div>
       {error && (
         <div className="inline-error" role="alert">
           {error}
-          <button onClick={() => setError("")} aria-label="Dismiss error">
+          <button onClick={() => setError("")} aria-label={m.dismissError}>
             <X size={16} />
           </button>
         </div>
@@ -149,14 +151,14 @@ export default function AgentPanel() {
             <div className="agent-token-card">
               <div className="agent-token-head">
                 <LockKeyhole size={19} />
-                <strong>Copy this token now</strong>
+                <strong>{m.copyNow}</strong>
               </div>
               <p>
-                It will not be shown again. Give it only to the agent you named.
+                {m.showOnce}
               </p>
               <div className="agent-token-row">
                 <input
-                  aria-label="New agent token"
+                  aria-label={m.newToken}
                   readOnly
                   value={newToken}
                   onFocus={(event) => event.target.select()}
@@ -166,18 +168,18 @@ export default function AgentPanel() {
                   onClick={() => void copyToken()}
                 >
                   {copied ? <Check size={16} /> : <Copy size={16} />}
-                  {copied ? "Copied" : "Copy"}
+                  {copied ? m.copied : m.copy}
                 </Button>
               </div>
               <small>
-                MCP URL: <code>{window.location.origin}/mcp</code>
+                {m.mcpUrl} <code>{window.location.origin}/mcp</code>
               </small>
             </div>
           )}
           <div className="section-heading">
             <div>
-              <h2>Connected agents</h2>
-              <p>Each token has its own permissions and expiry.</p>
+              <h2>{m.connectedHeading}</h2>
+              <p>{m.connectedIntro}</p>
             </div>
           </div>
           {grants.length ? (
@@ -191,12 +193,11 @@ export default function AgentPanel() {
                     <strong>{grant.name}</strong>
                     <span>
                       {grant.revoked_at
-                        ? "Revoked"
+                        ? m.revoked
                         : new Date(grant.expires_at) < new Date()
-                          ? "Expired"
-                          : "Active"}{" "}
-                      · Expires{" "}
-                      {new Date(grant.expires_at).toLocaleDateString()}
+                          ? m.expired
+                          : m.active}{" "}
+                      {m.expires(formatDate(grant.expires_at))}
                     </span>
                     <div className="agent-scopes">
                       {grant.scopes.map((scope) => (
@@ -204,12 +205,11 @@ export default function AgentPanel() {
                       ))}
                     </div>
                     {grant.filter_tag_name && (
-                      <span>Only documents tagged {grant.filter_tag_name}</span>
+                      <span>{m.onlyTagged(grant.filter_tag_name)}</span>
                     )}
                     {grant.last_used_at && (
                       <span>
-                        Last used{" "}
-                        {new Date(grant.last_used_at).toLocaleString()}
+                        {m.lastUsed(formatDateTime(grant.last_used_at))}
                       </span>
                     )}
                   </div>
@@ -219,7 +219,7 @@ export default function AgentPanel() {
                       disabled={busy}
                       onClick={() => void revoke(grant)}
                     >
-                      Revoke
+                      {m.revoke}
                     </Button>
                   )}
                 </article>
@@ -228,17 +228,16 @@ export default function AgentPanel() {
           ) : (
             <div className="tag-empty">
               <Bot size={27} />
-              <strong>No agents connected</strong>
+              <strong>{m.emptyTitle}</strong>
               <p>
-                Your archive works without one. Add an agent only when you need
-                it.
+                {m.emptyText}
               </p>
             </div>
           )}
           <div className="section-heading agent-activity-heading">
             <div>
-              <h2>Recent activity</h2>
-              <p>Actions are logged without storing document text here.</p>
+              <h2>{m.activityHeading}</h2>
+              <p>{m.activityIntro}</p>
             </div>
           </div>
           {events.length ? (
@@ -248,37 +247,36 @@ export default function AgentPanel() {
                   <span>{event.agent}</span>
                   <strong>{event.action.replaceAll("_", " ")}</strong>
                   <small>
-                    {event.outcome} · {new Date(event.at).toLocaleString()}
+                    {event.outcome} · {formatDateTime(event.at)}
                   </small>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="agent-empty-activity">No agent activity yet.</p>
+            <p className="agent-empty-activity">{m.noActivity}</p>
           )}
         </section>
         <section className="tag-create-card agent-create-card">
           <div className="tag-create-icon">
             <Shield size={21} />
           </div>
-          <h2>Connect an agent</h2>
+          <h2>{m.connectHeading}</h2>
           <p>
-            Sign in here as the owner, then create a separate token for the
-            agent. Never give it your password.
+            {m.connectIntro}
           </p>
           <form onSubmit={create}>
             <label>
-              Name
+              {m.name}
               <input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. Local Mac classifier"
+                placeholder={m.namePlaceholder}
                 maxLength={100}
                 required
               />
             </label>
             <fieldset>
-              <legend>Permissions</legend>
+              <legend>{m.permissions}</legend>
               {Object.entries(scopeNames).map(([scope, label]) => (
                 <label className="agent-scope-choice" key={scope}>
                   <input
@@ -291,21 +289,21 @@ export default function AgentPanel() {
               ))}
             </fieldset>
             <label>
-              Document access
+              {m.documentAccess}
               <select
                 value={filterTag}
                 onChange={(event) => setFilterTag(event.target.value)}
               >
-                <option value="">All your documents</option>
+                <option value="">{m.allDocuments}</option>
                 {tags.map((tag) => (
                   <option key={tag.id} value={tag.id}>
-                    Only “{tag.name}” documents
+                    {m.onlyTag(tag.name)}
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              Expires after <small>Days, 1–365</small>
+              {m.expiresAfter} <small>{m.daysHint}</small>
               <input
                 type="number"
                 min={1}
@@ -318,13 +316,11 @@ export default function AgentPanel() {
             <Button
               disabled={busy || scopes.length === 0}
             >
-              <Plus size={17} /> {busy ? "Creating…" : "Create agent token"}
+              <Plus size={17} /> {busy ? m.creating : m.create}
             </Button>
           </form>
           <div className="tag-tip">
-            A local model keeps processing local if its computer is private. A
-            cloud agent may send text it reads to its provider. Choose “Read OCR
-            text” only when that is acceptable.
+            {m.tip}
           </div>
         </section>
       </div>

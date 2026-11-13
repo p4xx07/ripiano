@@ -2,6 +2,8 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bookmark, Pencil, Plus, Trash2, X } from "lucide-react";
 import { LibraryFilters, request, SavedView } from "./api";
 import { Button } from "./ui";
+import { useMessages } from "./i18n";
+import messages from "./locales/SavedSearchBar";
 
 type Props = {
   query: string;
@@ -41,6 +43,7 @@ function viewFilters(view: SavedView): LibraryFilters {
 }
 
 export default function SavedSearchBar({ query, filters, onApply }: Props) {
+  const m = useMessages(messages);
   const [views, setViews] = useState<SavedView[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [form, setForm] = useState<{ kind: "create" } | { kind: "rename"; id: string } | null>(null);
@@ -58,9 +61,9 @@ export default function SavedSearchBar({ query, filters, onApply }: Props) {
       const result = await request<{ views: SavedView[] }>("/api/saved-views");
       setViews(result.views);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load saved searches");
+      setError(cause instanceof Error ? cause.message : m.loadError);
     }
-  }, []);
+  }, [m]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (form) nameInput.current?.focus(); }, [form]);
@@ -89,19 +92,19 @@ export default function SavedSearchBar({ query, filters, onApply }: Props) {
           method: "POST", body: JSON.stringify({ name, ...criteria(query, filters) }),
         });
         setActiveId(created.id);
-        setNotice(`${created.name} saved.`);
+        setNotice(m.saved(created.name));
       } else {
         const updated = await request<SavedView>(`/api/saved-views/${form.id}`, {
           method: "PATCH", body: JSON.stringify({ name }),
         });
-        setNotice(`Renamed to ${updated.name}.`);
+        setNotice(m.renamed(updated.name));
       }
       const targetId = form.kind === "rename" ? form.id : null;
       closeForm(false);
       await load();
       focusAfterSave.current = targetId ?? "save";
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not save search");
+      setError(cause instanceof Error ? cause.message : m.saveError);
     } finally {
       setBusy(false);
     }
@@ -114,27 +117,27 @@ export default function SavedSearchBar({ query, filters, onApply }: Props) {
       await request(`/api/saved-views/${view.id}`, {
         method: "PATCH", body: JSON.stringify(criteria(query, filters)),
       });
-      setNotice(`${view.name} updated with the current search.`);
+      setNotice(m.updated(view.name));
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not update saved search");
+      setError(cause instanceof Error ? cause.message : m.updateError);
     } finally {
       setBusy(false);
     }
   }
 
   async function remove(view: SavedView) {
-    if (!window.confirm(`Delete saved search “${view.name}”?`)) return;
+    if (!window.confirm(m.confirmDelete(view.name))) return;
     setBusy(true);
     setError("");
     try {
       await request(`/api/saved-views/${view.id}`, { method: "DELETE" });
       setViews((current) => current.filter((item) => item.id !== view.id));
       if (activeId === view.id) setActiveId(null);
-      setNotice(`${view.name} deleted. The current Library results are unchanged.`);
+      setNotice(m.deleted(view.name));
       focusAfterSave.current = "save";
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not delete saved search");
+      setError(cause instanceof Error ? cause.message : m.deleteError);
     } finally {
       setBusy(false);
     }
@@ -143,28 +146,28 @@ export default function SavedSearchBar({ query, filters, onApply }: Props) {
   const active = views.find((view) => view.id === activeId);
   const changed = active ? JSON.stringify(criteria(query, filters)) !== JSON.stringify(criteria(active.query, viewFilters(active))) : false;
 
-  return <section className="saved-search-bar" aria-label="Saved searches">
-    <div className="saved-search-heading"><Bookmark size={16} /><strong>Saved searches</strong></div>
+  return <section className="saved-search-bar" aria-label={m.heading}>
+    <div className="saved-search-heading"><Bookmark size={16} /><strong>{m.heading}</strong></div>
     <div className="saved-search-list">
-      {views.length === 0 && <span className="saved-search-empty">Keep useful searches one tap away.</span>}
+      {views.length === 0 && <span className="saved-search-empty">{m.empty}</span>}
       {views.map((view) => <span className={`saved-search-chip ${activeId === view.id && !changed ? "active" : ""}`} key={view.id}>
         <button type="button" disabled={busy} aria-pressed={activeId === view.id && !changed} onClick={() => {
           setActiveId(view.id);
-          setNotice(`${view.name} opened.`);
+          setNotice(m.opened(view.name));
           onApply(view.query, viewFilters(view));
         }}>{view.name}</button>
-        <button ref={(node) => { if (node) renameButtons.current.set(view.id, node); else renameButtons.current.delete(view.id); }} type="button" aria-label={`Rename saved search ${view.name}`} disabled={busy} onClick={() => { setForm({ kind: "rename", id: view.id }); setName(view.name); }}><Pencil size={14} /></button>
-        <button type="button" aria-label={`Delete saved search ${view.name}`} disabled={busy} onClick={() => void remove(view)}><Trash2 size={14} /></button>
+        <button ref={(node) => { if (node) renameButtons.current.set(view.id, node); else renameButtons.current.delete(view.id); }} type="button" aria-label={m.rename(view.name)} disabled={busy} onClick={() => { setForm({ kind: "rename", id: view.id }); setName(view.name); }}><Pencil size={14} /></button>
+        <button type="button" aria-label={m.remove(view.name)} disabled={busy} onClick={() => void remove(view)}><Trash2 size={14} /></button>
       </span>)}
     </div>
     <div className="saved-search-actions">
-      <button ref={saveButton} type="button" className="text-action" disabled={busy} onClick={() => { setForm({ kind: "create" }); setName(""); }}><Plus size={15} /> Save this search</button>
-      {active && changed && <button type="button" className="text-action" disabled={busy} onClick={() => void update(active)}>Update “{active.name}”</button>}
+      <button ref={saveButton} type="button" className="text-action" disabled={busy} onClick={() => { setForm({ kind: "create" }); setName(""); }}><Plus size={15} /> {m.saveThis}</button>
+      {active && changed && <button type="button" className="text-action" disabled={busy} onClick={() => void update(active)}>{m.update(active.name)}</button>}
     </div>
     {form && <form className="saved-search-form" onSubmit={submit}>
-      <input ref={nameInput} aria-label="Saved search name" value={name} onChange={(event) => setName(event.target.value)} maxLength={100} placeholder="Name this search" required />
-      <Button disabled={busy}>{form.kind === "create" ? "Save search" : "Save name"}</Button>
-      <button type="button" aria-label="Cancel saved search" disabled={busy} onClick={() => closeForm()}><X size={17} /></button>
+      <input ref={nameInput} aria-label={m.nameLabel} value={name} onChange={(event) => setName(event.target.value)} maxLength={100} placeholder={m.namePlaceholder} required />
+      <Button disabled={busy}>{form.kind === "create" ? m.saveSearch : m.saveName}</Button>
+      <button type="button" aria-label={m.cancel} disabled={busy} onClick={() => closeForm()}><X size={17} /></button>
     </form>}
     {error && <p className="inline-error" role="alert">{error}</p>}
     <span className="visually-hidden" role="status" aria-live="polite">{notice}</span>

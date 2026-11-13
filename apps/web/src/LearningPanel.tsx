@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Brain, RotateCw } from "lucide-react";
-import { request } from "./api";
+import { formatDateTime, request } from "./api";
 import { Button } from "./ui";
+import { useMessages } from "./i18n";
+import messages from "./locales/LearningPanel";
 
 type KindMetrics = { examples: number; labels: number; ready: boolean; precision?: number | null; coverage?: number; brier?: number; accuracy?: number };
 type Status = {
@@ -13,22 +15,25 @@ type Status = {
   metrics: Partial<Record<"correspondents" | "document_types" | "tags", KindMetrics>>;
 };
 
-const kindLabels = { correspondents: "Senders", document_types: "Document types", tags: "Tags" } as const;
+type Text = typeof messages.en;
+
+const kindLabels = { correspondents: "kindCorrespondents", document_types: "kindDocumentTypes", tags: "kindTags" } as const;
 
 const needs = {
-  correspondents: "file at least 3 documents each for 2 or more senders",
-  document_types: "file at least 3 documents each for 2 or more types",
-  tags: "tag at least 3 documents with the same tag",
+  correspondents: "needsCorrespondents",
+  document_types: "needsDocumentTypes",
+  tags: "needsTags",
 } as const;
 
-function describe(kind: keyof typeof needs, metrics: KindMetrics | undefined) {
-  if (!metrics) return "Not learned yet";
-  if (!metrics.ready) return `Needs more examples: ${needs[kind]} yourself`;
-  if (metrics.precision == null || !metrics.coverage) return `Learned from ${metrics.examples} documents · not confident enough to suggest yet`;
-  return `Learned from ${metrics.examples} documents · on documents it had not seen, ${Math.round(metrics.precision * 100)}% of its suggestions were right, and it suggested something for ${Math.round(metrics.coverage * 100)}% of them`;
+function describe(m: Text, kind: keyof typeof needs, metrics: KindMetrics | undefined) {
+  if (!metrics) return m.notLearned;
+  if (!metrics.ready) return m[needs[kind]];
+  if (metrics.precision == null || !metrics.coverage) return m.notConfident(metrics.examples);
+  return m.learned(metrics.examples, Math.round(metrics.precision * 100), Math.round(metrics.coverage * 100));
 }
 
 export default function LearningPanel() {
+  const m = useMessages(messages);
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -39,7 +44,7 @@ export default function LearningPanel() {
       setStatus(await request<Status>("/api/filing-model"));
       setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load learning status");
+      setError(cause instanceof Error ? cause.message : m.loadError);
     }
   }
 
@@ -57,9 +62,9 @@ export default function LearningPanel() {
     setNotice("");
     try {
       setStatus(await request<Status>("/api/filing-model", { method: "POST" }));
-      setNotice("Learning started. This usually takes under a minute.");
+      setNotice(m.started);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not start learning");
+      setError(cause instanceof Error ? cause.message : m.startError);
     } finally {
       setBusy(false);
     }
@@ -67,20 +72,20 @@ export default function LearningPanel() {
 
   const running = status?.status === "queued" || status?.status === "training";
   return <section className="tag-create-card learning-panel" aria-labelledby="learning-heading">
-    <h2 id="learning-heading"><Brain size={18} aria-hidden="true" /> Learned suggestions</h2>
-    <p>Ripiano learns from senders, types, and tags you set yourself, on this server only. It suggests only when it is at least {Math.round((status?.threshold ?? 0.6) * 100)}% likely to be right, and never files anything without you. It relearns every night.</p>
+    <h2 id="learning-heading"><Brain size={18} aria-hidden="true" /> {m.heading}</h2>
+    <p>{m.intro(Math.round((status?.threshold ?? 0.6) * 100))}</p>
     {error && <p className="inline-error" role="alert">{error}</p>}
     {notice && <p className="bulk-notice">{notice}</p>}
     {status && <>
       <p className="learning-state" role="status" aria-live="polite">
-        {running ? "Learning…" : status.status === "failed" ? `Last attempt failed: ${status.error}` : status.trained_at ? `Last learned ${new Date(status.trained_at).toLocaleString()}` : "Not learned yet"}
+        {running ? m.learning : status.status === "failed" ? m.failed(status.error) : status.trained_at ? m.lastLearned(formatDateTime(status.trained_at)) : m.notLearned}
       </p>
       {status.trained_at && <dl className="shared-facts">
         {(Object.keys(kindLabels) as (keyof typeof kindLabels)[]).map((kind) => <div key={kind} className="learning-row">
-          <dt>{kindLabels[kind]}</dt><dd>{describe(kind, status.metrics[kind])}</dd>
+          <dt>{m[kindLabels[kind]]}</dt><dd>{describe(m, kind, status.metrics[kind])}</dd>
         </div>)}
       </dl>}
     </>}
-    <Button type="button" variant="secondary" disabled={busy || running} onClick={() => void retrain()}><RotateCw size={16} aria-hidden="true" /> {running ? "Learning…" : "Learn now"}</Button>
+    <Button type="button" variant="secondary" disabled={busy || running} onClick={() => void retrain()}><RotateCw size={16} aria-hidden="true" /> {running ? m.learning : m.learnNow}</Button>
   </section>;
 }

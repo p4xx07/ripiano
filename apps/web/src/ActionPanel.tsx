@@ -2,11 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ClipboardList, FileText, RotateCcw } from "lucide-react";
 import { Document, formatDate, request } from "./api";
 import { Button } from "./ui";
+import { useMessages } from "./i18n";
+import messages from "./locales/ActionPanel";
 
 export default function ActionPanel({ refreshKey, onOpenDocument }: {
   refreshKey: number;
   onOpenDocument: (document: Document) => void;
 }) {
+  const m = useMessages(messages);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -31,7 +34,7 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
       setError("");
     } catch (cause) {
       if (requestNumber !== latestRequest.current) return;
-      setError(cause instanceof Error ? cause.message : "Could not load follow-ups");
+      setError(cause instanceof Error ? cause.message : m.loadError);
     } finally {
       if (cursor) loadingMoreRef.current = false;
       if (requestNumber === latestRequest.current) {
@@ -39,7 +42,7 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
         setLoadingMore(false);
       }
     }
-  }, []);
+  }, [m]);
 
   useEffect(() => { void load(); }, [load, refreshKey]);
 
@@ -52,7 +55,7 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
       });
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not complete follow-up");
+      setError(cause instanceof Error ? cause.message : m.completeError);
     } finally {
       setBusyId(null);
     }
@@ -61,18 +64,18 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
   return <>
     <div className="page-heading">
       <div>
-        <div className="eyebrow"><span className="eyebrow-line" /> WHEN SOMETHING NEEDS YOU</div>
-        <h1>Needs action<span className="heading-period">.</span></h1>
-        <p>Only documents with something left to do appear here.</p>
+        <div className="eyebrow"><span className="eyebrow-line" /> {m.eyebrow}</div>
+        <h1>{m.heading}<span className="heading-period">.</span></h1>
+        <p>{m.intro}</p>
       </div>
-      <Button type="button" variant="secondary" aria-label="Refresh" title="Refresh follow-ups" onClick={() => void load()}><RotateCcw size={16} /> <span className="refresh-label">Refresh</span></Button>
+      <Button type="button" variant="secondary" aria-label={m.refresh} title={m.refreshTitle} onClick={() => void load()}><RotateCcw size={16} /> <span className="refresh-label">{m.refresh}</span></Button>
     </div>
-    {error && <div className="inline-error" role="alert">{error}<button onClick={() => void load(documents.length ? nextCursor : null)}>Retry</button></div>}
-    {loading ? <p>Loading follow-ups…</p> : error && !documents.length ? null : documents.length === 0 ? (
+    {error && <div className="inline-error" role="alert">{error}<button onClick={() => void load(documents.length ? nextCursor : null)}>{m.retry}</button></div>}
+    {loading ? <p>{m.loading}</p> : error && !documents.length ? null : documents.length === 0 ? (
       <div className="empty-state">
         <div className="empty-icon"><ClipboardList size={32} strokeWidth={1.5} /></div>
-        <h3>All clear.</h3>
-        <p>Mark a document as needing action when there is something to do. Filing stays optional.</p>
+        <h3>{m.emptyTitle}</h3>
+        <p>{m.emptyText}</p>
       </div>
     ) : <>
     <div className="document-list">
@@ -80,15 +83,15 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
         <div className="document-icon"><FileText size={21} /></div>
         <div className="document-info">
           <h3><button className="document-title-button" onClick={() => onOpenDocument(document)}>{document.title}</button></h3>
-          <div className="document-meta">{document.action_due_date ? `Due ${formatDate(`${document.action_due_date}T00:00:00`)}` : "No due date"}</div>
+          <div className="document-meta">{document.action_due_date ? m.due(formatDate(`${document.action_due_date}T00:00:00`)) : m.noDueDate}</div>
           {document.action_note && <p title={document.action_note}>{document.action_note}</p>}
         </div>
         <Button type="button" variant="secondary" className="action-done" disabled={busyId === document.id} onClick={() => void markDone(document)}>
-          <Check size={17} /> Done
+          <Check size={17} /> {m.done}
         </Button>
       </article>)}
     </div>
-    {nextCursor !== null && <Button type="button" variant="secondary" className="load-more" disabled={loadingMore} onClick={() => void load(nextCursor)}>{loadingMore ? "Loading…" : "Show more follow-ups"}</Button>}
+    {nextCursor !== null && <Button type="button" variant="secondary" className="load-more" disabled={loadingMore} onClick={() => void load(nextCursor)}>{loadingMore ? m.loadingMore : m.showMore}</Button>}
     </>}
   </>;
 }

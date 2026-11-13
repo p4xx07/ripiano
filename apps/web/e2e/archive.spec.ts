@@ -137,4 +137,13 @@ test("capture, find, tag, and locate a paper copy", async ({
   await expect(missingRow.getByText("Paper copy reported missing")).toBeVisible();
   await expect(missingRow.getByText(locationName, { exact: true })).toHaveCount(0);
   await missingRow.screenshot({ path: testInfo.outputPath("missing-paper-copy.png"), animations: "disabled" });
+  await page.getByRole("button", { name: /Filters/ }).click();
+  const missingFilterResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" &&
+    response.status() === 200 &&
+    new URL(response.url()).searchParams.get("copy_status") === "missing",
+  );
+  await page.getByRole("combobox", { name: "Paper copy" }).selectOption("missing");
+  expect((await (await missingFilterResponse).json()).documents.some((document: { id: string }) => document.id === documentId)).toBe(true);
+  await expect(missingRow).toBeVisible();
 });

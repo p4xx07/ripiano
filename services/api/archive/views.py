@@ -322,7 +322,7 @@ def documents(request):
                 except (TypeError, ValueError):
                     return JsonResponse({"error": f"Invalid {key.replace('_', ' ')}"}, status=400)
         copy_status = request.GET.get("copy_status", "")
-        if copy_status not in ("", "paper", "virtual"):
+        if copy_status not in ("", "paper", "virtual", "missing"):
             return JsonResponse({"error": "Choose a valid paper-copy filter"}, status=400)
         if copy_status:
             filters["copy_status"] = copy_status
@@ -377,7 +377,10 @@ def documents(request):
             queryset = queryset.filter(document_type_id=filters["document_type_id"])
         if "copy_status" in filters:
             paper_copies = PhysicalCopy.objects.filter(document_id=OuterRef("pk"))
-            queryset = queryset.filter(Exists(paper_copies) if copy_status == "paper" else ~Exists(paper_copies))
+            if copy_status == "missing":
+                queryset = queryset.filter(Exists(paper_copies.filter(missing_at__isnull=False)))
+            else:
+                queryset = queryset.filter(Exists(paper_copies) if copy_status == "paper" else ~Exists(paper_copies))
         if "date_from" in filters:
             queryset = queryset.filter(document_date__gte=filters["date_from"])
         if "date_to" in filters:

@@ -39,3 +39,28 @@ The control stays within the established warm-paper / olive-green system, its sp
 ## Blockers
 
 None.
+
+---
+
+## Follow-up: Reported missing filter
+
+**Recommendation: APPROVE — scoped score: 9.8 / 10.**
+
+### Evidence inspected
+
+- Incremental UI/API/test diff after commit `79fd21f`.
+- [Paper-copy select](../../apps/web/src/App.tsx#L1275), using the shared native-label `Field` primitive.
+- [Desktop](../../apps/web/test-results/archive-capture-find-tag-and-locate-a-paper-copy-desktop/missing-paper-copy.png) and [mobile](../../apps/web/test-results/archive-capture-find-tag-and-locate-a-paper-copy-mobile/missing-paper-copy.png) missing-copy row evidence.
+- [Browser journey assertions](../../apps/web/e2e/archive.spec.ts#L129) covering marking a copy missing, removal of the stale location, and selection of the `Reported missing` filter.
+
+### Findings
+
+#### CRITICAL / HIGH / MEDIUM / LOW
+
+None.
+
+`Reported missing` is direct, user-facing language and its placement under `Paper copy` makes its scope clear. The revised hint, “Registered copies include those reported missing,” accurately resolves the potentially confusing relationship between `Has a paper copy`, `Digital only`, and missing copies. It remains a native, label-associated select that reuses existing responsive filter layout and tokens, so it remains keyboard and mobile compatible. The warning row continues to communicate a missing copy without falsely presenting its previous shelf as current.
+
+### Blockers
+
+None.

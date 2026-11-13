@@ -728,6 +728,8 @@ def test_paper_copy_filter_distinguishes_registered_and_digital_only_documents()
     paper_results = client.get("/api/documents", {"copy_status": "paper"}).json()
     assert {item["id"] for item in paper_results["documents"]} == {str(paper.id), str(missing.id)}
     assert paper_results["counts"]["total"] == 2
+    missing_results = client.get("/api/documents", {"copy_status": "missing"}).json()
+    assert [item["id"] for item in missing_results["documents"]] == [str(missing.id)]
     virtual_results = client.get("/api/documents", {"copy_status": "virtual"}).json()
     assert [item["id"] for item in virtual_results["documents"]] == [str(digital.id)]
     assert client.get("/api/documents", {"copy_status": "paper", "q": "title:Digital"}).json()["documents"] == []

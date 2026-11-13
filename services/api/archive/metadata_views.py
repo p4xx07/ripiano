@@ -171,7 +171,7 @@ def _saved_view_values(body, owner, current=None):
         raise ValueError("Search text must be at most 200 characters")
     values = {"name": name.strip(), "query": query.strip()}
     copy_status = body.get("copy_status", current.copy_status if current else "")
-    if copy_status not in ("", "paper", "virtual"):
+    if copy_status not in ("", "paper", "virtual", "missing"):
         raise ValueError("Choose a valid paper-copy filter")
     values["copy_status"] = copy_status
     for key, model in (("tag", Tag), ("correspondent", Correspondent), ("document_type", DocumentType), ("custom_field", CustomField)):

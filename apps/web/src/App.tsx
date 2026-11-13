@@ -1116,7 +1116,12 @@ function App() {
           ) : view === "agents" ? (
             <AgentPanel />
           ) : view === "overview" ? (
-            <OverviewPanel onNavigate={(target) => setView(target)} />
+            <OverviewPanel onNavigate={(target) => setView(target)} onOpenUntagged={() => {
+              setQuery("is:untagged");
+              setFilters({ ...emptyLibraryFilters });
+              setNextCursor(null);
+              setView("documents");
+            }} />
           ) : view === "security" ? (
             <SecurityPanel />
           ) : view === "workflows" ? (
@@ -1246,7 +1251,7 @@ function App() {
               </div>
               <details className="search-syntax">
                 <summary>More precise search</summary>
-                <p>Use <code>tag:tax</code>, <code>sender:"City office"</code>, or <code>date:2026-04-15</code>. You can also search by <code>title:</code>, <code>text:</code>, <code>note:</code>, <code>type:</code>, and <code>sticker:</code>. Combine fields and ordinary words to narrow results. Press <kbd>/</kbd> to search and <kbd>N</kbd> to add a document from anywhere in your archive.</p>
+                <p>Use <code>tag:tax</code>, <code>sender:"City office"</code>, <code>date:2026-04-15</code>, or <code>is:untagged</code>. You can also search by <code>title:</code>, <code>text:</code>, <code>note:</code>, <code>type:</code>, <code>sticker:</code>, and <code>is:tagged</code>. Combine fields and ordinary words to narrow results. Press <kbd>/</kbd> to search and <kbd>N</kbd> to add a document from anywhere in your archive.</p>
               </details>
               {showFilters && <div className="library-filters" id="library-filters">
                 <Field label="Tag" className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">Any tag</option>{tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}</select></Field>

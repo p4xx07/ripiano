@@ -672,6 +672,33 @@ def test_search_finds_tags_action_notes_and_sticker_codes_without_crossing_owner
 
 
 @pytest.mark.django_db
+def test_tag_presence_search_stays_optional_and_owner_scoped():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+
+    def make(user, title, **values):
+        return Document.objects.create(
+            owner=user, title=title, original_name=f"{title}.pdf", original_path=f"originals/{title}.pdf",
+            original_mime="application/pdf", original_sha256="a" * 64, original_size=10, **values,
+        )
+
+    bare = make(owner, "Insurance renewal")
+    tagged = make(owner, "Insurance policy")
+    make(owner, "Insurance scan source", is_split_source=True)
+    make(owner, "Insurance trashed", trashed_at=timezone.now())
+    make(other, "Insurance private")
+    tag = Tag.objects.create(owner=owner, name="Insurance")
+    DocumentTag.objects.create(document=tagged, tag=tag)
+    client = Client()
+    client.force_login(owner)
+
+    assert [item["id"] for item in client.get("/api/documents", {"q": "is:untagged"}).json()["documents"]] == [str(bare.id)]
+    assert [item["id"] for item in client.get("/api/documents", {"q": "is:tagged"}).json()["documents"]] == [str(tagged.id)]
+    assert [item["id"] for item in client.get("/api/documents", {"q": "is:untagged renewal"}).json()["documents"]] == [str(bare.id)]
+    assert client.get("/api/documents", {"q": "is:unknown"}).status_code == 400
+
+
+@pytest.mark.django_db
 def test_field_search_combines_owned_metadata_text_and_dates():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     other = get_user_model().objects.create_user("other", password="secure-password-2")

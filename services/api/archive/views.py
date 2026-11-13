@@ -35,7 +35,7 @@ from .tasks import backup_archive
 
 logger = logging.getLogger(__name__)
 CURSOR_SALT = "ripiano-document-page-v2"
-SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date", "field", "asn"}
+SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date", "field", "asn", "is"}
 LIBRARY_SORTS = {"relevance", "newest", "oldest", "document_newest", "document_oldest", "title_asc", "title_desc"}
 
 
@@ -76,6 +76,8 @@ def _parse_search(query):
                 value = str(int(value))
             if field == "field" and ("=" not in value or not all(part.strip() for part in value.split("=", 1))):
                 raise ValueError('Use field:"Name=value" to search a custom field')
+            if field == "is" and value not in {"tagged", "untagged"}:
+                raise ValueError("Use is:tagged or is:untagged")
             clauses.append((field, value))
         else:
             words.append(token)
@@ -381,6 +383,9 @@ def documents(request):
                 queryset = queryset.filter(Q(action_note__icontains=value) | Q(Exists(DocumentNote.objects.filter(document_id=OuterRef("pk"), body__icontains=value))))
             elif field == "tag":
                 queryset = queryset.filter(Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=value)))
+            elif field == "is":
+                linked_tags = DocumentTag.objects.filter(document_id=OuterRef("pk"))
+                queryset = queryset.filter(Exists(linked_tags) if value == "tagged" else ~Exists(linked_tags))
             elif field == "sender":
                 queryset = queryset.filter(correspondent__name__icontains=value)
             elif field == "type":

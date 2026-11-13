@@ -49,7 +49,10 @@ function Ranked({ title, rows }: { title: string; rows: { name: string; count: n
   );
 }
 
-export default function OverviewPanel({ onNavigate }: { onNavigate: (view: "inbox" | "actions" | "documents" | "backups" | "integrations" | "workflows") => void }) {
+export default function OverviewPanel({ onNavigate, onOpenUntagged }: {
+  onNavigate: (view: "inbox" | "actions" | "documents" | "backups" | "integrations" | "workflows") => void;
+  onOpenUntagged: () => void;
+}) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [active, setActive] = useState<number | null>(null);
@@ -99,7 +102,7 @@ export default function OverviewPanel({ onNavigate }: { onNavigate: (view: "inbo
             <p className="overview-health">
               {data.health.backup ? `Last backup: ${data.health.backup.status === "complete" ? "completed" : data.health.backup.status} ${new Date(data.health.backup.at).toLocaleString()}` : "Backups are visible to the archive owner."}
               {" · "}{data.health.mailboxes.total} mailbox{data.health.mailboxes.total === 1 ? "" : "es"} · {data.health.workflows.enabled} active workflow{data.health.workflows.enabled === 1 ? "" : "s"}
-              {" · "}{docs.untagged.toLocaleString()} without tags
+              {" · "}{docs.untagged ? <button type="button" className="text-action" onClick={onOpenUntagged}>{docs.untagged.toLocaleString()} without tags · View in Library</button> : "0 without tags"}
               {data.health.queues && <>{" · "}Background queues: {data.health.queues.celery.toLocaleString()} OCR, {data.health.queues.maintenance.toLocaleString()} maintenance waiting</>}
             </p>
           </section>

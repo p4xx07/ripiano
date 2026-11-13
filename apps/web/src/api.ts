@@ -10,6 +10,7 @@ export type Tag = {
   name: string;
   color: string;
   description: string;
+  barcode_value: string;
   parent_id: string | null;
 };
 

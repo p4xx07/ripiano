@@ -427,6 +427,16 @@ def apply_barcodes(document, original, pdf, work_dir):
         tag = Tag.objects.filter(owner_id=document.owner_id, name__iexact=name).order_by("created_at").first()
         if tag and tag.id not in suppressed:
             DocumentTag.objects.get_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.SOURCE})
+    if scan.codes:
+        from django.db.models.functions import Lower
+
+        codes = {code.lower() for code in scan.codes}
+        mapped_tags = {tag.barcode_value.lower(): tag for tag in Tag.objects.filter(owner_id=document.owner_id)
+                       .annotate(code_lower=Lower("barcode_value")).filter(code_lower__in=codes)}
+        for code in scan.codes:
+            tag = mapped_tags.get(code.lower())
+            if tag and tag.id not in suppressed:
+                DocumentTag.objects.get_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.SOURCE})
     if scan.asn and document.asn is None:
         try:
             with transaction.atomic():

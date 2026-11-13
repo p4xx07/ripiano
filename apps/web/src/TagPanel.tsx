@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { ArrowRight, Plus, Tag as TagIcon, Trash2, X } from "lucide-react";
+import { ArrowRight, Plus, Printer, Tag as TagIcon, Trash2, X } from "lucide-react";
 import { MatchMode, matchModes, request, Rule, Tag, tagPathLabel } from "./api";
 import { Button } from "./ui";
 import FilingVocabularyPanel from "./FilingVocabularyPanel";
@@ -11,12 +11,15 @@ export default function TagPanel() {
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState("");
   const [description, setDescription] = useState("");
+  const [barcodeValue, setBarcodeValue] = useState("");
   const [keywords, setKeywords] = useState("");
   const [color, setColor] = useState("#5d8b66");
   const [newRuleTag, setNewRuleTag] = useState<string | null>(null);
   const [newRuleText, setNewRuleText] = useState("");
   const [newRuleMatch, setNewRuleMatch] = useState<MatchMode>("phrase");
   const [movingTagId, setMovingTagId] = useState<string | null>(null);
+  const [editingBarcodeTagId, setEditingBarcodeTagId] = useState<string | null>(null);
+  const [barcodeDraft, setBarcodeDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const tagById = new Map(tags.map((tag) => [tag.id, tag]));
@@ -68,6 +71,7 @@ export default function TagPanel() {
           name,
           parent_id: parentId || null,
           description,
+          barcode_value: barcodeValue,
           color,
           keywords: keywords
             .split(",")
@@ -78,6 +82,7 @@ export default function TagPanel() {
       setName("");
       setParentId("");
       setDescription("");
+      setBarcodeValue("");
       setKeywords("");
       await load();
     } catch (cause) {
@@ -153,6 +158,24 @@ export default function TagPanel() {
       setMovingTagId(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not move tag");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveBarcode(event: FormEvent, tag: Tag) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await request(`/api/tags/${tag.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ barcode_value: barcodeDraft }),
+      });
+      setEditingBarcodeTagId(null);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not update tag barcode");
     } finally {
       setBusy(false);
     }
@@ -238,6 +261,17 @@ export default function TagPanel() {
                       {tag.parent_id ? "Change group" : "Put under another tag"}
                     </button>
                   )}
+                  {editingBarcodeTagId === tag.id ? <form className="tag-barcode-editor" onSubmit={(event) => void saveBarcode(event, tag)}>
+                    <label className="detail-label">Barcode for {tag.name}
+                      <input autoFocus value={barcodeDraft} onChange={(event) => setBarcodeDraft(event.target.value)} maxLength={100} placeholder="Code printed on your label" />
+                    </label>
+                    <Button disabled={busy}>Save code</Button>
+                    <button type="button" className="tag-icon-button" aria-label={`Cancel barcode edit for ${tag.name}`} onClick={() => setEditingBarcodeTagId(null)}><X size={16} /></button>
+                  </form> : <div className="tag-barcode-row">
+                    <span>{tag.barcode_value ? `Barcode: ${tag.barcode_value}` : "No barcode mapped"}</span>
+                    {tag.barcode_value && <a className="text-action" href={`/api/tags/${tag.id}/label`} target="_blank" rel="noreferrer"><Printer size={15} /> Print label</a>}
+                    <button type="button" className="text-action" onClick={() => { setEditingBarcodeTagId(tag.id); setBarcodeDraft(tag.barcode_value); }}>{tag.barcode_value ? "Change code" : "Set barcode"}</button>
+                  </div>}
                   <div className="rule-list">
                     {rules
                       .filter((rule) => rule.tag_id === tag.id)
@@ -342,6 +376,10 @@ export default function TagPanel() {
                 onChange={(event) => setKeywords(event.target.value)}
                 placeholder="invoice, electricity, fattura"
               />
+            </label>
+            <label>
+              Barcode value <small>Optional · a code on your existing label</small>
+              <input value={barcodeValue} onChange={(event) => setBarcodeValue(event.target.value)} maxLength={100} placeholder="e.g. ARCHIVE-BILLS" />
             </label>
             <label>
               Description <small>Optional</small>

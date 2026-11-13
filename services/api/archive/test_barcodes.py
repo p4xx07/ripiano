@@ -19,8 +19,8 @@ except ImportError:
     HAS_ZBAR = False
 needs_zbar = pytest.mark.skipif(not HAS_ZBAR, reason="install the zbar library to read barcodes (Debian: libzbar0t64)")
 from archive.ingestion import ingest_document
-from archive.models import Document, DocumentNote, DocumentTag, Tag
-from archive.tasks import process_document
+from archive.models import Document, DocumentNote, DocumentTag, Tag, TagOverride
+from archive.tasks import apply_barcodes, process_document
 
 
 def page(text=None, code=None):
@@ -63,6 +63,74 @@ def test_separator_pages_are_dropped_and_empty_parts_ignored():
     scan = BarcodeScan(pages=7, separators=[0, 2, 3, 6])
     assert split_ranges(scan) == [(1, 2), (4, 6)]
     assert split_ranges(BarcodeScan(pages=3)) == [(0, 3)]
+
+
+@pytest.mark.django_db
+def test_tag_barcode_values_are_owned_unique_and_do_not_shadow_control_codes():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    client = Client()
+    client.force_login(owner)
+    first = client.post("/api/tags", {"name": "Bills <private>", "barcode_value": " ARCHIVE-BILLS "}, content_type="application/json")
+    assert first.status_code == 201 and first.json()["barcode_value"] == "ARCHIVE-BILLS"
+    with patch("archive.metadata_views.segno.make_qr", wraps=segno.make_qr) as make_qr:
+        label = client.get(f"/api/tags/{first.json()['id']}/label")
+    assert label.status_code == 200 and b"<svg" in label.content
+    assert b"Bills &lt;private&gt;" in label.content and b"Bills <private>" not in label.content
+    assert make_qr.call_args.args[0] == "ARCHIVE-BILLS"
+    second = client.post("/api/tags", {"name": "Taxes"}, content_type="application/json")
+    assert second.status_code == 201
+    assert client.patch(f"/api/tags/{second.json()['id']}", {"barcode_value": "archive-bills"}, content_type="application/json").status_code == 409
+    for reserved in ("PATCHT", "ASN42", "TAG:Bills"):
+        assert client.patch(f"/api/tags/{second.json()['id']}", {"barcode_value": reserved}, content_type="application/json").status_code == 400
+    assert client.patch(f"/api/tags/{second.json()['id']}", {"barcode_value": "💌"}, content_type="application/json").status_code == 400
+    assert client.patch(f"/api/tags/{first.json()['id']}", {"barcode_value": ""}, content_type="application/json").json()["barcode_value"] == ""
+    assert client.get(f"/api/tags/{first.json()['id']}/label").status_code == 409
+    assert client.patch(f"/api/tags/{second.json()['id']}", {"barcode_value": "archive-bills"}, content_type="application/json").status_code == 200
+    client.force_login(other)
+    assert client.get(f"/api/tags/{second.json()['id']}/label").status_code == 404
+    assert client.post("/api/tags", {"name": "Other bills", "barcode_value": "ARCHIVE-BILLS"}, content_type="application/json").status_code == 201
+
+
+@pytest.mark.django_db
+def test_mapped_barcode_applies_source_tag_only_for_owner_and_respects_rejection():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    bills = Tag.objects.create(owner=owner, name="Bills", barcode_value="ARCHIVE-BILLS")
+
+    def document(user, name):
+        return Document.objects.create(owner=user, title=name, original_name=f"{name}.png",
+                                       original_path=f"originals/{name}.png", original_mime="image/png",
+                                       original_sha256="a" * 64, original_size=1)
+
+    owned = document(owner, "owned")
+    foreign = document(other, "foreign")
+    with patch("archive.barcodes.scan_image", return_value=BarcodeScan(pages=1, scanned=1, codes=["archive-bills"])):
+        apply_barcodes(owned, Path("unused.png"), Path("unused.pdf"), Path("."))
+        apply_barcodes(foreign, Path("unused.png"), Path("unused.pdf"), Path("."))
+        assert DocumentTag.objects.get(document=owned, tag=bills).origin == DocumentTag.Origin.SOURCE
+        assert not DocumentTag.objects.filter(document=foreign).exists()
+        DocumentTag.objects.filter(document=owned, tag=bills).delete()
+        TagOverride.objects.create(document=owned, tag=bills)
+        apply_barcodes(owned, Path("unused.png"), Path("unused.pdf"), Path("."))
+    assert not DocumentTag.objects.filter(document=owned).exists()
+
+
+@needs_zbar
+@pytest.mark.django_db
+def test_configured_tag_barcode_files_scanned_document_without_crossing_owner(tmp_path):
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    bills = Tag.objects.create(owner=owner, name="Bills", barcode_value="ARCHIVE-BILLS")
+    Tag.objects.create(owner=other, name="Other", barcode_value="SOMETHING-ELSE")
+    scan = pdf(page("Invoice", "archive-bills"))
+    with override_settings(MEDIA_ROOT=tmp_path), patch("archive.ingestion.process_document.delay"):
+        owned = ingest_document(owner, SimpleUploadedFile("owned.pdf", scan))
+        foreign = ingest_document(other, SimpleUploadedFile("foreign.pdf", scan + b"\n"))
+        process(str(owned.id))
+        process(str(foreign.id))
+    assert DocumentTag.objects.get(document=owned, tag=bills).origin == DocumentTag.Origin.SOURCE
+    assert not DocumentTag.objects.filter(document=foreign).exists()
 
 
 @needs_zbar

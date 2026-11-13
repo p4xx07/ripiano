@@ -1,13 +1,17 @@
+import io
 import json
 import logging
 import re
 from datetime import date
 from uuid import UUID
 
+import segno
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
+from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 
 from .models import ClassificationRule, Correspondent, CustomField, DocumentType, FilingRule, SavedView, Tag
@@ -51,8 +55,22 @@ def _tag_json(tag):
     return {
         "id": str(tag.id), "name": tag.name, "color": tag.color,
         "description": tag.description,
+        "barcode_value": tag.barcode_value,
         "parent_id": str(tag.parent_id) if tag.parent_id else None,
     }
+
+
+def _tag_barcode_value(raw):
+    if not isinstance(raw, str):
+        raise ValueError("Barcode value must be text")
+    value = raw.strip()
+    if len(value) > 100 or not value.isascii() or not value.isprintable():
+        raise ValueError("Barcode value must be printable ASCII text up to 100 characters")
+    if (value and (value.casefold() == settings.RIPIANO_BARCODE_SEPARATOR.casefold()
+                   or re.fullmatch(rf"{re.escape(settings.RIPIANO_BARCODE_ASN_PREFIX)}\s*0*\d{{1,9}}", value, re.IGNORECASE)
+                   or value.casefold().startswith(settings.RIPIANO_BARCODE_TAG_PREFIX.casefold()))):
+        raise ValueError("This barcode is reserved for a separator, archive number, or tag name")
+    return value
 
 
 def _tag_parent(owner, raw, tag_id=None):
@@ -366,6 +384,10 @@ def tags(request):
     name = str(body.get("name", "")).strip()
     color = str(body.get("color", "#5d8b66"))
     description = str(body.get("description", "")).strip()
+    try:
+        barcode_value = _tag_barcode_value(body.get("barcode_value", ""))
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
     keywords = body.get("keywords", [])
     if not name or len(name) > 100 or not COLOR.fullmatch(color) or len(description) > 500:
         return JsonResponse({"error": "Invalid tag name, color, or description"}, status=400)
@@ -377,14 +399,16 @@ def tags(request):
         return JsonResponse({"error": str(exc)}, status=400)
     if Tag.objects.filter(owner=request.user, name__iexact=name).exists():
         return JsonResponse({"error": "A tag with that name already exists"}, status=409)
+    if barcode_value and Tag.objects.filter(owner=request.user, barcode_value__iexact=barcode_value).exists():
+        return JsonResponse({"error": "Another tag already uses that barcode"}, status=409)
     try:
         with transaction.atomic():
             get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
-            tag = Tag.objects.create(owner=request.user, name=name, color=color, description=description, parent=parent)
+            tag = Tag.objects.create(owner=request.user, name=name, color=color, description=description, barcode_value=barcode_value, parent=parent)
             for keyword in dict.fromkeys(value.strip() for value in keywords):
                 ClassificationRule.objects.create(owner=request.user, tag=tag, pattern=keyword)
     except IntegrityError:
-        return JsonResponse({"error": "A tag with that name already exists"}, status=409)
+        return JsonResponse({"error": "A tag name or barcode is already in use"}, status=409)
     if keywords:
         _queue_tag_candidates(request.user.id, tag.id, [{"pattern": keyword, "field": "either"} for keyword in keywords])
     return JsonResponse(_tag_json(tag), status=201)
@@ -432,6 +456,15 @@ def tag_detail(request, tag_id):
                     return JsonResponse({"error": "Invalid tag description"}, status=400)
                 tag.description = body["description"].strip()
                 changes.append("description")
+            if "barcode_value" in body:
+                try:
+                    value = _tag_barcode_value(body["barcode_value"])
+                except ValueError as exc:
+                    return JsonResponse({"error": str(exc)}, status=400)
+                if value and Tag.objects.filter(owner=request.user, barcode_value__iexact=value).exclude(pk=tag.pk).exists():
+                    return JsonResponse({"error": "Another tag already uses that barcode"}, status=409)
+                tag.barcode_value = value
+                changes.append("barcode_value")
             if "parent_id" in body:
                 try:
                     tag.parent = _tag_parent(request.user, body["parent_id"], tag.id)
@@ -441,8 +474,31 @@ def tag_detail(request, tag_id):
             if changes:
                 tag.save(update_fields=changes)
     except IntegrityError:
-        return JsonResponse({"error": "Duplicate tag name"}, status=409)
+        return JsonResponse({"error": "A tag name or barcode is already in use"}, status=409)
     return JsonResponse(_tag_json(tag))
+
+
+@require_http_methods(["GET"])
+def tag_barcode_label(request, tag_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    tag = Tag.objects.filter(pk=tag_id, owner=request.user).first()
+    if tag is None:
+        return JsonResponse({"error": "Tag not found"}, status=404)
+    if not tag.barcode_value:
+        return JsonResponse({"error": "Set a barcode for this tag first"}, status=409)
+    qr = segno.make_qr(tag.barcode_value, error="m")
+    output = io.BytesIO()
+    qr.save(output, kind="svg", scale=3, border=2, dark="#183e32")
+    name = escape(tag.name[:70])
+    code = escape(tag.barcode_value)
+    html = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>Ripiano tag {name}</title>
+<style>@page{{size:70mm 40mm;margin:0}}body{{margin:0;font-family:Arial,sans-serif;color:#183e32}}.label{{box-sizing:border-box;width:70mm;height:40mm;padding:3mm;display:flex;gap:3mm;border:1px solid #bbb}}svg{{width:30mm;height:30mm;flex:none}}.text{{overflow:hidden}}.brand{{font-size:8pt;font-weight:bold}}h1{{font-size:11pt;margin:2mm 0 1mm;overflow:hidden}}.code{{font-size:8pt;overflow-wrap:anywhere}}</style>
+<div class="label">{output.getvalue().decode("utf-8")}<div class="text"><div class="brand">ripiano · tag</div><h1>{name}</h1><div class="code">{code}</div></div></div></html>"""
+    response = HttpResponse(html, content_type="text/html; charset=utf-8")
+    response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+    return response
 
 
 @require_http_methods(["GET", "POST"])

@@ -14,6 +14,7 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 MAX_PAGE_PIXELS = 40_000_000  # about A0 at 200 dpi
+MAX_MAPPED_CODES = 500
 
 
 @dataclass
@@ -23,6 +24,7 @@ class BarcodeScan:
     separators: list[int] = field(default_factory=list)  # zero-based page indexes
     asn: int | None = None
     tags: list[str] = field(default_factory=list)
+    codes: list[str] = field(default_factory=list)
 
     @property
     def truncated(self):
@@ -45,12 +47,15 @@ def _classify(scan, page, texts):
         if text.casefold() == settings.RIPIANO_BARCODE_SEPARATOR.casefold():
             if page not in scan.separators:
                 scan.separators.append(page)
-        elif (match := asn.match(text)) and scan.asn is None and int(match[1]) > 0:
-            scan.asn = int(match[1])
+        elif match := asn.match(text):
+            if scan.asn is None and int(match[1]) > 0:
+                scan.asn = int(match[1])
         elif text.casefold().startswith(settings.RIPIANO_BARCODE_TAG_PREFIX.casefold()):
             name = text[len(settings.RIPIANO_BARCODE_TAG_PREFIX):].strip()
             if name and name.casefold() not in {item.casefold() for item in scan.tags}:
                 scan.tags.append(name[:100])
+        elif text and len(text) <= 100 and text.casefold() not in {item.casefold() for item in scan.codes} and len(scan.codes) < MAX_MAPPED_CODES:
+            scan.codes.append(text)
 
 
 def scan_pdf(pdf, work_dir):

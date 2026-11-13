@@ -217,12 +217,16 @@ class Tag(models.Model):
     name = models.CharField(max_length=100)
     color = models.CharField(max_length=7, default="#5d8b66")
     description = models.CharField(max_length=500, blank=True)
+    barcode_value = models.CharField(max_length=100, blank=True)
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="children")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["name"]
-        constraints = [models.UniqueConstraint(fields=["owner", "name"], name="unique_tag_name_per_owner")]
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "name"], name="unique_tag_name_per_owner"),
+            models.UniqueConstraint(Lower("barcode_value"), "owner", condition=~Q(barcode_value=""), name="unique_tag_barcode_owner_ci"),
+        ]
 
 
 class Correspondent(models.Model):

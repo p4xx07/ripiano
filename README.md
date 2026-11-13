@@ -336,9 +336,9 @@ Document exports include every older version. Only permanent deletion removes ve
 PDF and image scans are checked for QR codes and common 1D barcodes on the NAS. Nothing is sent elsewhere.
 - **Separator sheets:** a sheet with the code `PATCHT` splits a multi-page PDF into separate documents and is itself dropped. The full scan is kept unchanged as the hidden source of its parts; open it from any part with **Open full scan**.
 - **ASN:** a code such as `ASN00042` gives the document archive number 42. Numbers are unique per owner. A clash is recorded as a note on the document instead of being assigned, and you can change the number on the document. Search with `asn:42`.
-- **Tags:** a code such as `TAG:Bills` adds your existing tag "Bills".
+- **Tags:** a code such as `TAG:Bills` adds your existing tag "Bills". In **Tags & filing**, you can also give a tag a unique barcode value (for example `ARCHIVE-BILLS`) and print its QR label. Put that label on a scan's first page to add the tag without exposing its name in the code. The mapping is per account, ignores letter case, and respects tags you manually removed from a document.
 
-Set `RIPIANO_BARCODES=0` to turn this off. `RIPIANO_BARCODE_SEPARATOR`, `RIPIANO_BARCODE_ASN_PREFIX`, and `RIPIANO_BARCODE_TAG_PREFIX` change the codes. Up to 100 pages per file are scanned (`RIPIANO_BARCODE_MAX_PAGES`). Physical-copy stickers remain a separate, stable identity for the paper itself.
+Set `RIPIANO_BARCODES=0` to turn this off. `RIPIANO_BARCODE_SEPARATOR`, `RIPIANO_BARCODE_ASN_PREFIX`, and `RIPIANO_BARCODE_TAG_PREFIX` change the codes. Up to 100 pages and the first 500 distinct non-control codes per file are checked (`RIPIANO_BARCODE_MAX_PAGES` controls pages). Physical-copy stickers remain a separate, stable identity for the paper itself.
 
 ### Optional email intake
 

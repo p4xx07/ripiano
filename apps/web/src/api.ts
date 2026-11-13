@@ -110,6 +110,7 @@ export type Document = {
   id: string;
   title: string;
   original_name: string;
+  version_number: number;
   duplicate_of: { id: string; title: string } | null;
   duplicate_reviewed_at: string | null;
   source: "web" | "telegram" | "android" | "folder";

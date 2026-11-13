@@ -3,13 +3,14 @@
 import json
 import subprocess
 from pathlib import Path
+from uuid import UUID
 
 from django.conf import settings
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from .models import Document, DocumentVersion
-from .versions import VersionError, add_version, edit_pages, merge_documents, page_info, render_page, restore_version, split_pages
+from .versions import VersionError, add_existing_document_version, add_version, edit_pages, merge_documents, page_info, render_page, restore_version, split_pages
 
 
 def _signed_in(request):
@@ -77,6 +78,34 @@ def document_versions(request, document_id):
                     "size": document.original_size, "created_at": (document.version_created_at or document.created_at).isoformat()},
         "versions": [_version_json(item) for item in document.versions.all()[:200]],
     })
+
+
+@require_http_methods(["POST"])
+def document_version_from_document(request, document_id):
+    denied = _signed_in(request)
+    if denied:
+        return denied
+    if _document(request, document_id) is None:
+        return JsonResponse({"error": "Document not found"}, status=404)
+    body = _body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    try:
+        source_id = UUID(str(body.get("source_document_id")))
+    except (TypeError, ValueError, AttributeError):
+        return JsonResponse({"error": "Choose a source document"}, status=400)
+    source = Document.objects.filter(pk=source_id, owner=request.user, trashed_at__isnull=True).first()
+    if source is None:
+        return JsonResponse({"error": "Document not found"}, status=404)
+    source_version = body.get("source_version_number")
+    if source_version is not None and (not isinstance(source_version, int) or isinstance(source_version, bool) or source_version < 1):
+        return JsonResponse({"error": "Invalid source version"}, status=400)
+    try:
+        document = add_existing_document_version(document_id, source, request.user,
+                                                 expected_version=_expected(body), expected_source_version=source_version)
+    except VersionError as exc:
+        return _error(exc)
+    return JsonResponse(_summary(document), status=202)
 
 
 @require_http_methods(["GET"])

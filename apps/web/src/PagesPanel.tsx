@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowDownToLine, ArrowLeft, ArrowRight, History, Layers, RotateCcw, RotateCw, Scissors, Trash2, Undo2, Upload } from "lucide-react";
-import { request } from "./api";
+import { ApiError, request, type Document } from "./api";
 import { Button } from "./ui";
 
 type PageInfo = { count: number; source: "original" | "searchable"; signed: boolean; version_number: number };
@@ -31,16 +31,26 @@ export default function PagesPanel({ documentId, ready, editable, onChanged, onO
   const [notice, setNotice] = useState("");
   const [created, setCreated] = useState<Summary[]>([]);
   const [moved, setMoved] = useState("");
+  const [sourceQuery, setSourceQuery] = useState("");
+  const [sourceResults, setSourceResults] = useState<Document[]>([]);
+  const [sourceChoice, setSourceChoice] = useState<Document | null>(null);
+  const [sourceError, setSourceError] = useState("");
+  const [sourceSearching, setSourceSearching] = useState(false);
+  const [sourceHasMore, setSourceHasMore] = useState(false);
+  const [sourceRevision, setSourceRevision] = useState(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (includePages = true) => {
     try {
       const history = await request<Versions>(`/api/documents/${documentId}/versions`);
       setVersions(history);
-      if (ready) {
+      if (ready && includePages) {
         const pageInfo = await request<PageInfo>(`/api/documents/${documentId}/pages`);
         setInfo(pageInfo);
         setPages(Array.from({ length: pageInfo.count }, (_, index) => ({ index, rotation: 0, removed: false })));
         setSplitAfter([]);
+      } else if (!includePages) {
+        setInfo(null);
+        setPages([]);
       }
       setError("");
     } catch (cause) {
@@ -53,6 +63,37 @@ export default function PagesPanel({ documentId, ready, editable, onChanged, onO
     if (opened) void load();
   }, [opened, load]);
 
+  useEffect(() => {
+    if (!opened || sourceQuery.trim().length < 2) {
+      setSourceResults([]);
+      setSourceError("");
+      setSourceSearching(false);
+      setSourceHasMore(false);
+      return;
+    }
+    let cancelled = false;
+    setSourceResults([]);
+    setSourceSearching(true);
+    setSourceHasMore(false);
+    const timer = window.setTimeout(() => {
+      void request<{ documents: Document[]; next_cursor: string | null }>(`/api/documents?${new URLSearchParams({ q: sourceQuery.trim() })}`)
+        .then((result) => {
+          if (cancelled) return;
+          setSourceResults(result.documents.filter((item) => item.id !== documentId && item.status === "ready" && !item.is_split_source));
+          setSourceError("");
+          setSourceSearching(false);
+          setSourceHasMore(Boolean(result.next_cursor));
+        })
+        .catch((cause) => {
+          if (cancelled) return;
+          setSourceResults([]);
+          setSourceError(cause instanceof Error ? cause.message : "Could not search documents");
+          setSourceSearching(false);
+        });
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [documentId, opened, sourceQuery, sourceRevision]);
+
   async function run(action: () => Promise<string>) {
     setBusy(true);
     setError("");
@@ -61,8 +102,11 @@ export default function PagesPanel({ documentId, ready, editable, onChanged, onO
     try {
       setNotice(await action());
     } catch (cause) {
+      if (cause instanceof ApiError && (cause.data.code === "stale" || cause.data.code === "source_stale")) {
+        onChanged();
+        await load(cause.data.code === "source_stale");
+      }
       setError(cause instanceof Error ? cause.message : "That did not work");
-      if (cause instanceof Error && cause.message.startsWith("This document changed")) void load();
     } finally {
       setBusy(false);
     }
@@ -105,7 +149,7 @@ export default function PagesPanel({ documentId, ready, editable, onChanged, onO
         body: JSON.stringify({ order: kept.map((item) => item.index), rotate: rotations, accept_signature_loss: acceptSignature, version_number: info?.version_number }),
       });
       onChanged();
-      await load();
+      await load(false);
       return `Saved as a new version. The previous file is kept below; the searchable PDF is being rebuilt.${sharesNote(result)}`;
     });
   }
@@ -127,7 +171,7 @@ export default function PagesPanel({ documentId, ready, editable, onChanged, onO
         method: "POST", body: JSON.stringify({ version_number: versions?.current.number }),
       });
       onChanged();
-      await load();
+      await load(false);
       return `Version ${version.number} is current again. Nothing was deleted.${sharesNote(result)}`;
     });
   }
@@ -139,8 +183,33 @@ export default function PagesPanel({ documentId, ready, editable, onChanged, onO
       if (versions) form.append("version_number", String(versions.current.number));
       const result = await request<Summary>(`/api/documents/${documentId}/versions`, { method: "POST", body: form });
       onChanged();
-      await load();
+      await load(false);
       return `New version uploaded. The previous file is kept below.${sharesNote(result)}`;
+    });
+  }
+
+  function useExistingDocument() {
+    if (!sourceChoice) return;
+    const chosen = sourceChoice;
+    void run(async () => {
+      let result: Summary;
+      try {
+        result = await request<Summary>(`/api/documents/${documentId}/versions/from-document`, {
+          method: "POST",
+          body: JSON.stringify({ source_document_id: chosen.id, source_version_number: chosen.version_number, version_number: versions?.current.number }),
+        });
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.data.code === "source_stale") {
+          setSourceChoice(null);
+          setSourceRevision((value) => value + 1);
+        }
+        throw cause;
+      }
+      setSourceChoice(null);
+      setSourceQuery("");
+      onChanged();
+      await load(false);
+      return `“${chosen.title}” is now the current file. The source document stays separate, and the previous file is kept below.${sharesNote(result)}`;
     });
   }
 
@@ -237,6 +306,29 @@ export default function PagesPanel({ documentId, ready, editable, onChanged, onO
             <input className="visually-hidden" type="file" accept="application/pdf,image/jpeg,image/png,.eml,.msg,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.odt,.ods,.odp,.rtf"
               disabled={busy || !editable} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) uploadVersion(file); }} />
           </label>
+          <div className="pages-source-picker">
+            <h5>Use an existing document as a new version</h5>
+            <p>Copies its current original file here. This document keeps its title, tags, and notes; the source stays separate. Active share links for this document may be revoked.</p>
+            <label htmlFor="pages-source-search">Search ready documents</label>
+            <input id="pages-source-search" type="search" value={sourceQuery} disabled={busy || !editable}
+              placeholder="Search by title or content" onChange={(event) => { setSourceQuery(event.target.value); setSourceChoice(null); }} />
+            {sourceError && <p className="inline-error" role="alert">{sourceError}</p>}
+            {sourceSearching && <p role="status">Searching documents…</p>}
+            {sourceQuery.trim().length >= 2 && !sourceSearching && !sourceError && sourceResults.length === 0 && <p>No ready documents found{sourceHasMore ? " in the first 50 matches. Narrow your search." : ". Try another search."}</p>}
+            {sourceResults.length > 0 && (
+              <fieldset disabled={busy || !editable}>
+                <legend>Choose the source</legend>
+                {sourceResults.map((item) => (
+                  <label key={item.id} className="pages-source-option">
+                    <input type="radio" name={`source-${documentId}`} checked={sourceChoice?.id === item.id} onChange={() => setSourceChoice(item)} />
+                    <span><strong>{item.title}</strong><small>{item.original_name} · version {item.version_number}</small></span>
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            {sourceHasMore && !sourceSearching && sourceResults.length > 0 && <p>Showing the first 50 matches. Narrow your search to find another document.</p>}
+            <Button type="button" variant="secondary" disabled={busy || !editable || !sourceChoice} onClick={useExistingDocument}>Use as new version</Button>
+          </div>
         </div>
       )}
     </section>

@@ -5,6 +5,70 @@ import path from "node:path";
 const username = process.env.RIPIANO_E2E_USERNAME;
 const password = process.env.RIPIANO_E2E_PASSWORD;
 const fixture = readFileSync(path.resolve(process.cwd(), "e2e/fixtures/three-pages.pdf"));
+const replacement = readFileSync(path.resolve(process.cwd(), "e2e/fixtures/judge.png"));
+
+test("an archived document can become another document's new version", async ({ page }, testInfo) => {
+  test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
+  test.setTimeout(240000);
+  await page.goto("/");
+  await page.getByLabel("Username").fill(username!);
+  await page.getByLabel("Password").fill(password!);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
+
+  async function upload(name: string, bytes: Buffer, mimeType: string) {
+    const add = page.getByRole("button", { name: "Add document", exact: true });
+    if (await add.isVisible()) await add.click();
+    else await page.getByRole("button", { name: "Add", exact: true }).click();
+    const response = page.waitForResponse((item) => item.url().endsWith("/api/documents") && item.request().method() === "POST" && item.status() === 202);
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: /Browse files/ }).click();
+    await (await chooser).setFiles({ name, mimeType, buffer: bytes });
+    return (await (await response).json()).id as string;
+  }
+
+  const prefix = `version-copy-${Date.now()}-${testInfo.project.name}`;
+  const targetName = `${prefix}-target`;
+  const sourceName = `${prefix}-source`;
+  const targetId = await upload(`${targetName}.pdf`, fixture, "application/pdf");
+  const sourceId = await upload(`${sourceName}.png`, replacement, "image/png");
+  await expect.poll(async () => (await (await page.request.get(`/api/documents/${targetId}`)).json()).status, { timeout: 120000 }).toBe("ready");
+  await expect.poll(async () => (await (await page.request.get(`/api/documents/${sourceId}`)).json()).status, { timeout: 120000 }).toBe("ready");
+
+  await page.getByRole("textbox", { name: "Search documents" }).fill(targetName);
+  await page.getByRole("button", { name: targetName, exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  await dialog.getByRole("button", { name: "Open pages & versions" }).click();
+  const panel = dialog.locator(".pages-panel");
+  await panel.getByRole("searchbox", { name: "Search ready documents" }).fill(sourceName);
+  await expect(panel.getByRole("img", { name: "Page 3" })).toBeVisible();
+  await panel.getByRole("radio", { name: new RegExp(sourceName) }).check();
+  const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "csrftoken")?.value ?? "";
+  const newer = await page.request.post(`/api/documents/${sourceId}/versions`, {
+    multipart: { file: { name: "updated.png", mimeType: "image/png", buffer: replacement }, version_number: "1" },
+    headers: { "X-CSRFToken": csrf },
+  });
+  expect(newer.status()).toBe(202);
+  await expect.poll(async () => (await (await page.request.get(`/api/documents/${sourceId}`)).json()).status, { timeout: 120000 }).toBe("ready");
+  await panel.getByRole("button", { name: "Use as new version" }).click();
+  await expect(panel.getByRole("alert")).toContainText("source document changed");
+  await expect(panel.getByRole("img", { name: "Page 3" })).toBeVisible();
+  await expect(panel.locator(".pages-source-option").filter({ hasText: sourceName })).toContainText("version 2");
+  await expect(panel.getByRole("radio", { name: new RegExp(sourceName) })).not.toBeChecked();
+  await panel.getByRole("radio", { name: new RegExp(sourceName) }).check();
+  await panel.getByRole("button", { name: "Use as new version" }).click();
+  await expect(panel.getByRole("status")).toContainText("source document stays separate");
+  await expect.poll(async () => (await (await page.request.get(`/api/documents/${targetId}`)).json()).status, { timeout: 120000 }).toBe("ready");
+
+  const history = await (await page.request.get(`/api/documents/${targetId}/versions`)).json();
+  expect(history.current.number).toBe(2);
+  expect((await (await page.request.get(`/api/documents/${targetId}/original`)).body())).toEqual(replacement);
+  expect((await (await page.request.get(`/api/documents/${targetId}/versions/${history.versions[0].id}/download`)).body())).toEqual(fixture);
+  expect((await (await page.request.get(`/api/documents/${sourceId}/original`)).body())).toEqual(replacement);
+  expect((await (await page.request.get(`/api/documents/${sourceId}`)).json()).version_number).toBe(2);
+  await expect(panel.getByRole("img", { name: "Page 1" })).toBeVisible();
+  await panel.locator(".pages-versions").screenshot({ path: testInfo.outputPath("existing-document-version.png"), animations: "disabled" });
+});
 
 test("page edits become a new version and the previous file stays available", async ({ page }, testInfo) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");

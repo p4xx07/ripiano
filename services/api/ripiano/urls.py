@@ -49,6 +49,7 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>/similar", similar_views.document_similar),
     path("api/documents/<uuid:document_id>/original", views.download_original),
     path("api/documents/<uuid:document_id>/versions", version_views.document_versions),
+    path("api/documents/<uuid:document_id>/versions/from-document", version_views.document_version_from_document),
     path("api/documents/<uuid:document_id>/versions/<uuid:version_id>/download", version_views.document_version_download),
     path("api/documents/<uuid:document_id>/versions/<uuid:version_id>/restore", version_views.document_version_restore),
     path("api/documents/<uuid:document_id>/pages", version_views.document_pages),

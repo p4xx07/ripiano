@@ -325,6 +325,7 @@ Open a document and choose **Open pages & versions**:
 - **Split:** tick "New document after this page" and choose **Split into N documents**. This creates new documents and leaves the original untouched.
 - **Merge:** in Library selection mode, **Merge into one PDF** creates a new document from the selected ones, in the order you selected them.
 - **Upload a new version:** replace the current file with a corrected one.
+- **Use an existing document:** search in **Pages & versions**, choose a ready document, and copy its current original as a new version. The source remains a separate document, while this document keeps its title, tags, and notes. Its previous file stays downloadable; active share links are revoked because their contents changed.
 - **Older versions:** each can be downloaded or made current again. Making a version current adds a new version, so nothing is lost.
 - **Signed PDFs:** a digitally signed PDF needs explicit confirmation before editing, because the edited version is no longer signed. The signed file remains as an older version.
 - **Non-PDF originals:** page tools work on the searchable PDF.

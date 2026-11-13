@@ -115,6 +115,95 @@ def test_uploading_a_new_version_validates_the_file(owner, tmp_path, django_capt
 
 
 @pytest.mark.django_db
+def test_existing_document_can_be_copied_as_a_version_without_changing_either_history(owner, tmp_path, django_capture_on_commit_callbacks):
+    from datetime import timedelta
+
+    from archive.models import ShareLink
+
+    original = pdf(300)
+    replacement = pdf(450, 500)
+    target = ready(owner, tmp_path, original, "target.pdf")
+    source = ready(owner, tmp_path, replacement, "source.pdf")
+    target.title = "Important contract"
+    target.action_note = "Keep this note"
+    target.save(update_fields=["title", "action_note"])
+    link = ShareLink.objects.create(document=target, owner=owner, token_hash="a" * 64,
+                                    expires_at=timezone.now() + timedelta(days=2))
+    source_path = source.original_path
+    client = client_for(owner)
+    with override_settings(MEDIA_ROOT=tmp_path), django_capture_on_commit_callbacks() as callbacks:
+        response = client.post(f"/api/documents/{target.id}/versions/from-document", {
+            "source_document_id": str(source.id), "source_version_number": 1, "version_number": 1,
+        }, content_type="application/json")
+    assert response.status_code == 202 and len(callbacks) == 1
+    assert response.json()["revoked_shares"] == 1
+    target.refresh_from_db()
+    source.refresh_from_db()
+    link.refresh_from_db()
+    previous = DocumentVersion.objects.get(document=target, number=1)
+    assert (target.title, target.action_note, target.version_number, target.status) == (
+        "Important contract", "Keep this note", 2, Document.Status.PENDING,
+    )
+    assert target.original_path != source_path
+    assert (tmp_path / target.original_path).read_bytes() == replacement
+    assert (tmp_path / previous.original_path).read_bytes() == original
+    assert (source.version_number, source.status, source.original_path) == (1, Document.Status.READY, source_path)
+    assert (tmp_path / source.original_path).read_bytes() == replacement
+    assert link.revoked_at is not None
+    with override_settings(MEDIA_ROOT=tmp_path):
+        previous_download = client.get(f"/api/documents/{target.id}/versions/{previous.id}/download")
+        assert b"".join(previous_download.streaming_content) == original
+    (tmp_path / source.original_path).unlink()
+    assert (tmp_path / target.original_path).read_bytes() == replacement
+
+
+@pytest.mark.django_db
+def test_existing_document_version_rejects_unavailable_or_stale_sources_without_mutation(owner, tmp_path):
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+    target = ready(owner, tmp_path, pdf(300))
+    source = ready(owner, tmp_path, pdf(400))
+    foreign = ready(other, tmp_path, pdf(500))
+    client = client_for(owner)
+    endpoint = f"/api/documents/{target.id}/versions/from-document"
+
+    def post(source_id, **extra):
+        return client.post(endpoint, {"source_document_id": str(source_id), "version_number": 1, **extra}, content_type="application/json")
+
+    with override_settings(MEDIA_ROOT=tmp_path):
+        assert post(foreign.id).status_code == 404
+        assert post(target.id).status_code == 400
+        assert post(source.id, source_version_number=2).status_code == 409
+        from archive.versions import add_existing_document_version
+
+        def source_changes_after_lookup(*args, **kwargs):
+            Document.objects.filter(pk=source.pk).update(version_number=2)
+            return add_existing_document_version(*args, **kwargs)
+
+        with patch("archive.version_views.add_existing_document_version", side_effect=source_changes_after_lookup):
+            concurrent = post(source.id, source_version_number=1)
+        assert concurrent.status_code == 409 and concurrent.json()["code"] == "source_stale"
+        Document.objects.filter(pk=source.pk).update(version_number=1)
+        assert post(source.id, version_number=2).status_code == 409
+        assert post(source.id, source_version_number=True).status_code == 400
+        assert post("not-a-uuid").status_code == 400
+        Document.objects.filter(pk=source.pk).update(status=Document.Status.PROCESSING)
+        assert post(source.id).status_code == 409
+        Document.objects.filter(pk=source.pk).update(status=Document.Status.READY, is_split_source=True)
+        assert post(source.id).status_code == 409
+        Document.objects.filter(pk=source.pk).update(is_split_source=False)
+        (tmp_path / source.original_path).write_bytes(pdf(600))
+        assert post(source.id).status_code == 503
+        (tmp_path / source.original_path).unlink()
+        assert post(source.id).status_code == 503
+        Document.objects.filter(pk=source.pk).update(trashed_at=timezone.now())
+        assert post(source.id).status_code == 404
+    target.refresh_from_db()
+    assert target.version_number == 1
+    assert not DocumentVersion.objects.filter(document=target).exists()
+    assert len(list((tmp_path / "originals").rglob("*.pdf"))) == 2
+
+
+@pytest.mark.django_db
 def test_split_and_merge_create_new_documents_and_leave_sources_alone(owner, tmp_path, django_capture_on_commit_callbacks):
     other = get_user_model().objects.create_user("other", password="secure-password-2")
     first = ready(owner, tmp_path, pdf(300, 400, 500), "first.pdf")

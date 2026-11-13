@@ -118,7 +118,7 @@ def _locked(document_id, owner, expected_version=None):
     return document
 
 
-def add_version(document_id, owner, upload, note, *, expected_version=None):
+def add_version(document_id, owner, upload, note, *, expected_version=None, expected_digest=None):
     """Store a new current file for a document and queue processing. The previous file becomes a version.
 
     Active share links are revoked: they must never start serving different content.
@@ -129,6 +129,9 @@ def add_version(document_id, owner, upload, note, *, expected_version=None):
         path, mime, digest, size = save_original(upload)
     except InvalidDocument as exc:
         raise VersionError(str(exc), 400) from exc
+    if expected_digest is not None and digest != expected_digest:
+        _media(path).unlink(missing_ok=True)
+        raise VersionError("The stored source file does not match its checksum. Restore it from a backup before adding it as a version.", 503)
     try:
         with transaction.atomic():
             document = _locked(document_id, owner, expected_version)
@@ -156,6 +159,34 @@ def add_version(document_id, owner, upload, note, *, expected_version=None):
     # Previews of the replaced file are no longer shown.
     shutil.rmtree(_preview_dir(document), ignore_errors=True)
     return document
+
+
+def add_existing_document_version(document_id, source, owner, *, expected_version=None, expected_source_version=None):
+    """Copy another owned document's current original into this document's version history."""
+    if str(source.id) == str(document_id):
+        raise VersionError("Choose a different document as the source.")
+    with transaction.atomic():
+        # Lock both rows in a stable order; two opposite copy requests cannot deadlock.
+        locked = {}
+        for identifier in sorted((source.id, document_id), key=str):
+            document = Document.objects.select_for_update().filter(pk=identifier, owner=owner, trashed_at__isnull=True).first()
+            if document is None:
+                raise VersionError("Document not found", 404)
+            locked[str(identifier)] = document
+        source = locked[str(source.id)]
+        _locked(document_id, owner, expected_version)
+        if source.is_split_source or source.status != Document.Status.READY:
+            raise VersionError("The source document must be ready and visible in the Library.", 409)
+        if expected_source_version is not None and source.version_number != expected_source_version:
+            raise VersionError("The source document changed. Search again before adding it.", 409, "source_stale")
+        try:
+            file = _media(source.original_path).open("rb")
+        except OSError as exc:
+            raise VersionError("The stored source file is unavailable. Restore it from a backup before adding it as a version.", 503) from exc
+        with file:
+            return add_version(document_id, owner, File(file, name=source.original_name),
+                               f"Added from “{source.title}”", expected_version=expected_version,
+                               expected_digest=source.original_sha256)
 
 
 def _pdf_bytes(writer):

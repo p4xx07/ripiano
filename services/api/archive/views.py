@@ -179,6 +179,7 @@ def _document_json(document, query=""):
         "id": str(document.id),
         "title": document.title,
         "original_name": document.original_name,
+        "version_number": document.version_number,
         "duplicate_of": {"id": str(document.duplicate_of_id), "title": document.duplicate_of.title} if document.duplicate_of_id and not document.duplicate_of.trashed_at else None,
         "duplicate_reviewed_at": document.duplicate_reviewed_at.isoformat() if document.duplicate_reviewed_at else None,
         "source": document.source,

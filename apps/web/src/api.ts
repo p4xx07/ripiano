@@ -48,6 +48,7 @@ export type FilingItem = { id: string; name: string };
 
 export type LibraryFilters = {
   tag_id: string;
+  copy_status: string;
   correspondent_id: string;
   document_type_id: string;
   date_from: string;
@@ -63,6 +64,7 @@ export type SavedView = {
   name: string;
   query: string;
   tag_id: string | null;
+  copy_status: string;
   correspondent_id: string | null;
   document_type_id: string | null;
   date_from: string | null;

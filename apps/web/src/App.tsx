@@ -18,6 +18,7 @@ import {
   Workflow,
   Camera,
   Check,
+  CircleAlert,
   Clock3,
   ClipboardList,
   Copy,
@@ -99,7 +100,7 @@ type BrowseExportRun = {
 };
 
 const emptyLibraryFilters: LibraryFilters = {
-  tag_id: "", correspondent_id: "", document_type_id: "", date_from: "", date_to: "", custom_field_id: "", custom_value: "", custom_min: "", custom_max: "",
+  tag_id: "", copy_status: "", correspondent_id: "", document_type_id: "", date_from: "", date_to: "", custom_field_id: "", custom_value: "", custom_min: "", custom_max: "",
 };
 
 function TagSummary({ tags }: { tags: Document["tags"] }) {
@@ -125,6 +126,22 @@ function TagSummary({ tags }: { tags: Document["tags"] }) {
     <div className="document-tags document-tags-desktop">{chips(2)}</div>
     <div className="document-tags document-tags-mobile">{chips(1)}</div>
   </>;
+}
+
+function PaperCopySummary({ copies }: { copies: Document["physical_copies"] }) {
+  const located = copies.filter((copy) => !copy.missing_at);
+  const missingCount = copies.length - located.length;
+  return <div className="document-physical">
+    {located.length > 0 && <span className="physical-location">
+      <MapPin size={13} />
+      {located[0].location_path.join(" / ") || "Paper copy awaiting a location"}
+      {located.length > 1 && ` +${located.length - 1}`}
+    </span>}
+    {missingCount > 0 && <span className="physical-missing">
+      <CircleAlert size={13} />
+      {missingCount === 1 ? "Paper copy reported missing" : `${missingCount} paper copies reported missing`}
+    </span>}
+  </div>;
 }
 
 declare global {
@@ -1255,6 +1272,7 @@ function App() {
               </details>
               {showFilters && <div className="library-filters" id="library-filters">
                 <Field label="Tag" className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">Any tag</option>{tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}</select></Field>
+                <Field label="Paper copy" hint="Includes copies reported missing" className="detail-label"><select value={filters.copy_status} onChange={(event) => updateFilter("copy_status", event.target.value)}><option value="">Any</option><option value="paper">Has a paper copy</option><option value="virtual">Digital only</option></select></Field>
                 <Field label="From" className="detail-label"><select value={filters.correspondent_id} onChange={(event) => updateFilter("correspondent_id", event.target.value)}><option value="">Any sender</option>{filterOptions.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
                 <Field label="Document type" className="detail-label"><select value={filters.document_type_id} onChange={(event) => updateFilter("document_type_id", event.target.value)}><option value="">Any type</option>{filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
                 <Field label="Custom detail" className="detail-label custom-filter-field"><select value={filters.custom_field_id} onChange={(event) => updateFilter("custom_field_id", event.target.value)}><option value="">Any custom detail</option>{filterOptions.custom_fields.map((field) => <option key={field.id} value={field.id}>{field.name}</option>)}</select></Field>
@@ -1465,15 +1483,7 @@ function App() {
                             {doc.duplicate_of.title}
                           </span>
                         )}
-                        {doc.physical_copies.length > 0 && (
-                          <div className="document-physical">
-                            <MapPin size={13} />{" "}
-                            {doc.physical_copies[0].location_path.join(" / ") ||
-                              "Paper copy awaiting a location"}
-                            {doc.physical_copies.length > 1 &&
-                              ` +${doc.physical_copies.length - 1}`}
-                          </div>
-                        )}
+                        {doc.physical_copies.length > 0 && <PaperCopySummary copies={doc.physical_copies} />}
                         {doc.status === "failed" && (
                           <p className="doc-error">
                             Processing failed: {doc.error}

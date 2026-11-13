@@ -13,6 +13,7 @@ function criteria(query: string, filters: LibraryFilters) {
   return {
     query: query.trim(),
     tag_id: filters.tag_id || null,
+    copy_status: filters.copy_status,
     correspondent_id: filters.correspondent_id || null,
     document_type_id: filters.document_type_id || null,
     date_from: filters.date_from || null,
@@ -27,6 +28,7 @@ function criteria(query: string, filters: LibraryFilters) {
 function viewFilters(view: SavedView): LibraryFilters {
   return {
     tag_id: view.tag_id ?? "",
+    copy_status: view.copy_status ?? "",
     correspondent_id: view.correspondent_id ?? "",
     document_type_id: view.document_type_id ?? "",
     date_from: view.date_from ?? "",

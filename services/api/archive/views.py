@@ -321,6 +321,11 @@ def documents(request):
                     filters[key] = date.fromisoformat(raw).isoformat()
                 except (TypeError, ValueError):
                     return JsonResponse({"error": f"Invalid {key.replace('_', ' ')}"}, status=400)
+        copy_status = request.GET.get("copy_status", "")
+        if copy_status not in ("", "paper", "virtual"):
+            return JsonResponse({"error": "Choose a valid paper-copy filter"}, status=400)
+        if copy_status:
+            filters["copy_status"] = copy_status
         if filters.get("date_from") and filters.get("date_to") and filters["date_from"] > filters["date_to"]:
             return JsonResponse({"error": "Start date must be before end date"}, status=400)
         custom_value = request.GET.get("custom_value", "").strip()
@@ -370,6 +375,9 @@ def documents(request):
             queryset = queryset.filter(correspondent_id=filters["correspondent_id"])
         if "document_type_id" in filters:
             queryset = queryset.filter(document_type_id=filters["document_type_id"])
+        if "copy_status" in filters:
+            paper_copies = PhysicalCopy.objects.filter(document_id=OuterRef("pk"))
+            queryset = queryset.filter(Exists(paper_copies) if copy_status == "paper" else ~Exists(paper_copies))
         if "date_from" in filters:
             queryset = queryset.filter(document_date__gte=filters["date_from"])
         if "date_to" in filters:

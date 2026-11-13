@@ -413,6 +413,7 @@ def test_library_filters_bind_cursor_and_keep_owner_scope():
     client.force_login(owner)
     filters = {
         "tag_id": str(tag.id), "correspondent_id": str(sender.id),
+        "copy_status": "virtual",
         "document_type_id": str(kind.id), "date_from": "2026-04-15", "date_to": "2026-04-15",
         "custom_field_id": str(custom_field.id), "custom_value": "PN-2026",
     }
@@ -448,6 +449,7 @@ def test_saved_searches_are_owned_validated_and_survive_deleted_metadata():
     client.force_login(owner)
     payload = {
         "name": "Tax notices", "query": "permit", "tag_id": str(tag.id),
+        "copy_status": "paper",
         "correspondent_id": str(sender.id), "document_type_id": str(kind.id),
         "date_from": "2026-01-01", "date_to": "2026-12-31",
         "custom_field_id": str(custom_field.id), "custom_value": "PN-2026",
@@ -456,16 +458,19 @@ def test_saved_searches_are_owned_validated_and_survive_deleted_metadata():
     assert created.status_code == 201
     view_id = created.json()["id"]
     assert created.json()["tag_id"] == str(tag.id)
+    assert created.json()["copy_status"] == "paper"
     assert created.json()["custom_field_id"] == str(custom_field.id)
     assert created.json()["custom_value"] == "PN-2026"
     assert client.get("/api/saved-views").json()["views"][0]["name"] == "Tax notices"
     assert client.post("/api/saved-views", json.dumps({**payload, "name": "tax NOTICES"}), content_type="application/json").status_code == 409
     assert client.post("/api/saved-views", json.dumps({**payload, "tag_id": str(foreign_tag.id), "name": "Foreign"}), content_type="application/json").status_code == 400
     assert client.post("/api/saved-views", json.dumps({**payload, "custom_field_id": str(foreign_field.id), "name": "Foreign field"}), content_type="application/json").status_code == 400
+    assert client.post("/api/saved-views", json.dumps({**payload, "copy_status": "unknown", "name": "Bad copy filter"}), content_type="application/json").status_code == 400
     assert client.patch(f"/api/saved-views/{view_id}", json.dumps({"date_from": "2027-01-01"}), content_type="application/json").status_code == 400
     renamed = client.patch(f"/api/saved-views/{view_id}", json.dumps({"name": "City permits", "query": "notice"}), content_type="application/json")
     assert renamed.status_code == 200
     assert renamed.json()["name"] == "City permits" and renamed.json()["query"] == "notice"
+    assert renamed.json()["copy_status"] == "paper"
 
     client.force_login(other)
     assert client.get("/api/saved-views").json()["views"] == []
@@ -696,6 +701,37 @@ def test_tag_presence_search_stays_optional_and_owner_scoped():
     assert [item["id"] for item in client.get("/api/documents", {"q": "is:tagged"}).json()["documents"]] == [str(tagged.id)]
     assert [item["id"] for item in client.get("/api/documents", {"q": "is:untagged renewal"}).json()["documents"]] == [str(bare.id)]
     assert client.get("/api/documents", {"q": "is:unknown"}).status_code == 400
+
+
+@pytest.mark.django_db
+def test_paper_copy_filter_distinguishes_registered_and_digital_only_documents():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("other", password="secure-password-2")
+
+    def make(user, title, **values):
+        return Document.objects.create(owner=user, title=title, original_name=f"{title}.pdf",
+                                       original_path=f"originals/{title}.pdf", original_mime="application/pdf",
+                                       original_sha256="a" * 64, original_size=10, **values)
+
+    paper = make(owner, "Paper contract")
+    missing = make(owner, "Missing paper contract")
+    digital = make(owner, "Digital contract")
+    hidden = make(owner, "Hidden source", is_split_source=True)
+    trashed = make(owner, "Trashed paper", trashed_at=timezone.now())
+    foreign = make(other, "Foreign paper")
+    for index, document in enumerate((paper, missing, trashed, foreign), start=1):
+        PhysicalCopy.objects.create(document=document, sticker_code=f"R-AAAAAAA{index}",
+                                    missing_at=timezone.now() if document == missing else None)
+    client = Client()
+    client.force_login(owner)
+
+    paper_results = client.get("/api/documents", {"copy_status": "paper"}).json()
+    assert {item["id"] for item in paper_results["documents"]} == {str(paper.id), str(missing.id)}
+    assert paper_results["counts"]["total"] == 2
+    virtual_results = client.get("/api/documents", {"copy_status": "virtual"}).json()
+    assert [item["id"] for item in virtual_results["documents"]] == [str(digital.id)]
+    assert client.get("/api/documents", {"copy_status": "paper", "q": "title:Digital"}).json()["documents"] == []
+    assert client.get("/api/documents", {"copy_status": "other"}).status_code == 400
 
 
 @pytest.mark.django_db

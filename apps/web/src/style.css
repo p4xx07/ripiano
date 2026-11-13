@@ -2530,9 +2530,19 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  flex-wrap: wrap;
   color: var(--color-accent-strong);
   font-size: var(--type-caption);
   margin-top: var(--space-tight);
+}
+.physical-location,
+.physical-missing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.physical-missing {
+  color: var(--color-warning);
 }
 .duplicate-chip {
   display: inline-flex;

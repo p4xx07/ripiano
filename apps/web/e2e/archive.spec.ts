@@ -111,9 +111,30 @@ test("capture, find, tag, and locate a paper copy", async ({
     fullPage: true,
   });
 
+  await page.getByRole("dialog", { name: "Keep it in place." }).getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: /Filters/ }).click();
+  const paperFilter = page.getByRole("combobox", { name: "Paper copy" });
+  await paperFilter.selectOption("paper");
+  await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("paper-filter.png"), animations: "disabled" });
+  await paperFilter.selectOption("virtual");
+  await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
+
   await page.goto(`/?sticker=${code}`);
   await expect(page.getByText(code, { exact: true })).toBeVisible();
   await expect(
     page.getByText(locationName, { exact: true }).first(),
   ).toBeVisible();
+
+  await navigate(page, "All documents");
+  await page.getByRole("textbox", { name: "Search documents" }).fill("9473");
+  await page.getByRole("button", { name, exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "Keep it in place." });
+  await detail.getByRole("button", { name: "Mark missing" }).click();
+  await expect(detail.getByText("Reported missing", { exact: true })).toBeVisible();
+  await detail.getByRole("button", { name: "Close" }).click();
+  const missingRow = page.locator(".document-row").filter({ has: page.getByRole("button", { name, exact: true }) });
+  await expect(missingRow.getByText("Paper copy reported missing")).toBeVisible();
+  await expect(missingRow.getByText(locationName, { exact: true })).toHaveCount(0);
+  await missingRow.screenshot({ path: testInfo.outputPath("missing-paper-copy.png"), animations: "disabled" });
 });

@@ -152,6 +152,7 @@ def _saved_view_json(view):
         "tag_id": str(view.tag_id) if view.tag_id else None,
         "correspondent_id": str(view.correspondent_id) if view.correspondent_id else None,
         "document_type_id": str(view.document_type_id) if view.document_type_id else None,
+        "copy_status": view.copy_status,
         "custom_field_id": str(view.custom_field_id) if view.custom_field_id else None,
         "custom_value": view.custom_value,
         "custom_min": view.custom_min,
@@ -169,6 +170,10 @@ def _saved_view_values(body, owner, current=None):
     if not isinstance(query, str) or len(query.strip()) > 200:
         raise ValueError("Search text must be at most 200 characters")
     values = {"name": name.strip(), "query": query.strip()}
+    copy_status = body.get("copy_status", current.copy_status if current else "")
+    if copy_status not in ("", "paper", "virtual"):
+        raise ValueError("Choose a valid paper-copy filter")
+    values["copy_status"] = copy_status
     for key, model in (("tag", Tag), ("correspondent", Correspondent), ("document_type", DocumentType), ("custom_field", CustomField)):
         raw = body.get(f"{key}_id", getattr(current, f"{key}_id") if current else None)
         if raw in (None, ""):

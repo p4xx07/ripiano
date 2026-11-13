@@ -255,6 +255,7 @@ class SavedView(models.Model):
     tag = models.ForeignKey(Tag, null=True, blank=True, on_delete=models.SET_NULL)
     correspondent = models.ForeignKey(Correspondent, null=True, blank=True, on_delete=models.SET_NULL)
     document_type = models.ForeignKey(DocumentType, null=True, blank=True, on_delete=models.SET_NULL)
+    copy_status = models.CharField(max_length=7, blank=True)
     custom_field = models.ForeignKey(CustomField, null=True, blank=True, on_delete=models.PROTECT)
     custom_value = models.CharField(max_length=500, blank=True)
     custom_min = models.CharField(max_length=500, blank=True)

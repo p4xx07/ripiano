@@ -5,7 +5,8 @@ document type (one label per document) and one-vs-rest models for tags (several 
 Bayes scores are overconfident, so scores from held-out folds fit a Platt scaling that turns a
 score into the probability that the suggestion is right. The reported precision and coverage come
 from folds the calibration did not see. Suggestions are shown only above a probability threshold
-and always need a person to accept them; nothing here changes a document.
+and normally need a person to accept them. Owners can separately opt into conservative
+automatic filing for new documents when held-out quality and per-document confidence are high.
 """
 
 import json
@@ -37,6 +38,7 @@ MIN_DOCUMENTS = 10
 MIN_CALIBRATION_POINTS = 20
 FOLDS = 5
 THRESHOLD = 0.6  # Suggest only when the calibrated probability of being right is at least this.
+AUTO_THRESHOLD = 0.9  # The separate opt-in automatic decision threshold.
 STALE_AFTER = timedelta(minutes=35)  # longer than the task's hard time limit
 RETRAIN_COOLDOWN = timedelta(minutes=10)
 KINDS = ("correspondents", "document_types", "tags")
@@ -229,7 +231,7 @@ def _train_kind(kind, examples, vocabulary_size):
         return None, {"examples": len(labelled), "labels": len(known), "ready": False}
 
     # Honest numbers: calibrate on some folds, measure on the others, then swap.
-    shown = correct = 0
+    shown = correct = auto_shown = auto_correct = 0
     with_suggestion, measured_documents, squared = set(), set(), []
     for measured in (set(range(0, FOLDS, 2)), set(range(1, FOLDS, 2))):
         platt = _fit_platt([(score, right) for fold in range(FOLDS) if fold not in measured for _, score, right in fold_points[fold]])
@@ -242,9 +244,15 @@ def _train_kind(kind, examples, vocabulary_size):
                     shown += 1
                     correct += right
                     with_suggestion.add(index)
+                if probability >= AUTO_THRESHOLD:
+                    auto_shown += 1
+                    auto_correct += right
     metrics = {
         "examples": len(labelled), "labels": len(known), "ready": True,
         "precision": round(correct / shown, 3) if shown else None,
+        "tested_suggestions": shown,
+        "auto_precision": round(auto_correct / auto_shown, 3) if auto_shown else None,
+        "auto_tested_suggestions": auto_shown,
         "coverage": round(len(with_suggestion) / len(measured_documents), 3) if measured_documents else 0.0,
         "brier": round(sum(squared) / len(squared), 4) if squared else None,
     }

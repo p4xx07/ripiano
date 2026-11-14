@@ -35,6 +35,7 @@ class Document(models.Model):
         NONE = "none", "Unassigned"
         RULE = "rule", "Matching phrase"
         MODEL = "model", "Agent suggestion"
+        LEARNED = "learned", "Local learned filing"
         MANUAL = "manual", "Set by user"
         SOURCE = "source", "Input rule"
 
@@ -309,6 +310,7 @@ class DocumentTag(models.Model):
         MANUAL = "manual", "Manual"
         RULE = "rule", "Rule"
         MODEL = "model", "Model"
+        LEARNED = "learned", "Local learned filing"
         SOURCE = "source", "Input rule"
 
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="tag_links")
@@ -798,3 +800,11 @@ class FilingModel(models.Model):
     requested_at = models.DateTimeField(null=True, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     trained_at = models.DateTimeField(null=True, blank=True)
+
+
+class AutoFilingPolicy(models.Model):
+    """Owner opt-in for conservative local model filing; exported with account settings."""
+
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="auto_filing_policy")
+    enabled = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)

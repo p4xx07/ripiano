@@ -126,7 +126,7 @@ const emptyLibraryFilters: LibraryFilters = {
 
 function TagSummary({ tags }: { tags: Document["tags"] }) {
   const m = useMessages(appMessages);
-  const priority = { manual: 0, source: 1, model: 2, rule: 3 };
+  const priority = { manual: 0, source: 1, model: 2, learned: 3, rule: 4 };
   const visibleFirst = [...tags].sort((a, b) =>
     priority[a.origin] - priority[b.origin] || a.name.localeCompare(b.name));
   function chips(limit: number) {

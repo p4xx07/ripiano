@@ -102,6 +102,13 @@ def process_document(document_id):
         logger.exception("Automatic filing failed for document %s", document.id)
     if first_run and not document.is_split_source:
         try:
+            from .auto_filing import apply_learned_filing
+
+            apply_learned_filing(document.id)
+        except Exception:
+            logger.exception("Local learned filing failed for document %s", document.id)
+    if first_run and not document.is_split_source:
+        try:
             from .workflows import run_for_document
 
             run_for_document(document, "added")

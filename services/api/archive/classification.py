@@ -279,6 +279,9 @@ def apply_rules(document):
             if getattr(locked, origin_field) in (Document.FilingOrigin.MANUAL, Document.FilingOrigin.SOURCE, Document.FilingOrigin.MODEL):
                 continue
             rule = filing_matches.get(kind)
+            # Keep a learned choice when there is no explicit rule. A newly matching rule wins.
+            if getattr(locked, origin_field) == Document.FilingOrigin.LEARNED and rule is None:
+                continue
             target_id = getattr(rule, f"{field}_id") if rule else None
             origin = Document.FilingOrigin.RULE if rule else Document.FilingOrigin.NONE
             if getattr(locked, f"{field}_id") != target_id or getattr(locked, origin_field) != origin:

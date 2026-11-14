@@ -1833,7 +1833,7 @@ button:disabled {
   font-weight: 400;
   color: var(--color-muted);
 }
-.tag-create-card input:not([type="color"]),
+.tag-create-card input:not([type="color"]):not([type="checkbox"]),
 .tag-create-card textarea,
 .detail-label input,
 .detail-label select {
@@ -3938,8 +3938,31 @@ button:disabled {
 .learning-panel .shared-facts {
   grid-template-columns: 1fr;
 }
+.learning-auto-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft);
+  cursor: pointer;
+}
+.learning-auto-option input {
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--color-accent);
+  flex: none;
+}
+.learning-auto-option span { display: grid; gap: var(--space-2); }
+.learning-auto-option small { color: var(--color-muted); line-height: 1.5; }
 .learning-row {
   display: grid;
   grid-template-columns: 9rem 1fr;
   gap: var(--space-4);
+}
+.learning-auto-status { display: block; margin-top: var(--space-2); color: var(--color-muted); }
+@media (max-width: 570px) {
+  .learning-row { grid-template-columns: 1fr; gap: var(--space-1); }
+  .learning-row dt { font-weight: 700; }
 }

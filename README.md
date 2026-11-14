@@ -130,6 +130,10 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 | --- | --- |
 | ![Desktop document panel showing a one-time original-file link and expiry controls, with the token masked](qa-artifacts/20261112-share-links/desktop/created.png) | ![Mobile document panel showing a one-time original-file link and expiry controls, with the token masked](qa-artifacts/20261112-share-links/mobile/created.png) |
 
+| Opt-in automatic filing on desktop | Opt-in automatic filing on mobile |
+| --- | --- |
+| ![Desktop learned filing panel with the optional automatic filing switch enabled](qa-artifacts/20261114-auto-filing/desktop/auto-filing.png) | ![Mobile learned filing panel showing the optional switch and per-field readiness](qa-artifacts/20261114-auto-filing/mobile/auto-filing.png) |
+
 ## Planning documents
 
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
@@ -145,7 +149,7 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 
 ## First implementation slice
 
-The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and Office/OpenDocument/RTF upload, IMAP email intake, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, tag-changing, and sender/type-filing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags through that grant. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. Locally trained filing suggestions are available for review, but do not apply themselves. This is the beginning of the staged implementation, not the complete Paperless feature set. Optional AI-provider suggestions, automatic OAuth agent sign-in, and the remaining [parity matrix](docs/FEATURE_PARITY.md) work are still open.
+The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and Office/OpenDocument/RTF upload, IMAP email intake, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, tag-changing, and sender/type-filing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags through that grant. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. Locally trained filing suggestions can also be applied automatically to new documents when the owner opts in and strict confidence checks pass. This is the beginning of the staged implementation, not the complete Paperless feature set. Optional AI-provider suggestions, automatic OAuth agent sign-in, and the remaining [parity matrix](docs/FEATURE_PARITY.md) work are still open.
 
 ### Interface language (in progress)
 
@@ -314,9 +318,9 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 
 Ripiano learns from the senders, document types, and tags you set by hand, on your own server. It learns again every night, or when you press **Tags & filing → Learned suggestions → Learn now**.
 - **When it suggests:** only when it is at least 60% likely to be right. The probability is calibrated on documents the model had not seen.
-- **Never automatic:** suggestions appear in the document dialog with that probability. Nothing changes until you tap one.
+- **Automatic filing is optional:** in **Tags & filing → Learned suggestions**, turn on **File new documents automatically when very confident**. It applies only after OCR on new documents. Each assignment needs at least 90% calibrated confidence, at least 95% measured precision and at least 20 tested suggestions among held-out predictions above that same 90% threshold for that field. It fills empty sender/type fields and adds at most three tags; manual choices, input rules, and removed tags stay in control. You can correct the result in the document dialog. With the option off, suggestions only appear in the dialog and need a tap.
 - **Getting started:** it needs at least 3 hand-filed documents each for 2 or more senders (or types), or 3 documents with the same tag.
-- **Privacy:** each person's model uses only their own documents. It is rebuilt rather than exported.
+- **Privacy and restore:** each person's model uses only their own documents. The model is rebuilt rather than exported; the opt-in setting is included in portable exports. After a restore, automatic filing waits until the model is retrained.
 
 ### Workflows
 

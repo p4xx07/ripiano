@@ -83,13 +83,15 @@ def test_processing_runs_added_workflows_only_the_first_time(owner, tmp_path):
         from pathlib import Path
         Path(args[-1]).write_bytes(Path(args[-2]).read_bytes())
 
-    with override_settings(MEDIA_ROOT=tmp_path, RIPIANO_BARCODES=False), patch("archive.ingestion.process_document.delay"), patch("archive.tasks.subprocess.run", side_effect=fake_ocr):
+    with override_settings(MEDIA_ROOT=tmp_path, RIPIANO_BARCODES=False), patch("archive.ingestion.process_document.delay"), patch("archive.tasks.subprocess.run", side_effect=fake_ocr), patch("archive.auto_filing.apply_learned_filing") as learned:
         created = ingest_document(owner, SimpleUploadedFile("a.pdf", data.getvalue()))
         process_document(str(created.id))
+        learned.assert_called_once_with(created.id)
         assert DocumentTag.objects.filter(document=created, tag=tag).exists()
         DocumentTag.objects.filter(document=created).delete()
         Document.objects.filter(pk=created.pk).update(status=Document.Status.PENDING)
         process_document(str(created.id))  # reprocessing is not "added"
+        learned.assert_called_once_with(created.id)
     assert not DocumentTag.objects.filter(document=created).exists()
     assert WorkflowRun.objects.filter(document=created).count() == 1
 

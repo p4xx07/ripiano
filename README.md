@@ -138,6 +138,10 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 | --- | --- |
 | ![Desktop document panel showing the second ASN-numbered document and full-scan link](qa-artifacts/20261114-asn-split/desktop/asn-only-split.png) | ![Mobile document panel showing the second ASN-numbered document and full-scan link](qa-artifacts/20261114-asn-split/mobile/asn-only-split.png) |
 
+| Selected-document local filing on desktop | Selected-document local filing on mobile |
+| --- | --- |
+| ![Desktop Library showing one-time local-model filing result](qa-artifacts/20261114-local-backfill/desktop/selected-local-filing.png) | ![Mobile Library showing one-time local-model filing result](qa-artifacts/20261114-local-backfill/mobile/selected-local-filing.png) |
+
 ## Planning documents
 
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
@@ -323,6 +327,7 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 Ripiano learns from the senders, document types, and tags you set by hand, on your own server. It learns again every night, or when you press **Tags & filing → Learned suggestions → Learn now**.
 - **When it suggests:** only when it is at least 60% likely to be right. The probability is calibrated on documents the model had not seen.
 - **Automatic filing is optional:** in **Tags & filing → Learned suggestions**, turn on **File new documents automatically when very confident**. It applies only after OCR on new documents. Each assignment needs at least 90% calibrated confidence, at least 95% measured precision and at least 20 tested suggestions among held-out predictions above that same 90% threshold for that field. It fills empty sender/type fields and adds at most three tags; manual choices, input rules, and removed tags stay in control. You can correct the result in the document dialog. With the option off, suggestions only appear in the dialog and need a tap.
+- **File an existing selection:** in **Library → Select documents → File with local model**, choose up to 100 documents and run the same confidence checks once. Documents with no confident new detail stay selected. This one-time action works even when automatic filing for future documents is off; it never changes manual sender/type choices or re-adds a removed tag.
 - **Getting started:** it needs at least 3 hand-filed documents each for 2 or more senders (or types), or 3 documents with the same tag.
 - **Privacy and restore:** each person's model uses only their own documents. The model is rebuilt rather than exported; the opt-in setting is included in portable exports. After a restore, automatic filing waits until the model is retrained.
 

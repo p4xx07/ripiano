@@ -11,6 +11,7 @@ import {
   ArrowDownToLine,
   ArrowRight,
   Bot,
+  Brain,
   Layers,
   Mail,
   BarChart3,
@@ -706,6 +707,30 @@ function App() {
     }
   }
 
+  async function applyBulkLearnedFiling() {
+    if (!selectedIds.length) return;
+    setBulkBusy(true);
+    setBulkError("");
+    setBulkNotice("");
+    try {
+      const result = await request<{ updated: number; assignments: number; skipped: number; skipped_ids: string[] }>(
+        "/api/documents/bulk-learned-filing", {
+          method: "POST",
+          body: JSON.stringify({ document_ids: selectedIds }),
+        },
+      );
+      setSelectedIds(result.skipped_ids);
+      setBulkNotice(result.updated
+        ? `The local model added ${result.assignments} filing ${result.assignments === 1 ? "detail" : "details"} to ${result.updated} ${result.updated === 1 ? "document" : "documents"}.${result.skipped ? ` ${result.skipped} still selected with no new confident change.` : ""}`
+        : "No selected documents received a confident new filing detail. File a few examples yourself, then use Learn now in Tags & filing.");
+      if (result.updated) await loadDocuments(query);
+    } catch (cause) {
+      setBulkError(cause instanceof Error ? cause.message : "Could not file selected documents with the local model");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function applyBulkDate(clear: boolean) {
     if (!selectedIds.length || (!clear && !bulkDate)) return;
     setBulkBusy(true);
@@ -1373,6 +1398,13 @@ function App() {
                       {filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                     </select>
                     <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTypeId} onClick={() => void applyBulkFiling("document_type")}>Set type</Button>
+                    </div>
+                  </details>
+                  <details className="bulk-filing-details">
+                    <summary>File with local model</summary>
+                    <div className="bulk-filing">
+                      <p>Try the local model on selected ready documents. It fills empty sender/type fields and adds up to 3 tags only when its confidence checks pass. Your choices stay in place. This does not turn on automatic filing for future documents.</p>
+                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkLearnedFiling()}><Brain size={16} aria-hidden="true" /> File {selectedIds.length} selected</Button>
                     </div>
                   </details>
                   <details className="bulk-filing-details">

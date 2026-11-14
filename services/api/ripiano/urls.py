@@ -45,6 +45,7 @@ urlpatterns = [
     path("api/documents/export", export_views.export_documents),
     path("api/documents/bulk-tags", views.bulk_document_tags),
     path("api/documents/bulk-filing", views.bulk_document_filing),
+    path("api/documents/bulk-learned-filing", views.bulk_learned_filing),
     path("api/documents/bulk-date", views.bulk_document_date),
     path("api/documents/bulk-reprocess", views.bulk_reprocess_documents),
     path("api/documents/bulk-trash", views.bulk_document_trash),

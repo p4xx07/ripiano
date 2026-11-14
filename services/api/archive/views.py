@@ -655,6 +655,37 @@ def bulk_document_filing(request):
 
 
 @require_http_methods(["POST"])
+def bulk_learned_filing(request):
+    """Apply the owner's trusted local model to explicitly selected existing documents."""
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    body = _payload(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    raw_ids = body.get("document_ids")
+    if not isinstance(raw_ids, list) or not 1 <= len(raw_ids) <= 100:
+        return JsonResponse({"error": "Choose 1–100 documents"}, status=400)
+    try:
+        document_ids = {UUID(str(value)) for value in raw_ids}
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid document ID"}, status=400)
+    if len(document_ids) != len(raw_ids):
+        return JsonResponse({"error": "Document IDs must be unique"}, status=400)
+    owned = set(Document.objects.filter(owner=request.user, trashed_at__isnull=True, pk__in=document_ids).values_list("pk", flat=True))
+    if owned != document_ids:
+        return JsonResponse({"error": "Document not found"}, status=404)
+    from .auto_filing import apply_learned_filing
+
+    assignments = [(document_id, apply_learned_filing(
+        document_id, require_opt_in=False, expected_owner_id=request.user.pk)) for document_id in sorted(document_ids)]
+    updated = sum(count > 0 for _, count in assignments)
+    return JsonResponse({"updated": updated, "assignments": sum(count for _, count in assignments),
+                         "skipped": len(document_ids) - updated,
+                         "skipped_ids": [str(document_id) for document_id, count in assignments if not count]})
+
+
+@require_http_methods(["POST"])
 def bulk_document_date(request):
     unauthorized = _unauthorized(request)
     if unauthorized:

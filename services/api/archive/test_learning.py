@@ -83,18 +83,85 @@ def test_learned_model_suggests_with_calibrated_probability():
     stranger = get_user_model().objects.create_user("stranger", password=PASSWORD)
     theirs = make(stranger, "Avviso", text_for("Comune", rng))
     assert predict(theirs, theirs.title, theirs.extracted_text) == {}
+    client = Client()
+    client.force_login(owner)
+    backfilled = client.post("/api/documents/bulk-learned-filing", json.dumps({"document_ids": [str(new.id)]}),
+                             content_type="application/json")
+    assert backfilled.status_code == 200 and backfilled.json()["updated"] == 1
+    assert backfilled.json()["assignments"] >= 1 and backfilled.json()["skipped_ids"] == []
+    assert not AutoFilingPolicy.objects.filter(owner=owner).exists()  # a one-time request does not enable new intake
+    new.refresh_from_db()
+    assert new.correspondent == senders["Comune"] and new.correspondent_origin == Document.FilingOrigin.LEARNED
+
+    auto_target = make(owner, "Another new document", "tributi " + text_for("Comune", rng))
     AutoFilingPolicy.objects.create(owner=owner, enabled=True)
-    assert apply_learned_filing(new.id) >= 1
-    new.refresh_from_db()
-    assert new.correspondent == senders["Comune"] and new.correspondent_origin == Document.FilingOrigin.LEARNED
-    apply_rules(new)
-    new.refresh_from_db()
-    assert new.correspondent == senders["Comune"] and new.correspondent_origin == Document.FilingOrigin.LEARNED
+    assert apply_learned_filing(auto_target.id) >= 1
+    auto_target.refresh_from_db()
+    assert auto_target.correspondent == senders["Comune"] and auto_target.correspondent_origin == Document.FilingOrigin.LEARNED
+    apply_rules(auto_target)
+    auto_target.refresh_from_db()
+    assert auto_target.correspondent == senders["Comune"] and auto_target.correspondent_origin == Document.FilingOrigin.LEARNED
     FilingRule.objects.create(owner=owner, kind=FilingRule.Kind.CORRESPONDENT,
                               correspondent=senders["Enel"], pattern="tributi")
-    apply_rules(new)
-    new.refresh_from_db()
-    assert new.correspondent == senders["Enel"] and new.correspondent_origin == Document.FilingOrigin.RULE
+    apply_rules(auto_target)
+    auto_target.refresh_from_db()
+    assert auto_target.correspondent == senders["Enel"] and auto_target.correspondent_origin == Document.FilingOrigin.RULE
+
+
+@pytest.mark.django_db
+def test_bulk_learned_filing_validates_the_whole_selection_before_writing():
+    owner = get_user_model().objects.create_user("owner", password=PASSWORD)
+    other = get_user_model().objects.create_user("other", password=PASSWORD)
+    owned = make(owner, "Owned", "taxes council payment reference")
+    foreign = make(other, "Foreign", "taxes council payment reference")
+    client = Client()
+    client.force_login(owner)
+    url = "/api/documents/bulk-learned-filing"
+    with patch("archive.auto_filing.apply_learned_filing") as apply:
+        assert client.post(url, json.dumps({"document_ids": [str(owned.id), str(foreign.id)]}),
+                           content_type="application/json").status_code == 404
+        assert client.post(url, json.dumps({"document_ids": [str(owned.id)] * 2}),
+                           content_type="application/json").status_code == 400
+        assert client.post(url, json.dumps({"document_ids": ["bad-id"]}), content_type="application/json").status_code == 400
+        assert client.post(url, json.dumps({"document_ids": []}), content_type="application/json").status_code == 400
+        apply.assert_not_called()
+    assert Client().post(url, json.dumps({"document_ids": [str(owned.id)]}), content_type="application/json").status_code == 401
+    single = client.post(url, json.dumps({"document_ids": [str(owned.id)]}), content_type="application/json")
+    assert single.status_code == 200 and single.json() == {
+        "updated": 0, "assignments": 0, "skipped": 1, "skipped_ids": [str(owned.id)],
+    }
+
+
+@pytest.mark.django_db
+def test_bulk_learned_filing_reports_assignment_after_a_model_change_during_prediction():
+    owner = get_user_model().objects.create_user("owner", password=PASSWORD)
+    sender = Correspondent.objects.create(owner=owner, name="Council")
+    target = make(owner, "Council notice", "taxes council payment reference")
+    record = FilingModel.objects.create(owner=owner, status=FilingModel.Status.READY, payload=b"test model",
+                                        metrics={"correspondents": {"ready": True, "auto_precision": 0.98,
+                                                                      "auto_tested_suggestions": 25}}, trained_at=timezone.now())
+    predictions = {"correspondents": [(str(sender.id), 0.99)]}
+    calls = []
+
+    def predict_after_retrain(*_args):
+        calls.append(1)
+        if len(calls) == 1:
+            record.metrics = {**record.metrics, "revision": 2}
+            record.save(update_fields=["metrics"])
+        return predictions
+
+    client = Client()
+    client.force_login(owner)
+    with patch("archive.auto_filing._load", return_value={"trained": True}), patch(
+            "archive.auto_filing.predict", side_effect=predict_after_retrain):
+        response = client.post("/api/documents/bulk-learned-filing", json.dumps({"document_ids": [str(target.id)]}),
+                               content_type="application/json")
+    assert len(calls) == 2
+    assert response.status_code == 200 and response.json() == {
+        "updated": 1, "assignments": 1, "skipped": 0, "skipped_ids": [],
+    }
+    target.refresh_from_db()
+    assert target.correspondent == sender and target.correspondent_origin == Document.FilingOrigin.LEARNED
 
 
 @pytest.mark.django_db

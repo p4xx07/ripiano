@@ -1,4 +1,4 @@
-"""Opt-in, conservative filing of new documents using the owner's local model."""
+"""Conservative filing from an owner's local model, automatic or explicitly requested."""
 
 import logging
 
@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 MIN_HELD_OUT_PRECISION = 0.95
 MIN_TESTED_SUGGESTIONS = 20
 MAX_AUTO_TAGS = 3
+_RETRY = object()
 
 
 def _trusted(metrics, kind):
@@ -23,20 +24,30 @@ def _trusted(metrics, kind):
             and measured.get("auto_tested_suggestions", 0) >= MIN_TESTED_SUGGESTIONS)
 
 
-def apply_learned_filing(document_id):
+def apply_learned_filing(document_id, *, require_opt_in=True, expected_owner_id=None):
     """Fill only unclaimed fields and unsuppressed tags; return the number of new assignments.
 
     Prediction runs outside locks. The owner and document are locked before writing, then the
-    consent, model version, document text, and human choices are checked again. A retrain or edit
-    during prediction causes a fresh attempt with current data.
+    consent (for automatic intake), model version, document text, and human choices are checked
+    again. A retrain or edit during prediction causes a bounded fresh attempt with current data.
     """
+    for _ in range(3):
+        result = _apply_once(document_id, require_opt_in=require_opt_in, expected_owner_id=expected_owner_id)
+        if result is not _RETRY:
+            return result
+    logger.warning("Local filing skipped document %s after repeated concurrent edits", document_id)
+    return 0
+
+
+def _apply_once(document_id, *, require_opt_in, expected_owner_id):
     snapshot = Document.objects.filter(pk=document_id).values(
         "owner_id", "title", "extracted_text", "status", "trashed_at", "is_split_source",
     ).first()
-    if not snapshot or snapshot["status"] != Document.Status.READY or snapshot["trashed_at"] or snapshot["is_split_source"]:
+    if (not snapshot or snapshot["status"] != Document.Status.READY or snapshot["trashed_at"] or snapshot["is_split_source"]
+            or (expected_owner_id is not None and snapshot["owner_id"] != expected_owner_id)):
         return 0
     owner_id = snapshot["owner_id"]
-    if not AutoFilingPolicy.objects.filter(owner_id=owner_id, enabled=True).exists():
+    if require_opt_in and not AutoFilingPolicy.objects.filter(owner_id=owner_id, enabled=True).exists():
         return 0
     record = FilingModel.objects.filter(owner_id=owner_id, trained_at__isnull=False).exclude(payload=b"").values("trained_at", "metrics").first()
     if record is None:
@@ -58,17 +69,17 @@ def apply_learned_filing(document_id):
         return 0
     with transaction.atomic():
         get_user_model().objects.select_for_update(no_key=True).get(pk=owner_id)
-        policy = AutoFilingPolicy.objects.select_for_update().filter(owner_id=owner_id).first()
-        if not policy or not policy.enabled:
-            return 0
+        if require_opt_in:
+            policy = AutoFilingPolicy.objects.select_for_update().filter(owner_id=owner_id).first()
+            if not policy or not policy.enabled:
+                return 0
         current = FilingModel.objects.filter(owner_id=owner_id).values("trained_at", "metrics").first()
         locked = Document.objects.select_for_update().filter(pk=document_id, owner_id=owner_id).first()
         if not locked or locked.trashed_at or locked.status != Document.Status.READY or locked.is_split_source:
             return 0
         if (current is None or current["trained_at"] != record["trained_at"] or current["metrics"] != record["metrics"]
                 or locked.title != snapshot["title"] or locked.extracted_text != snapshot["extracted_text"]):
-            transaction.on_commit(lambda: apply_learned_filing(document_id))
-            return 0
+            return _RETRY
 
         assignments = 0
         changed = []

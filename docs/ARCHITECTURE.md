@@ -8,27 +8,35 @@ Status: proposed implementation baseline, 2026-11-04. Exact component versions a
 flowchart LR
   PWA[React PWA: iOS, Android, desktop] --> API[Same-origin Ripiano API]
   AND[Android client: shared UI + native scanner] --> API
-  API --> PG[(PostgreSQL)]
-  API --> MEDIA[(NAS managed media volume)]
-  API --> BROKER[(Valkey task broker)]
+  API --> INGEST[Shared ingestion service]
+  TG[Optional Telegram poller] --> INGEST
+  INGEST --> PG[(PostgreSQL)]
+  INGEST --> MEDIA[(NAS managed media volume)]
+  INGEST --> BROKER[(Valkey task broker)]
   BROKER --> WORKER[Processing worker]
+  BROKER --> MAINT[Maintenance worker]
   WORKER --> MEDIA
   WORKER --> PG
-  WORKER --> CONV[Optional Tika / Gotenberg]
+  WORKER --> CONV[Private Gotenberg LibreOffice]
+  MAINT --> PG
+  MAINT --> MEDIA
+  MAINT --> BACKUP[(Mounted backup volume)]
   LOCAL[Optional Pi or personal-PC model worker] --> MCP[Scoped MCP endpoint]
   MCP --> API
-  API --> BACKUP[(Mounted backup volume)]
+  API --> BACKUP
 ```
 
-The web/PWA and API are served on one HTTPS origin through the Synology reverse proxy, as in Condivisa. The Portainer stack contains an API/web service, processing worker, scheduler, PostgreSQL, Valkey, and optional conversion services. The public entry point is the reverse proxy; database, broker, converter, and MCP internals are not separately exposed to the internet. The Android client can use the same origin over LAN or Tailscale.
+The web/PWA and API are served on one HTTPS origin through the Synology reverse proxy, as in Condivisa. The Portainer stack contains an API/web service, OCR worker, maintenance worker, scheduler, PostgreSQL, Valkey, and a private Office converter. The public entry point is the reverse proxy; database, broker, converter, and MCP internals are not separately exposed to the internet. The Android client can use the same origin over LAN or Tailscale.
+
+External inputs use a shared ingestion service. Each adapter supplies an owner, original bytes, filename, source, and stable source reference. The service validates and durably stores the original, creates the document record, then queues the common OCR/classification pipeline. Source references prevent repeats after adapter restarts. The first adapter is an optional Telegram long poller with a persisted update cursor. It accepts files only from configured private chat IDs, so no inbound webhook port is needed. Standard Telegram Bot API downloads are limited to 20 MB and updates expire after 24 hours. Telegram handles the document before Ripiano receives it, so this input is explicitly less private than direct upload. Future S3, Google Drive, and watched-folder adapters should use the same contract and their own least-privilege credentials and cursors.
 
 ### Initial technology choices
 
 - React + TypeScript + Vite + PWA service worker, following Condivisa's source and release shape. Static assets and fonts are bundled locally. The visual tokens and components are Ripiano-specific.
 - Python backend with Django and Django REST Framework for migrations, authentication, permissions, and API. Domain services handle document operations; views and models do not absorb the whole workflow. This is a fresh implementation, not a Paperless fork.
 - PostgreSQL for canonical metadata, versioned extracted text, and initial full-text search (GIN indexes, structured filters, and trigram support where useful). Search indexing is rebuildable from database content. A dedicated search engine is introduced only if the real corpus shows a relevance or latency problem that PostgreSQL cannot meet. An application query parser preserves advanced search behavior independently of the index implementation.
-- Celery with Valkey for asynchronous work, with job state and idempotency keys also recorded in PostgreSQL. Configure broker persistence and reconcile unfinished jobs from the database after restart. One processing worker by default; tune concurrency to the NAS after measurement. A single scheduler owns periodic jobs. No document is considered accepted until the original and its database record are durable.
-- OCRmyPDF + Tesseract as the initial archival OCR pipeline, with Italian and English language packs. Benchmark PaddleOCR or other engines on real scans before substituting. Tika/Gotenberg are optional converter services for the formats that need them. Preserve the original bytes regardless of derived output.
+- Celery with Valkey for asynchronous work, with job state and idempotency keys also recorded in PostgreSQL. Configure broker persistence and reconcile unfinished jobs from the database after restart. One worker processes OCR and retries; another handles rule rechecks and backups. This keeps long maintenance scans from delaying new uploads. Tune concurrency to the NAS after measurement. A single scheduler owns periodic jobs. No document is considered accepted until the original and its database record are durable.
+- OCRmyPDF + Tesseract as the initial archival OCR pipeline, with Italian and English language packs. Benchmark PaddleOCR or other engines on real scans before substituting. A private Gotenberg LibreOffice service converts DOCX, XLSX, and PPTX to searchable PDF. Office-derived output currently stays normal PDF because the tested PDF/A step damaged its text map; PDF and image originals still use PDF/A. Preserve the original bytes regardless of derived output.
 - Capacitor Android shell around the shared web interface, with a Kotlin bridge to Android's native document scanner. Use the scanner's multi-page PDF/JPEG output, and retain a system camera/file-picker fallback when Google Play services or scanner initialization are unavailable. Flutter would require a second full UI and is not the first choice.
 
 These are starting choices, not assertions that any library is universally superior. The first vertical slice measures OCR quality, search quality, container memory, and Android camera reliability on representative documents and devices.
@@ -37,7 +45,7 @@ These are starting choices, not assertions that any library is universally super
 
 Core entities: `Document`, `DocumentVersion`, `OriginalFile`, `DerivedFile`, `Correspondent`, `DocumentType`, hierarchical `Tag`, typed `CustomField`, `Note`, `DocumentLink`, `SavedCollection`, `Workflow`, `MailAccount`, `PhysicalCopy`, hierarchical `Location`, `Sticker`, `Movement`, `ShareLink`, `AgentGrant`, `AuditEvent`, and `Job`.
 
-Each document has a stable UUID. Original files are immutable and checksum-addressed in a managed NAS media volume; derived PDF/A, OCR text, thumbnails, and previews are versioned outputs. Extracted text is also stored with the document version in PostgreSQL so the search index can be rebuilt. User-facing titles and tags may change without renaming original bytes. An optional human-readable export tree can be generated for NAS browsing, but the managed media tree is the source of truth and must not be edited through SMB. All user data is exportable with an open manifest and original files.
+Each document has a stable UUID. Original files are immutable and checksum-addressed in a managed NAS media volume; derived PDF/A, OCR text, thumbnails, and previews are versioned outputs. Extracted text is also stored with the document version in PostgreSQL so the search index can be rebuilt. User-facing titles and tags may change without renaming original bytes. An on-demand human-readable browse tree can be generated under the mounted backup volume, grouped by year and tag. It copies originals and derived files after checksum checks; it is disposable and separate from restorable snapshots. The managed media tree is the source of truth and must not be edited through SMB. All user data is exportable with an open manifest and original files.
 
 `PhysicalCopy` is separate from `Document`: zero copies means digital only; a document may later gain a physical copy or have more than one. The sticker identifies the physical copy, not a tag or storage path. Location moves and label reprints are audited. Deleting a document with a physical copy prompts for an explicit physical-record decision.
 
@@ -71,6 +79,8 @@ Every agent is a separate principal/grant linked to a human owner. The user sign
 
 Each grant also records allowed collections/tags, expiry, device/client name, and last use. The server enforces scopes on every call and audits actor, tool, document IDs, action, and outcome without logging full document text. Bulk/destructive operations require explicit approval and support dry-run previews. Revocation is immediate. Multiple agents can have unrelated scopes, even when owned by the same human. The MCP endpoint exposes only tools allowed to the current grant.
 
+Current MCP permissions separate document search, OCR text, tag changes, and sender/type filing. The filing scope lists existing choices and sets one field at a time on an allowed document; it never replaces a human or input-rule choice. Agent-assigned sender/type values are marked as model-origin so matching rules do not erase them, and a human can correct them normally. The bundled Mac classifier still files tags only. Other organize, add, and sensitive scopes in the table above remain planned.
+
 The local model worker is conceptually separate from agent identity. An internal NAS classifier can run as a trusted service without MCP; an external Mac/Pi worker uses an individually named grant. A cloud-model agent may receive content returned by tools despite the MCP server being self-hosted; the connection screen must explain this.
 
 ## Scheduling and connectivity
@@ -81,7 +91,7 @@ A work-managed Mac is an optional convenience, not the private-by-design default
 
 ## Backups, restore, and upgrades
 
-Schedule a backup job to a mounted path configured in Portainer (default daily at 02:00 Europe/Rome, user-configurable). Quiesce writes briefly while capturing a consistent PostgreSQL dump and the list of referenced immutable media, then resume normal ingestion. Hold media garbage collection until that snapshot's files have been copied. Include application settings, physical location data, and a versioned manifest/checksum list. Stage under `/backup/staging`; publish only validated snapshots under `/backup/complete`, which is the folder the user selects in Synology Hyper Backup. Reuse unchanged media between snapshots where the backup filesystem supports it. Retention is configurable and never deletes the last known-good snapshot. Report failure in the UI. Restore into an empty stack with a documented command and perform a clean-stack drill before release. API tokens and secrets are rotated or re-issued as part of restore; grant permissions and revocation state remain correct.
+Schedule a backup job to a mounted path configured in Portainer (default daily at 02:00 Europe/Rome, user-configurable). PostgreSQL creates a consistent MVCC dump, then the worker copies immutable media. Confirmed permanent deletion, or a per-owner opted-in daily Trash retention task, creates a durable cleanup job and removes live media under the same lock used by snapshots; an active backup delays cleanup, and completed snapshots retain their own copies until retention removes them. Include application settings and physical location data in the database dump and a versioned manifest/checksum list with each snapshot. Stage under `/backup/staging`; publish only validated snapshots under `/backup/complete`, which is the folder the user selects in Synology Hyper Backup. Reuse unchanged media between snapshots where the backup filesystem supports it. Retention is configurable and never deletes the last known-good snapshot. Report failure in the UI. Restore into an empty stack with a documented command and perform a clean-stack drill before release. API tokens and secrets are rotated or re-issued as part of restore; grant permissions and revocation state remain correct.
 
 Synology Hyper Backup reads the output folder and sends it to Backblaze B2 under the user's configuration. Ripiano does not require or store Backblaze credentials. Backup and restore include application version and schema version so incompatible restores are rejected with an explanation. Pinned container versions and pre-upgrade backups are mandatory.
 

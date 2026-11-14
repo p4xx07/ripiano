@@ -1,0 +1,6 @@
+Invocation:
+docker logs --since 10m ripiano-watched_folder-1
+
+Imported 1 document(s)
+
+After a watcher restart, the archive still contained one exact `from-nas.png` folder document; the restart did not create a second database record.

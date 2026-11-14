@@ -1,0 +1,18 @@
+# Ripiano interface system
+
+Ripiano follows Condivisa's interaction principles: a small number of clear actions, readable hierarchy, forgiving empty states, and one screen for correcting a document. Its palette is its own: warm paper surfaces, a dark olive sidebar, and green actions. The implementation is live React DOM and CSS.
+
+## Source of truth
+
+- Semantic colors, type, spacing, radii, and shadows live in [`apps/web/src/style.css`](../apps/web/src/style.css). The default palette is warm paper; `[data-theme="dark"]` and `[data-theme="amoled"]` override semantic color roles. AMOLED uses true black for the canvas and sidebar, with raised near-black surfaces for cards. Component rules use these variables; new colors belong in the token blocks rather than page-specific selectors. Spacing uses a compact scale from 1 to 56 px, with 6 and 10 px steps for dense controls. Type has named caption, body, label, subtitle, section, and display roles. Corners use five radius roles.
+- The Appearance selector offers device setting, Light, Dark, and AMOLED black on the sign-in screen and in the sidebar. The choice is stored only in browser storage. Device setting follows OS appearance changes. A small script applies the stored choice before rendering to avoid a light flash; the browser theme-color metadata, selected PWA manifest, and Android shell chrome follow the resolved theme. Installed-device appearance still needs device validation.
+- Shared `Button`, `Field`, and `Modal` components live in [`apps/web/src/ui.tsx`](../apps/web/src/ui.tsx). Use them for standard actions, labelled inputs, and dialogs. `Modal` focuses the first visible action, traps Tab, closes on Escape or backdrop click, makes the page inert, and restores focus to the invoker.
+- Every keyboard interactive control uses the same visible focus ring. The `--color-muted`, `--color-faint`, success, warning, and accent text tokens were darkened for readable small text on the corresponding light surfaces.
+
+## Density rules
+
+The Library shows at most two tags on desktop and one on mobile, followed by a count of hidden tags. The document panel shows the full set. Mobile rows keep source, processing state, and primary retrieval actions visible without a long tag stack. A document is saved immediately; tags remain optional.
+
+## Verification
+
+The PWA production build and browser journeys cover desktop and mobile capture, search, tagging, physical filing, agent permissions, optional follow-ups, and dialog focus. Rendered evidence for the main surfaces is in [`qa-artifacts/65d544b/visual`](../qa-artifacts/65d544b/visual). These are browser checks. Installed PWA and Android device validation remain separate release gates in [`QUALITY_JUDGES.md`](QUALITY_JUDGES.md).

@@ -1,0 +1,5 @@
+# Number and date custom-field ranges — 11 November 2026
+
+The Library now accepts an exact value or inclusive from/to bounds for number and date custom fields. Entering a bound clears the exact value, and entering an exact value clears the bounds. Saving a search preserves the selected field and range. Text and yes/no fields reject range values. Range requests validate the owner, field type, bound format, and lower/upper order; numeric comparisons use decimal values rather than string ordering.
+
+Verification on the local stack: 53 API tests passed, including `9` versus `125.5` numeric ordering, date bounds, invalid ranges, exact/range conflicts, and saved-search persistence. Django reported no pending model changes, migration 0022 was applied in PostgreSQL, the production PWA build passed, and all 42 desktop/mobile Chromium journeys passed. The custom-field journey saved and reopened a numeric range and captured the active filter at 1440×900 and 390×844. Mobile is browser emulation, not an installed-device capture check.

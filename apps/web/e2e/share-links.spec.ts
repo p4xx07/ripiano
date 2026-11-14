@@ -1,0 +1,43 @@
+import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+const username = process.env.RIPIANO_E2E_USERNAME;
+const password = process.env.RIPIANO_E2E_PASSWORD;
+const fixture = path.resolve(process.cwd(), "e2e/fixtures/judge.png");
+
+test("create an expiring original link and revoke anonymous access", async ({ page, request }, testInfo) => {
+  test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
+  await page.goto("/");
+  await page.getByLabel("Username").fill(username!);
+  await page.getByLabel("Password").fill(password!);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
+  const name = `share-${Date.now().toString(36)}-${testInfo.project.name}`;
+  const original = Buffer.concat([readFileSync(fixture), Buffer.from(name)]);
+  const add = page.getByRole("button", { name: "Add document", exact: true });
+  if (await add.isVisible()) await add.click();
+  else await page.getByRole("button", { name: "Add", exact: true }).click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: /Browse files/ }).click();
+  await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: original });
+  await page.getByRole("button", { name, exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const share = dialog.getByRole("region", { name: "Share original" });
+  await share.getByText("Manage share links").click();
+  await expect(share.getByRole("combobox", { name: "Link expires after" })).toBeVisible();
+  await share.getByRole("combobox", { name: "Link expires after" }).selectOption("1");
+  await share.getByRole("button", { name: "Create link" }).click();
+  const input = share.getByRole("textbox", { name: "New share link — shown only once" });
+  await expect(input).toHaveValue(/\/api\/share-links\/[A-Za-z0-9_-]{43}$/);
+  const url = await input.inputValue();
+  const publicResponse = await request.get(url);
+  expect(publicResponse.status()).toBe(200);
+  expect(await publicResponse.body()).toEqual(original);
+  await share.screenshot({ path: testInfo.outputPath("share-created.png"), animations: "disabled", mask: [input], maskColor: "#dce8dc" });
+  await share.getByRole("button", { name: "Revoke" }).click();
+  await expect(share.getByRole("status")).toContainText("Link revoked");
+  expect((await request.get(url)).status()).toBe(404);
+  await expect(input).toHaveCount(0);
+  await share.screenshot({ path: testInfo.outputPath("share-revoked.png"), animations: "disabled" });
+});

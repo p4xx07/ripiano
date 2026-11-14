@@ -1,0 +1,260 @@
+import { language, locale } from "./i18n";
+
+export type Session = {
+  authenticated: boolean;
+  username: string | null;
+  setup_required: boolean;
+  owner: boolean;
+};
+
+export type Tag = {
+  id: string;
+  name: string;
+  color: string;
+  description: string;
+  barcode_value: string;
+  parent_id: string | null;
+};
+
+export function tagPathLabel(tag: Tag, byId: ReadonlyMap<string, Tag>): string {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  let current: Tag | undefined = tag;
+  while (current && !seen.has(current.id)) {
+    names.unshift(current.name);
+    seen.add(current.id);
+    current = current.parent_id ? byId.get(current.parent_id) : undefined;
+  }
+  return names.join(" / ");
+}
+
+export type MatchMode = "phrase" | "any" | "all" | "regex" | "fuzzy";
+export const matchModes: Record<MatchMode, string> = {
+  phrase: "Exact phrase",
+  any: "Any of these words",
+  all: "All of these words",
+  fuzzy: "Similar spelling",
+  regex: "Regular expression",
+};
+
+export type Rule = {
+  id: string;
+  tag_id: string;
+  tag_name: string;
+  pattern: string;
+  field: "title" | "text" | "either";
+  match: MatchMode;
+  enabled: boolean;
+};
+
+export type FilingItem = { id: string; name: string };
+
+export type LibraryFilters = {
+  tag_id: string;
+  copy_status: string;
+  correspondent_id: string;
+  document_type_id: string;
+  date_from: string;
+  date_to: string;
+  custom_field_id: string;
+  custom_value: string;
+  custom_min: string;
+  custom_max: string;
+};
+
+export type SavedView = {
+  id: string;
+  name: string;
+  query: string;
+  tag_id: string | null;
+  copy_status: string;
+  correspondent_id: string | null;
+  document_type_id: string | null;
+  date_from: string | null;
+  date_to: string | null;
+  custom_field_id: string | null;
+  custom_value: string;
+  custom_min: string;
+  custom_max: string;
+};
+
+export type FilingRule = {
+  id: string;
+  kind: "correspondent" | "document_type";
+  target_id: string;
+  target_name: string;
+  pattern: string;
+  field: "title" | "text" | "either";
+  match: MatchMode;
+  enabled: boolean;
+};
+
+export type Location = {
+  id: string;
+  name: string;
+  sticker_code: string;
+  parent_id: string | null;
+  path: string[];
+  description: string;
+};
+
+export type PhysicalCopy = {
+  id: string;
+  document_id: string;
+  sticker_code: string;
+  location_id: string | null;
+  location_path: string[];
+  missing_at: string | null;
+  created_at: string;
+};
+
+export type Document = {
+  id: string;
+  title: string;
+  original_name: string;
+  version_number: number;
+  duplicate_of: { id: string; title: string } | null;
+  duplicate_reviewed_at: string | null;
+  source: "web" | "telegram" | "android" | "folder";
+  status: "pending" | "processing" | "ready" | "failed";
+  archive_available: boolean;
+  error: string;
+  created_at: string;
+  trashed_at: string | null;
+  document_date: string | null;
+  correspondent: FilingItem | null;
+  document_type: FilingItem | null;
+  correspondent_origin: "none" | "rule" | "model" | "learned" | "manual" | "source";
+  document_type_origin: "none" | "rule" | "model" | "learned" | "manual" | "source";
+  action_status: "none" | "open" | "done";
+  action_due_date: string | null;
+  action_note: string;
+  action_completed_at: string | null;
+  tags: {
+    id: string;
+    name: string;
+    color: string;
+    origin: "manual" | "rule" | "model" | "learned" | "source";
+  }[];
+  physical_copies: PhysicalCopy[];
+  snippet: string;
+  snippet_source: "document" | "note" | "sticker" | "field" | null;
+  email: { account: string; sender: string; subject: string; received_at: string | null } | null;
+  asn: number | null;
+  split_parent: { id: string; title: string } | null;
+  is_split_source: boolean;
+  storage_path: { id: string; name: string } | null;
+  access: "owner" | "edit" | "view";
+  shared_by: string | null;
+};
+
+export type Person = {
+  id: number;
+  username: string;
+  name: string;
+  is_active?: boolean;
+  is_admin?: boolean;
+  last_login?: string | null;
+  groups?: number[];
+};
+
+export type PersonGroup = { id: number; name: string; member_ids?: number[] };
+
+export type People = { people: Person[]; groups: PersonGroup[]; admin: boolean };
+
+export type FilingSuggestion = {
+  id: string;
+  name: string;
+  example: { id: string; title: string } | null;
+  shared_terms: string[];
+  similarity: number | null;
+  probability?: number;
+};
+
+export function suggestionBasis(item: FilingSuggestion): string {
+  const parts: string[] = [];
+  if (item.probability !== undefined) parts.push(`${Math.round(item.probability * 100)}% likely, learned from your filing`);
+  if (item.example) parts.push(`Like “${item.example.title}”${item.shared_terms.length ? ` · shared: ${item.shared_terms.join(", ")}` : ""}`);
+  return parts.join(" · ");
+}
+
+export type FilingSuggestions = {
+  tags: FilingSuggestion[];
+  correspondents: FilingSuggestion[];
+  document_types: FilingSuggestion[];
+};
+
+export type DocumentNote = {
+  id: string;
+  body: string;
+  author: string;
+  created_at: string;
+};
+
+export type CustomField = {
+  id: string;
+  name: string;
+  kind: "text" | "number" | "date" | "boolean";
+  value: string | boolean | null;
+  in_use?: boolean;
+};
+
+function csrfToken() {
+  return decodeURIComponent(
+    document.cookie
+      .split("; ")
+      .find((value) => value.startsWith("csrftoken="))
+      ?.split("=")[1] ?? "",
+  );
+}
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public data: Record<string, unknown>) {
+    super(message);
+  }
+}
+
+export async function request<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const response = await fetch(path, {
+    ...options,
+    credentials: "same-origin",
+    headers: {
+      ...(options.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
+      ...(options.method && options.method !== "GET"
+        ? { "X-CSRFToken": csrfToken() }
+        : {}),
+      "Accept-Language": language(),
+      ...options.headers,
+    },
+  });
+  const result = await response.json();
+  if (!response.ok)
+    throw new ApiError(result.error ?? `Request failed (${response.status})`, response.status, result);
+  return result as T;
+}
+
+export function formatDate(value: string) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T12:00:00`)
+    : new Date(value);
+  return new Intl.DateTimeFormat(locale(), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+/** Date and time in the interface language, e.g. for "last signed in". */
+export function formatDateTime(value: string | Date) {
+  return new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }).format(typeof value === "string" ? new Date(value) : value);
+}
+
+/** Whole numbers in the interface language (1.234 in Italian, 1,234 in English). */
+export function formatNumber(value: number) {
+  return new Intl.NumberFormat(locale()).format(value);
+}

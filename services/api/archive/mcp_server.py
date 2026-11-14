@@ -66,6 +66,7 @@ TOOLS = {
                 "document_id": {"type": "string", "format": "uuid"},
                 "correspondent_id": {"type": "string", "format": "uuid"},
                 "document_type_id": {"type": "string", "format": "uuid"},
+                "only_if_empty": {"type": "boolean", "description": "Reject the write if this field was filled after it was read."},
             }, "required": ["document_id"], "oneOf": [{"required": ["correspondent_id"]}, {"required": ["document_type_id"]}], "additionalProperties": False,
         }),
     ),
@@ -150,6 +151,7 @@ def _execute(grant, name, args):
         return None, {"documents": [{
             "id": str(doc.id), "title": doc.title, "status": doc.status,
             "document_date": doc.document_date.isoformat() if doc.document_date else None,
+            "processed_at": doc.processed_at.isoformat() if doc.processed_at else None,
             "tags": [{"id": str(link.tag_id), "name": link.tag.name} for link in doc.tag_links.all()],
             "correspondent": {"id": str(doc.correspondent_id), "name": doc.correspondent.name} if doc.correspondent_id else None,
             "document_type": {"id": str(doc.document_type_id), "name": doc.document_type.name} if doc.document_type_id else None,
@@ -218,6 +220,9 @@ def _execute(grant, name, args):
             return document, {"error": "Choose exactly one sender or document type"}
         key = provided[0]
         field, model = choices[key]
+        only_if_empty = args.get("only_if_empty", False)
+        if not isinstance(only_if_empty, bool):
+            return document, {"error": "only_if_empty must be a boolean"}
         choice_id = _uuid(args[key])
         choice = model.objects.filter(pk=choice_id, owner=grant.owner).first() if choice_id else None
         if choice is None:
@@ -227,6 +232,8 @@ def _execute(grant, name, args):
             if document is None:
                 return None, {"error": "Document no longer within this grant"}
             origin_field = f"{field}_origin"
+            if only_if_empty and getattr(document, field + "_id") is not None:
+                return document, {"error": "This filing field already has a value"}
             if getattr(document, origin_field) in (Document.FilingOrigin.MANUAL, Document.FilingOrigin.SOURCE):
                 return document, {"error": "A human or input rule already chose this field"}
             setattr(document, field, choice)

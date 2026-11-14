@@ -137,3 +137,28 @@ def test_agent_filing_permission_is_separate_and_preserves_human_choices():
     second_page = _execute(filing, "list_filing_options", {"offset": 200})[1]
     assert len(first_page["correspondents"]) == 200 and first_page["next_offset"] == 200
     assert len(second_page["correspondents"]) == 3 and second_page["next_offset"] is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("origin", [Document.FilingOrigin.MODEL, Document.FilingOrigin.LEARNED])
+def test_agent_only_if_empty_rejects_an_intervening_filing_choice(origin):
+    owner = get_user_model().objects.create_superuser("owner", password="secure-password-1")
+    grant = AgentGrant.objects.create(owner=owner, name="Mac classifier", token_hash="c" * 64,
+                                      scopes=["documents:search", "documents:filing"],
+                                      expires_at="2099-01-01T00:00:00Z")
+    document = Document.objects.create(owner=owner, title="Notice", original_name="notice.pdf", original_path="notice",
+                                       original_mime="application/pdf", original_sha256="c" * 64, original_size=1)
+    previous = Correspondent.objects.create(owner=owner, name="Already classified")
+    proposed = Correspondent.objects.create(owner=owner, name="Stale Mac proposal")
+    found = _execute(grant, "search_documents", {})[1]["documents"][0]
+    assert found["correspondent"] is None
+    Document.objects.filter(pk=document.pk).update(correspondent=previous, correspondent_origin=origin)
+    _, response = _execute(grant, "set_document_filing", {
+        "document_id": str(document.id), "correspondent_id": str(proposed.id), "only_if_empty": True,
+    })
+    assert response["error"] == "This filing field already has a value"
+    document.refresh_from_db()
+    assert document.correspondent == previous and document.correspondent_origin == origin
+    assert _execute(grant, "set_document_filing", {
+        "document_id": str(document.id), "correspondent_id": str(proposed.id), "only_if_empty": "yes",
+    })[1]["error"] == "only_if_empty must be a boolean"

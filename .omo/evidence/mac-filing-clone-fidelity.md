@@ -11,7 +11,7 @@ Uncommitted extension of Ripiano's optional Mac local Ollama worker. It adds sen
 - Operator setup and privacy/consent copy in `agents/local_classifier/README.md:3-29`.
 - Product and parity wording in `README.md:150-160`, `docs/ARCHITECTURE.md`, and `docs/FEATURE_PARITY.md:26`.
 - Design-system source of truth in `docs/DESIGN_SYSTEM.md`; it does not apply to this non-visual incremental surface.
-- Fresh focused worker verification: `uv run python -m unittest -q test_classify.py` — 6 passed. The exercised output confirms a sender/type dry run, a separately enabled filing write, and a later stateful no-op.
+- Fresh focused worker verification: `uv run python -m unittest -q test_classify.py` — 8 passed. The exercised output confirms a sender/type dry run, a separately enabled filing write, a later stateful no-op, and a two-document run that reports one applied field and one already-filled conflict.
 - Final stale-read guard in `services/api/archive/test_agents.py`: an agent proposal based on an empty field is rejected if a human or input rule filled it before the write.
 
 ## Findings
@@ -26,7 +26,7 @@ None. The new scope maps to the same existing MCP `documents:filing` capability 
 
 ### MEDIUM
 
-None. The setup copy gives a direct mapping from Ripiano's visible grant labels to the two independent worker write controls, keeps both disabled in the supplied configuration, and states the local-only default and remote-model opt-in.
+None. The setup copy gives a direct mapping from Ripiano's visible grant labels to the two independent worker write controls, keeps both disabled in the supplied configuration, and states the local-only default and remote-model opt-in. It now also explains the only expected concurrent-write outcome in plain terms: an already-filled field is counted and later documents continue. The command summary uses the same wording (`already filled`), so an operator can reconcile that result without interpreting an MCP error.
 
 ### LOW
 

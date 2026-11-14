@@ -174,16 +174,17 @@ def state_db():
     return connection
 
 
-async def call(client, name, arguments):
+async def call(client, name, arguments, *, allowed_error=None):
     result = await client.call_tool(name, arguments)
-    if result.is_error or not isinstance(result.structured_content, dict):
+    payload = result.structured_content
+    if not isinstance(payload, dict) or (result.is_error and (allowed_error is None or payload.get("error") != allowed_error)):
         raise RuntimeError(f"MCP {name} failed: {result.content}")
-    return result.structured_content
+    return payload
 
 
 async def run():
     mcp_url, model, token, ollama_url, auto_apply, auto_apply_filing = config()
-    reviewed = tag_suggestions = tags_applied = filing_suggestions = fields_applied = 0
+    reviewed = tag_suggestions = tags_applied = filing_suggestions = fields_applied = filing_conflicts = 0
     with state_db() as state:
         async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"}, timeout=httpx2.Timeout(30.0, read=300.0), trust_env=False) as http:
             async with Client(streamable_http_client(mcp_url, http_client=http)) as client:
@@ -243,8 +244,13 @@ async def run():
                                 if auto_apply_filing:
                                     for field, value in choice.items():
                                         if value:
-                                            await call(client, "set_document_filing", {"document_id": doc["id"], field: value, "only_if_empty": True})
-                                            fields_applied += 1
+                                            result = await call(client, "set_document_filing",
+                                                                {"document_id": doc["id"], field: value, "only_if_empty": True},
+                                                                allowed_error="This filing field already has a value")
+                                            if "error" in result:
+                                                filing_conflicts += 1
+                                            else:
+                                                fields_applied += 1
                             if auto_apply_filing:
                                 state.execute("INSERT OR REPLACE INTO filing_processed(document_id, fingerprint) VALUES (?, ?)",
                                               (doc["id"], fingerprint))
@@ -253,7 +259,7 @@ async def run():
                         break
                     offset = page["next_offset"]
     print(f"Reviewed {reviewed} documents; tags: {tag_suggestions} suggested, {tags_applied} applied; "
-          f"sender/type: {filing_suggestions} suggested, {fields_applied} fields applied.")
+          f"sender/type: {filing_suggestions} suggested, {fields_applied} fields applied, {filing_conflicts} already filled.")
     dry_fields = (["tags"] if can_tag and not auto_apply else []) + (["sender/type"] if can_file and not auto_apply_filing else [])
     if dry_fields:
         print(f"Dry run for {', '.join(dry_fields)}. Enable the corresponding auto_apply setting to write those decisions.")

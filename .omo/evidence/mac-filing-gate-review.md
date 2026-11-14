@@ -2,7 +2,7 @@
 
 ## Recommendation
 
-**APPROVE — scoped score 9.7/10**
+**APPROVE — scoped score 9.8/10**
 
 ## Original intent
 
@@ -31,7 +31,7 @@ The documented 200-sender/type limit and 20,000-character MCP fetch / 12,000-cha
 
 - `RIPIANO_DEBUG=1 ./.venv/bin/pytest -q` in `services/api` — **197 passed, 9 skipped**.
 - `RIPIANO_DEBUG=1 ./.venv/bin/pytest archive/test_agents.py -q` — **5 passed**.
-- `uv run python -m unittest -q test_classify.py` — **6 passed**.
+- `uv run python -m unittest -q test_classify.py` after the concurrent-agent continuation follow-up — **8 passed**.
 - `git diff --check` — passed.
 - `python3 -m py_compile agents/local_classifier/classify.py agents/local_classifier/test_classify.py` — passed.
 - `omo ulw-loop status --json` was unavailable because the installed OMO runtime target is missing, so this report uses the documented fallback evidence path.
@@ -58,12 +58,13 @@ The documented 200-sender/type limit and 20,000-character MCP fetch / 12,000-cha
 - Sender/type auto-apply without the filing grant fails before document processing.
 - A set field is excluded from available choices and cannot be replaced by the worker.
 - A stale proposal is rejected atomically if MODEL or LEARNED filing arrives between search and write; existing MCP tests cover MANUAL and SOURCE protection.
+- The exact locked `This filing field already has a value` MCP response is counted as an already-filled field and processing continues to later fields and documents. Every other MCP failure remains fatal.
 - Agent tag filters and owner-local filing-option lookup remain enforced by the MCP server.
 - A remote model URL requires explicit opt-in; the agent token file must be mode 0600.
 
 ## Direct programming and slop/overfit review
 
-The referenced code-review report explicitly covers the programming and anti-slop criteria, and the final code now resolves its former atomicity blocker. I independently inspected the production diff and tests. The added tests exercise observable behavior: independent consent, exact-evidence and choice validation, omission of already-set fields, persisted no-repeat behavior, typed MCP input, and stale-write rejection for both model-origin classes. They are not deletion-only, tautological, or mere mirrors of implementation constants. The SQLite fingerprint table, JSON-schema constraint, `processed_at` response field, and locked compare-and-set option each support a stated state, trust-boundary, or concurrency requirement; none is unnecessary extraction or parsing.
+The referenced code-review report explicitly covers the programming and anti-slop criteria, and the final code resolves its former atomicity blocker. I independently inspected the production diff and tests. The added tests exercise observable behavior: independent consent, exact-evidence and choice validation, omission of already-set fields, persisted no-repeat behavior, typed MCP input, stale-write rejection for both model-origin classes, exact error discrimination, and continuation to a later document after a benign conflict. They are not deletion-only, tautological, or mere mirrors of implementation constants. The SQLite fingerprint table, JSON-schema constraint, `processed_at` response field, locked compare-and-set option, and narrow `allowed_error` branch each support a stated state, trust-boundary, or concurrency requirement; none is unnecessary extraction or parsing. The conflict tests specifically prove that the allowlist is not a general error suppressor: the same response remains fatal without the exact allowlist, a different allowed string remains fatal, and a malformed `{"error": null}` response remains fatal when no allowlist was supplied.
 
 ## Blockers
 
@@ -73,4 +74,8 @@ None.
 
 - No live Ollama/MCP end-to-end run was recorded for this increment; focused tests use a realistic mocked Ollama response and the real MCP domain logic. This is a nonblocking coverage note because the scope's protocol, permission, validation, and concurrency contracts are reproduced independently, and no real-model accuracy claim is made.
 - The model's confidence is explicitly uncalibrated. This limits classification quality but is disclosed and does not violate the scoped optional-worker criteria.
-- An `only_if_empty` conflict is returned as an MCP error, so the current worker stops that scheduled run instead of treating the conflicting document as a per-document skip. This is **not a blocker** for the scoped safety and catch-up criteria: the conflicting write is rejected, no filing state is recorded for the stale proposal, and the next scheduled/login run searches current server state and proceeds without offering the now-filled field. The consequence is a possible delay for later documents in that one run. Treating this specific conflict as a logged skip would improve throughput when multiple classifiers run concurrently, but the documented missed-run catch-up behavior remains intact.
+- No live Ollama/MCP end-to-end run was added for the conflict-continuation follow-up. The focused worker test reproduces the MCP error payload and verifies that a second document is still written, while the separate real MCP domain test verifies that the locked server emits that exact error. This remains a nonblocking evidence note.
+
+## Follow-up re-audit
+
+The prior throughput note is resolved. The worker's MCP wrapper accepts an error only when the caller explicitly supplies a non-null exact expected message and the structured error payload matches it. The filing loop uses this only for the locked `only_if_empty` conflict, counts that field as already filled, and continues. Unexpected authorization, transport, validation, owner-scope, malformed-null, or server errors still raise `RuntimeError` and stop the run. The README now describes the continuation behavior accurately.

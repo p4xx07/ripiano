@@ -7,7 +7,7 @@ from unittest.mock import patch
 import io
 import json
 
-from classify import propose, propose_filing, run, validate_decision, validate_filing_decision
+from classify import call, propose, propose_filing, run, validate_decision, validate_filing_decision
 
 
 class DecisionTests(unittest.TestCase):
@@ -84,7 +84,7 @@ class FilingTests(unittest.TestCase):
             async def __aexit__(self, *_args):
                 return False
 
-        async def fake_call(_client, name, arguments):
+        async def fake_call(_client, name, arguments, *, allowed_error=None):
             called.append((name, arguments))
             if name == "list_filing_options":
                 return {"correspondents": [{"id": "council-id", "name": "Council"}],
@@ -119,6 +119,71 @@ class FilingTests(unittest.TestCase):
         self.assertEqual(len(proposed), 2)
         self.assertEqual(sum(name == "get_document_text" for name, _ in called), 2)
         self.assertEqual(proposed[0][1], [])  # the existing document type was never offered for replacement
+
+
+class ConflictTests(unittest.TestCase):
+    def test_only_an_explicitly_accepted_mcp_conflict_is_nonfatal(self):
+        class FailedClient:
+            async def call_tool(self, _name, _arguments):
+                return SimpleNamespace(is_error=True, structured_content={"error": "This filing field already has a value"},
+                                       content=["already filled"])
+
+        result = asyncio.run(call(FailedClient(), "set_document_filing", {},
+                                  allowed_error="This filing field already has a value"))
+        self.assertEqual(result["error"], "This filing field already has a value")
+        with self.assertRaises(RuntimeError):
+            asyncio.run(call(FailedClient(), "set_document_filing", {}))
+        with self.assertRaises(RuntimeError):
+            asyncio.run(call(FailedClient(), "set_document_filing", {}, allowed_error="Different error"))
+        class EmptyErrorClient:
+            async def call_tool(self, _name, _arguments):
+                return SimpleNamespace(is_error=True, structured_content={"error": None}, content=["unexpected error"])
+
+        with self.assertRaises(RuntimeError):
+            asyncio.run(call(EmptyErrorClient(), "set_document_filing", {}))
+
+    def test_a_concurrent_fill_does_not_stop_later_documents(self):
+        documents = [{"id": str(index), "title": f"Notice {index}", "status": "ready", "processed_at": "2026-11-14T10:00:00Z",
+                      "correspondent": None, "document_type": {"id": "type-id", "name": "Notice"}} for index in (1, 2)]
+        writes = []
+
+        class FakeClient:
+            async def list_tools(self):
+                names = ["search_documents", "get_document_text", "list_filing_options", "set_document_filing"]
+                return SimpleNamespace(tools=[SimpleNamespace(name=name) for name in names])
+
+        class FakeContext:
+            async def __aenter__(self):
+                return FakeClient()
+
+            async def __aexit__(self, *_args):
+                return False
+
+        async def fake_call(_client, name, arguments, *, allowed_error=None):
+            if name == "list_filing_options":
+                return {"correspondents": [{"id": "council-id", "name": "Council"}],
+                        "document_types": [], "next_offset": None}
+            if name == "search_documents":
+                return {"documents": documents, "next_offset": None}
+            if name == "get_document_text":
+                return {"text": "Council tax notice"}
+            if name == "set_document_filing":
+                self.assertEqual(allowed_error, "This filing field already has a value")
+                writes.append(arguments["document_id"])
+                if arguments["document_id"] == "1":
+                    return {"error": "This filing field already has a value"}
+                return {"document_id": arguments["document_id"]}
+            raise AssertionError(name)
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict("classify.os.environ", {"RIPIANO_STATE_FILE": str(Path(directory) / "state.db")}):
+            with patch("classify.config", return_value=("https://archive.example/mcp", "local-model", "rpa_token",
+                                                       "http://127.0.0.1:11434", False, True)), \
+                 patch("classify.Client", return_value=FakeContext()), \
+                 patch("classify.streamable_http_client", return_value=object()), \
+                 patch("classify.call", side_effect=fake_call), \
+                 patch("classify.propose_filing", return_value={"correspondent_id": "council-id", "document_type_id": ""}):
+                asyncio.run(run())
+        self.assertEqual(writes, ["1", "2"])
 
 
 if __name__ == "__main__":

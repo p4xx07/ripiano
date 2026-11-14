@@ -17,9 +17,9 @@ const listeners = new Set<() => void>();
 export function readLanguagePreference(): LanguagePreference {
   try {
     const stored = localStorage.getItem(key);
-    return stored === "en" || stored === "it" ? stored : "system";
+    return stored === "en" || stored === "it" || stored === "system" ? stored : "en";
   } catch {
-    return "system";
+    return "en";
   }
 }
 
@@ -60,8 +60,7 @@ export function languagePreference(): LanguagePreference {
 export function setLanguagePreference(next: LanguagePreference) {
   preference = next;
   try {
-    if (next === "system") localStorage.removeItem(key);
-    else localStorage.setItem(key, next);
+    localStorage.setItem(key, next);
   } catch {
     // Private browsing still changes the language for this session.
   }

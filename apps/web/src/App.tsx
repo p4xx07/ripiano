@@ -65,6 +65,7 @@ import { applyTheme, readThemePreference, saveThemePreference, ThemePreference }
 import { setLanguagePreference, useLanguagePreference, useMessages, type LanguagePreference } from "./i18n";
 import appMessages from "./locales/App";
 import backupMessages from "./locales/AppBackups";
+import libraryMessages from "./locales/AppLibrary";
 
 function AppearanceControl({ preference, onChange }: {
   preference: ThemePreference;
@@ -88,7 +89,7 @@ function AppearanceControl({ preference, onChange }: {
       <select value={languagePreference} onChange={(event) => setLanguagePreference(event.target.value as LanguagePreference)}>
         <option value="system">{m.languageSystem}</option>
         <option value="en">English</option>
-        <option value="it">Italiano</option>
+        <option value="it">{m.italianPreview}</option>
       </select>
     </label>
     </>
@@ -512,6 +513,7 @@ function BackupPanel() {
 
 function App() {
   const m = useMessages(appMessages);
+  const l = useMessages(libraryMessages);
   const [appearance, setAppearance] = useState<ThemePreference>(readThemePreference);
   useEffect(() => {
     applyTheme(appearance);
@@ -640,9 +642,9 @@ function App() {
       ]);
       setFilterOptions({ tags: tags.tags, correspondents: correspondents.correspondents, document_types: documentTypes.document_types, custom_fields: customFields.fields });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load filter choices");
+      setError(cause instanceof Error ? cause.message : l.loadFilterChoicesFailed);
     }
-  }, []);
+  }, [l]);
 
   function updateFilter(key: keyof LibraryFilters, value: string) {
     setFilters((current) => ({ ...current, [key]: value,
@@ -815,7 +817,7 @@ function App() {
       }
     } catch (cause) {
       if (requestNumber !== latestSearch.current) return;
-      const message = cause instanceof Error ? cause.message : "Could not load documents";
+      const message = cause instanceof Error ? cause.message : l.loadDocumentsFailed;
       if (cursor) setError(message);
       else {
         setDocuments([]);
@@ -827,7 +829,7 @@ function App() {
       if (cursor) loadingMoreRef.current = false;
       if (requestNumber === latestSearch.current) setLoadingMore(false);
     }
-  }, [filters, sort]);
+  }, [filters, sort, l]);
 
   useEffect(() => {
     request<Session>("/api/session")
@@ -862,13 +864,13 @@ function App() {
       const detail = (event as CustomEvent<{ status: string; message?: string }>).detail;
       if (detail.status === "saved") void loadDocuments(query);
       if (detail.status === "failed") {
-        setError(detail.message || "Scan upload failed. It is saved on this device and will be retried.");
+        setError(detail.message || l.scanUploadFailed);
       }
       if (detail.status !== "uploading") setUploading(false);
     }
     window.addEventListener("ripiano-native-upload", onNativeUpload);
     return () => window.removeEventListener("ripiano-native-upload", onNativeUpload);
-  }, [query, loadDocuments]);
+  }, [query, loadDocuments, l]);
 
   useEffect(() => {
     if (
@@ -896,7 +898,7 @@ function App() {
     try {
       const failures: string[] = [];
       for (const [index, file] of chosen.entries()) {
-        setUploadProgress(`Adding ${index + 1} of ${chosen.length}…`);
+        setUploadProgress(l.addingProgress(index + 1, chosen.length));
         try {
           const form = new FormData();
           form.append("document", file);
@@ -905,13 +907,13 @@ function App() {
             body: form,
           });
         } catch (cause) {
-          failures.push(`${file.name}: ${cause instanceof Error ? cause.message : "Upload failed"}`);
+          failures.push(`${file.name}: ${cause instanceof Error ? cause.message : l.uploadFailed}`);
         }
       }
       await loadDocuments("");
       if (failures.length) setUploadReport({ total: chosen.length, failures });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Upload failed");
+      setError(cause instanceof Error ? cause.message : l.uploadFailed);
     } finally {
       setUploading(false);
       setUploadProgress("");
@@ -957,7 +959,7 @@ function App() {
       await loadDocuments(query);
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not retry document",
+        cause instanceof Error ? cause.message : l.retryDocumentFailed,
       );
     }
   }
@@ -1184,19 +1186,19 @@ function App() {
               <div className="page-heading">
                 <div>
                   <div className="eyebrow">
-                    <span className="eyebrow-line" /> YOUR DOCUMENT HOME
+                    <span className="eyebrow-line" /> {l.eyebrow}
                   </div>
                   <h1>
-                    Everything in its place
+                    {l.title}
                     <span className="heading-period">.</span>
                   </h1>
-                  <p>One calm place for the documents you want to keep.</p>
+                  <p>{l.intro}</p>
                 </div>
                 <Button
                   className="desktop-add"
                   onClick={() => setShowAdd(true)}
                 >
-                  <Plus size={19} /> Add document
+                  <Plus size={19} /> {l.addDocument}
                 </Button>
               </div>
 
@@ -1207,7 +1209,7 @@ function App() {
                   </span>
                   <div>
                     <strong>{counts.total}</strong>
-                    <span>{query || activeFilterCount ? "Matching documents" : "Documents"}</span>
+                    <span>{query || activeFilterCount ? l.matchingDocuments : l.documents}</span>
                   </div>
                 </div>
                 <div className="summary-card">
@@ -1216,7 +1218,7 @@ function App() {
                   </span>
                   <div>
                     <strong>{counts.ready}</strong>
-                    <span>Ready to find</span>
+                    <span>{l.readyToFind}</span>
                   </div>
                 </div>
                 <div className="summary-card">
@@ -1225,18 +1227,18 @@ function App() {
                   </span>
                   <div>
                     <strong>{counts.waiting}</strong>
-                    <span>Being processed</span>
+                    <span>{l.beingProcessed}</span>
                   </div>
                 </div>
               </div>
 
               <div className="section-heading">
                 <div>
-                  <h2>Your documents</h2>
-                  <p>Search document text, sender, type, tag, or sticker.</p>
+                  <h2>{l.yourDocuments}</h2>
+                  <p>{l.searchIntro}</p>
                 </div>
-                <Button type="button" variant="secondary" aria-label="Refresh" title="Refresh documents" onClick={() => void loadDocuments(query)}>
-                  <RotateCcw size={16} /> <span className="refresh-label">Refresh</span>
+                <Button type="button" variant="secondary" aria-label={l.refresh} title={l.refreshTitle} onClick={() => void loadDocuments(query)}>
+                  <RotateCcw size={16} /> <span className="refresh-label">{l.refresh}</span>
                 </Button>
               </div>
               <SavedSearchBar query={query} filters={filters} onApply={(savedQuery, savedFilters) => {
@@ -1252,64 +1254,64 @@ function App() {
                     ref={searchRef}
                     value={query}
                     onChange={(event) => { setQuery(event.target.value); setNextCursor(null); }}
-                    placeholder="Search text, sender, type, tag…"
-                    aria-label="Search documents by text, sender, type, tag, or sticker"
+                    placeholder={l.searchPlaceholder}
+                    aria-label={l.searchAria}
                   />
                   {!query && <kbd className="search-shortcut" aria-hidden="true">/</kbd>}
                   {query && (
                     <button
                       onClick={() => setQuery("")}
-                      aria-label="Clear search"
+                      aria-label={l.clearSearch}
                     >
                       <X size={16} />
                     </button>
                   )}
                 </div>
-                <select className="library-sort" aria-label="Sort documents" value={sort} onChange={(event) => { setSort(event.target.value); setNextCursor(null); }}>
-                  <option value="">Recommended order</option>
-                  <option value="newest">Newest added</option>
-                  <option value="oldest">Oldest added</option>
-                  <option value="document_newest">Newest document date</option>
-                  <option value="document_oldest">Oldest document date</option>
-                  <option value="title_asc">Title A–Z</option>
-                  <option value="title_desc">Title Z–A</option>
+                <select className="library-sort" aria-label={l.sortAria} value={sort} onChange={(event) => { setSort(event.target.value); setNextCursor(null); }}>
+                  <option value="">{l.recommendedOrder}</option>
+                  <option value="newest">{l.newestAdded}</option>
+                  <option value="oldest">{l.oldestAdded}</option>
+                  <option value="document_newest">{l.newestDocumentDate}</option>
+                  <option value="document_oldest">{l.oldestDocumentDate}</option>
+                  <option value="title_asc">{l.titleAscending}</option>
+                  <option value="title_desc">{l.titleDescending}</option>
                 </select>
                 <Button type="button" variant="secondary" className="filter-toggle" aria-expanded={showFilters} aria-controls="library-filters" onClick={() => setShowFilters((current) => !current)}>
-                  <SlidersHorizontal size={17} /> Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
+                  <SlidersHorizontal size={17} /> {l.filters}{activeFilterCount ? ` (${activeFilterCount})` : ""}
                 </Button>
                 <Button
                   variant="secondary"
                   className="mobile-add"
                   onClick={() => setShowAdd(true)}
                 >
-                  <Plus size={18} /> Add
+                  <Plus size={18} /> {l.addShort}
                 </Button>
               </div>
               <details className="search-syntax">
-                <summary>More precise search</summary>
-                <p>Use <code>tag:tax</code>, <code>sender:"City office"</code>, <code>date:2026-04-15</code>, or <code>is:untagged</code>. You can also search by <code>title:</code>, <code>text:</code>, <code>note:</code>, <code>type:</code>, <code>sticker:</code>, and <code>is:tagged</code>. Combine fields and ordinary words to narrow results. Press <kbd>/</kbd> to search and <kbd>N</kbd> to add a document from anywhere in your archive.</p>
+                <summary>{l.preciseSearch}</summary>
+                <p>{l.searchHelpUse} <code>{l.tagExample}</code>, <code>{l.senderExample}</code>, <code>date:2026-04-15</code> {l.searchHelpOr} <code>is:untagged</code>. {l.searchHelpAlso} <code>title:</code>, <code>text:</code>, <code>note:</code>, <code>type:</code>, <code>sticker:</code>, {l.searchHelpOr} <code>is:tagged</code>. {l.searchHelpCombine} {l.searchHelpPress} <kbd>/</kbd> {l.searchHelpToSearch} <kbd>N</kbd> {l.searchHelpToAdd}</p>
               </details>
               {showFilters && <div className="library-filters" id="library-filters">
-                <Field label="Tag" className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">Any tag</option>{tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}</select></Field>
-                <Field label="Paper copy" hint="Registered copies include those reported missing" className="detail-label"><select value={filters.copy_status} onChange={(event) => updateFilter("copy_status", event.target.value)}><option value="">Any</option><option value="paper">Has a paper copy</option><option value="virtual">Digital only</option><option value="missing">Reported missing</option></select></Field>
-                <Field label="From" className="detail-label"><select value={filters.correspondent_id} onChange={(event) => updateFilter("correspondent_id", event.target.value)}><option value="">Any sender</option>{filterOptions.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-                <Field label="Document type" className="detail-label"><select value={filters.document_type_id} onChange={(event) => updateFilter("document_type_id", event.target.value)}><option value="">Any type</option>{filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-                <Field label="Custom detail" className="detail-label custom-filter-field"><select value={filters.custom_field_id} onChange={(event) => updateFilter("custom_field_id", event.target.value)}><option value="">Any custom detail</option>{filterOptions.custom_fields.map((field) => <option key={field.id} value={field.id}>{field.name}</option>)}</select></Field>
-                {selectedCustomField && <Field label={["number", "date"].includes(selectedCustomField.kind) ? "Exact value" : `${selectedCustomField.name} value`} className="detail-label custom-filter-value">{selectedCustomField.kind === "boolean" ? <select value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)}><option value="">Any value</option><option value="yes">Yes</option><option value="no">No</option></select> : <input aria-label={`${selectedCustomField.name} ${["number", "date"].includes(selectedCustomField.kind) ? "exactly" : "value"}`} type={selectedCustomField.kind === "text" ? "text" : selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)} placeholder={selectedCustomField.kind === "text" ? "Contains…" : undefined} />}</Field>}
+                <Field label={l.tag} className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">{l.anyTag}</option>{tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}</select></Field>
+                <Field label={l.paperCopy} hint={l.paperHint} className="detail-label"><select value={filters.copy_status} onChange={(event) => updateFilter("copy_status", event.target.value)}><option value="">{l.any}</option><option value="paper">{l.hasPaper}</option><option value="virtual">{l.digitalOnly}</option><option value="missing">{l.missing}</option></select></Field>
+                <Field label={l.from} className="detail-label"><select value={filters.correspondent_id} onChange={(event) => updateFilter("correspondent_id", event.target.value)}><option value="">{l.anySender}</option>{filterOptions.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+                <Field label={l.documentType} className="detail-label"><select value={filters.document_type_id} onChange={(event) => updateFilter("document_type_id", event.target.value)}><option value="">{l.anyType}</option>{filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+                <Field label={l.customDetail} className="detail-label custom-filter-field"><select value={filters.custom_field_id} onChange={(event) => updateFilter("custom_field_id", event.target.value)}><option value="">{l.anyCustomDetail}</option>{filterOptions.custom_fields.map((field) => <option key={field.id} value={field.id}>{field.name}</option>)}</select></Field>
+                {selectedCustomField && <Field label={["number", "date"].includes(selectedCustomField.kind) ? l.exactValue : l.namedValue(selectedCustomField.name)} className="detail-label custom-filter-value">{selectedCustomField.kind === "boolean" ? <select value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)}><option value="">{l.anyValue}</option><option value="yes">{l.yes}</option><option value="no">{l.no}</option></select> : <input aria-label={`${selectedCustomField.name} ${["number", "date"].includes(selectedCustomField.kind) ? l.exactly : l.value}`} type={selectedCustomField.kind === "text" ? "text" : selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)} placeholder={selectedCustomField.kind === "text" ? l.contains : undefined} />}</Field>}
                 {selectedCustomField && (selectedCustomField.kind === "number" || selectedCustomField.kind === "date") && <>
-                  <Field label="From" className="detail-label custom-filter-value"><input aria-label={`${selectedCustomField.name} from`} type={selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_min} max={filters.custom_max || undefined} onChange={(event) => updateFilter("custom_min", event.target.value)} /></Field>
-                  <Field label="To" className="detail-label custom-filter-value"><input aria-label={`${selectedCustomField.name} to`} type={selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_max} min={filters.custom_min || undefined} onChange={(event) => updateFilter("custom_max", event.target.value)} /></Field>
+                  <Field label={l.from} className="detail-label custom-filter-value"><input aria-label={`${selectedCustomField.name} ${l.from}`} type={selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_min} max={filters.custom_max || undefined} onChange={(event) => updateFilter("custom_min", event.target.value)} /></Field>
+                  <Field label={l.to} className="detail-label custom-filter-value"><input aria-label={`${selectedCustomField.name} ${l.to}`} type={selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_max} min={filters.custom_min || undefined} onChange={(event) => updateFilter("custom_max", event.target.value)} /></Field>
                 </>}
-                <Field label="Date from" className="detail-label"><input type="date" value={filters.date_from} max={filters.date_to || undefined} onChange={(event) => updateFilter("date_from", event.target.value)} /></Field>
-                <Field label="Date to" className="detail-label"><input type="date" value={filters.date_to} min={filters.date_from || undefined} onChange={(event) => updateFilter("date_to", event.target.value)} /></Field>
-                {activeFilterCount > 0 && <button type="button" className="text-action filter-clear" onClick={() => { setFilters({ ...emptyLibraryFilters }); setNextCursor(null); }}>Clear filters</button>}
+                <Field label={l.dateFrom} className="detail-label"><input type="date" value={filters.date_from} max={filters.date_to || undefined} onChange={(event) => updateFilter("date_from", event.target.value)} /></Field>
+                <Field label={l.dateTo} className="detail-label"><input type="date" value={filters.date_to} min={filters.date_from || undefined} onChange={(event) => updateFilter("date_to", event.target.value)} /></Field>
+                {activeFilterCount > 0 && <button type="button" className="text-action filter-clear" onClick={() => { setFilters({ ...emptyLibraryFilters }); setNextCursor(null); }}>{l.clearFilters}</button>}
               </div>}
               {error && (
                 <div className="inline-error" role="alert">
                   {error}
                   <button
                     onClick={() => setError("")}
-                    aria-label="Dismiss error"
+                    aria-label={l.dismissError}
                   >
                     <X size={16} />
                   </button>
@@ -1317,27 +1319,27 @@ function App() {
               )}
               {uploadReport && (
                 <div className="inline-error upload-report" role="alert">
-                  <strong>{uploadReport.failures.length} of {uploadReport.total} files could not be added.</strong>
+                  <strong>{l.rejectedFiles(uploadReport.failures.length, uploadReport.total)}</strong>
                   {uploadReport.failures.length > 3 ? (
                     <details>
-                      <summary>Review rejected files</summary>
+                      <summary>{l.reviewRejected}</summary>
                       <ul>{uploadReport.failures.map((failure, index) => <li key={`${failure}-${index}`}>{failure}</li>)}</ul>
                     </details>
                   ) : (
                     <ul>{uploadReport.failures.map((failure, index) => <li key={`${failure}-${index}`}>{failure}</li>)}</ul>
                   )}
-                  <button onClick={() => setUploadReport(null)} aria-label="Dismiss upload report"><X size={16} /></button>
+                  <button onClick={() => setUploadReport(null)} aria-label={l.dismissReport}><X size={16} /></button>
                 </div>
               )}
               {listError && (
                 <div className="inline-error" role="alert">
                   {listError}
-                  <button onClick={() => void loadDocuments(query)}>Retry</button>
+                  <button onClick={() => void loadDocuments(query)}>{l.retry}</button>
                 </div>
               )}
               {uploading && (
                 <div className="upload-progress" role="status" aria-live="polite" aria-atomic="true">
-                  <UploadCloud size={19} /> {uploadProgress || "Adding your document…"}
+                  <UploadCloud size={19} /> {uploadProgress || l.addingDocument}
                 </div>
               )}
               {!listError && (!isEmpty || selectionMode || bulkNotice) && <div className="bulk-controls">
@@ -1432,19 +1434,19 @@ function App() {
                   </div>
                   <h3>
                     {query || activeFilterCount
-                      ? "Nothing found yet"
-                      : "A fresh shelf, ready for you."}
+                      ? l.nothingFound
+                      : l.freshShelf}
                   </h3>
                   <p>
                     {query || activeFilterCount
-                      ? "Try another search or clear your filters."
-                      : "Add a document and Ripiano will make its text searchable."}
+                      ? l.tryAnotherSearch
+                      : l.addSearchable}
                   </p>
                   {!query && !activeFilterCount && (
                     <Button
                       onClick={() => setShowAdd(true)}
                     >
-                      <Plus size={18} /> Add your first document
+                      <Plus size={18} /> {l.addFirst}
                     </Button>
                   )}
                 </div>
@@ -1455,7 +1457,7 @@ function App() {
                     <article className="document-row" key={doc.id}>
                       {selectionMode ? <label className="document-select">
                         <input type="checkbox" checked={selectedIds.includes(doc.id)} disabled={bulkBusy || (selectedIds.length >= 100 && !selectedIds.includes(doc.id))} onChange={() => toggleSelected(doc.id)} />
-                        <span className="visually-hidden">Select {doc.title}</span>
+                        <span className="visually-hidden">{l.selectDocument(doc.title)}</span>
                       </label> : <div className="document-icon"><FileText size={21} /></div>}
                       <div className="document-info">
                         <h3>
@@ -1467,61 +1469,61 @@ function App() {
                           </button>
                         </h3>
                         <div className="document-meta">
-                          {doc.document_date ? `Dated ${formatDate(doc.document_date)}` : `Added ${formatDate(doc.created_at)}`} <span>·</span>{" "}
+                          {doc.document_date ? l.dated(formatDate(doc.document_date)) : l.added(formatDate(doc.created_at))} <span>·</span>{" "}
                           {doc.original_name}
-                          {doc.correspondent && <>{" "}<span>·</span> From: {doc.correspondent.name}</>}
-                          {doc.document_type && <>{" "}<span>·</span> Type: {doc.document_type.name}</>}
+                          {doc.correspondent && <>{" "}<span>·</span> {l.fromSender} {doc.correspondent.name}</>}
+                          {doc.document_type && <>{" "}<span>·</span> {l.type} {doc.document_type.name}</>}
                           {doc.source === "telegram" && (
                             <>
                               {" "}
-                              <span>·</span> via Telegram
+                              <span>·</span> {l.viaTelegram}
                             </>
                           )}
                           {doc.source === "android" && (
                             <>
                               {" "}
-                              <span>·</span> scanned on Android
+                              <span>·</span> {l.scannedAndroid}
                             </>
                           )}
                           {doc.source === "folder" && (
                             <>
                               {" "}
-                              <span>·</span> from NAS folder
+                              <span>·</span> {l.fromNas}
                             </>
                           )}
                         </div>
                         {doc.snippet && (
                           <p className="document-snippet">
-                            <strong>{doc.snippet_source === "note" ? "Note" : doc.snippet_source === "sticker" ? "Sticker" : doc.snippet_source === "field" ? "Custom field" : "Document text"}:</strong> {doc.snippet}
+                            <strong>{doc.snippet_source === "note" ? l.note : doc.snippet_source === "sticker" ? l.sticker : doc.snippet_source === "field" ? l.customField : l.documentText}:</strong> {doc.snippet}
                           </p>
                         )}
                         {doc.tags.length > 0 && <TagSummary tags={doc.tags} />}
                         {doc.duplicate_of && (
                           <span className="duplicate-chip">
-                            <Copy size={12} /> Exact copy of{" "}
+                            <Copy size={12} /> {l.exactCopyOf}{" "}
                             {doc.duplicate_of.title}
                           </span>
                         )}
                         {doc.physical_copies.length > 0 && <PaperCopySummary copies={doc.physical_copies} />}
                         {doc.status === "failed" && (
                           <p className="doc-error">
-                            Processing failed: {doc.error}
+                            {l.processingFailed} {doc.error}
                           </p>
                         )}
                       </div>
                       <span className={`status status-${doc.status}`}>
                         {doc.status === "ready"
-                          ? "Ready"
+                          ? l.ready
                           : doc.status === "failed"
-                            ? "Needs attention"
-                            : "Processing"}
+                            ? l.needsAttention
+                            : l.processing}
                       </span>
                       {doc.status === "failed" && (
                         <button
                           className="download-link"
                           onClick={() => void retryDocument(doc.id)}
-                          aria-label={`Retry ${doc.original_name}`}
-                          title="Retry processing"
+                          aria-label={l.retryNamed(doc.original_name)}
+                          title={l.retryProcessing}
                         >
                           <RotateCcw size={18} />
                         </button>
@@ -1532,8 +1534,8 @@ function App() {
                           href={`/api/documents/${doc.id}/archive`}
                           target="_blank"
                           rel="noreferrer"
-                          aria-label={`View searchable PDF for ${doc.original_name}`}
-                          title="View searchable PDF"
+                          aria-label={l.viewPdfNamed(doc.original_name)}
+                          title={l.viewPdf}
                         >
                           <Eye size={18} />
                         </a>
@@ -1541,7 +1543,7 @@ function App() {
                       <a
                         className="download-link"
                         href={`/api/documents/${doc.id}/original`}
-                        aria-label={`Download ${doc.original_name}`}
+                        aria-label={l.downloadNamed(doc.original_name)}
                       >
                         <ArrowDownToLine size={18} />
                       </a>
@@ -1550,7 +1552,7 @@ function App() {
                 </div>
                 {nextCursor !== null && (
                   <Button variant="secondary" className="load-more" disabled={loadingMore} onClick={() => void loadDocuments(query, nextCursor)}>
-                    {loadingMore ? "Loading…" : "Show more documents"}
+                    {loadingMore ? l.loading : l.showMore}
                   </Button>
                 )}
                 </>
@@ -1567,7 +1569,7 @@ function App() {
       {dropActive && (
         <div className="drop-overlay">
           <UploadCloud size={40} />
-          <strong>Drop to add documents</strong>
+          <strong>{l.dropToAdd}</strong>
         </div>
       )}
       {showAdd && (
@@ -1602,26 +1604,23 @@ function App() {
             <button
               className="modal-close"
               onClick={() => setShowAdd(false)}
-              aria-label="Close"
+              aria-label={l.close}
             >
               <X size={20} />
             </button>
             <div className="eyebrow">
-              <span className="eyebrow-line" /> ADD TO YOUR ARCHIVE
+              <span className="eyebrow-line" /> {l.addEyebrow}
             </div>
-            <h2 id="add-heading">Bring a document in.</h2>
-            <p>
-              Choose the way that works for you. We’ll preserve the original and
-              make its text searchable.
-            </p>
+            <h2 id="add-heading">{l.addTitle}</h2>
+            <p>{l.addIntro}</p>
             <div className="add-options">
               <button onClick={scan}>
                 <span className="add-option-icon">
                   <Camera size={23} />
                 </span>
                 <span>
-                  <strong>{nativeScanner ? "Scan pages" : "Take a photo"}</strong>
-                  <small>{nativeScanner ? "Capture, crop and combine pages" : "Open your device camera"}</small>
+                  <strong>{nativeScanner ? l.scanPages : l.takePhoto}</strong>
+                  <small>{nativeScanner ? l.scanHint : l.cameraHint}</small>
                 </span>
                 <ArrowRight size={18} />
               </button>
@@ -1630,8 +1629,8 @@ function App() {
                   <ImagePlus size={23} />
                 </span>
                 <span>
-                  <strong>Choose from photos</strong>
-                  <small>Pick an image from your gallery</small>
+                  <strong>{l.choosePhotos}</strong>
+                  <small>{l.photosHint}</small>
                 </span>
                 <ArrowRight size={18} />
               </button>
@@ -1640,16 +1639,16 @@ function App() {
                   <FolderOpen size={23} />
                 </span>
                 <span>
-                  <strong>Browse files</strong>
-                  <small>PDF, JPG, PNG, emails (.eml, .msg), and Word, Excel, PowerPoint, OpenDocument, or RTF files</small>
+                  <strong>{l.browseFiles}</strong>
+                  <small>{l.filesHint}</small>
                 </span>
                 <ArrowRight size={18} />
               </button>
             </div>
             <div className="modal-foot">
               {nativeScanner
-                ? "Scans stay on this device until Ripiano confirms the upload."
-                : "Camera behavior depends on your browser. Use the Android app for multi-page scanning."}
+                ? l.nativeScannerFoot
+                : l.browserCameraFoot}
             </div>
         </Modal>
       )}

@@ -9,6 +9,7 @@ export default defineMessages({
   themeAmoled: "AMOLED black",
   language: "Language",
   languageSystem: "Use device language",
+  italianPreview: "Italiano (preview)",
   // Sign-in and first setup
   signInError: "Could not sign in",
   authEyebrow: "PRIVATE DOCUMENT HOME",
@@ -70,6 +71,7 @@ export default defineMessages({
   themeAmoled: "Nero AMOLED",
   language: "Lingua",
   languageSystem: "Lingua del dispositivo",
+  italianPreview: "Italiano (anteprima)",
   signInError: "Impossibile accedere",
   authEyebrow: "ARCHIVIO PRIVATO DI DOCUMENTI",
   setupTitle: "Fai spazio a ciò che conta.",

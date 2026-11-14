@@ -316,7 +316,7 @@ def documents(request):
         queryset = base.filter(trashed_at__isnull=requested_view != "trash").select_related(
             "owner", "duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location")
         if requested_view not in ("trash", "exceptions"):
-            # A scan split at separator sheets is reached from its parts; it still shows in Trash and Exceptions.
+            # A scan split at barcode boundaries is reached from its parts; it still shows in Trash and Exceptions.
             queryset = queryset.filter(is_split_source=False)
         query = request.GET.get("q", "").strip()[:200]
         try:

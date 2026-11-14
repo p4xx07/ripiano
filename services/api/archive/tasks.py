@@ -399,17 +399,17 @@ def _split(document, pdf, ranges):
         for path in written:
             (Path(settings.MEDIA_ROOT) / path).unlink(missing_ok=True)
         logger.warning("Splitting document %s failed", document.id, exc_info=True)
-        _note(document, "This scan has separator sheets, but Ripiano could not split it. It was kept as one document.")
+        _note(document, "This scan has document barcodes, but Ripiano could not split it. It was kept as one document.")
         return False
     document.is_split_source = True
     return True
 
 
 def apply_barcodes(document, original, pdf, work_dir):
-    """Split at separator sheets, or give this document its ASN and tag barcodes. Never fails processing."""
+    """Split at PATCHT or ASN starts, then assign this document's ASN and tags. Never fails processing."""
     from django.db import IntegrityError
 
-    from .barcodes import scan_image, scan_pdf, split_ranges
+    from .barcodes import asn_split_ranges, scan_image, scan_pdf, split_ranges
     from .models import Tag, TagOverride
 
     try:
@@ -419,14 +419,16 @@ def apply_barcodes(document, original, pdf, work_dir):
         return
     # Only a document's first processing may split it: reprocessing must never hide a curated document.
     first_run = document.processed_at is None
-    if (first_run and document.original_mime == "application/pdf" and document.split_parent_id is None
-            and not document.is_split_source and scan.separators):
-        if scan.truncated:
-            _note(document, f"This scan has separator sheets, but only the first {scan.scanned} pages are checked, so it was kept as one document.")
-        else:
-            ranges = split_ranges(scan)
-            if ranges and ranges != [(0, scan.pages)] and _split(document, pdf, ranges):
+    if first_run and document.original_mime == "application/pdf" and document.split_parent_id is None and not document.is_split_source:
+        ranges = split_ranges(scan) if scan.separators else asn_split_ranges(scan)
+        if ranges and ranges != [(0, scan.pages)]:
+            if scan.truncated:
+                marker = "separator sheets" if scan.separators else "ASN barcodes"
+                _note(document, f"This scan has {marker}, but only the first {scan.scanned} pages are checked, so it was kept as one document.")
+            elif _split(document, pdf, ranges):
                 return
+        elif scan.truncated and scan.asn_pages and not scan.separators:
+            _note(document, f"This scan has an ASN barcode, but only the first {scan.scanned} pages are checked, so its archive number was not assigned.")
     if document.is_split_source:
         return
     suppressed = set(TagOverride.objects.filter(document=document).values_list("tag_id", flat=True))
@@ -444,7 +446,8 @@ def apply_barcodes(document, original, pdf, work_dir):
             tag = mapped_tags.get(code.lower())
             if tag and tag.id not in suppressed:
                 DocumentTag.objects.get_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.SOURCE})
-    if scan.asn and document.asn is None:
+    # An incomplete or unsplit batch must not be labelled with one of its document numbers.
+    if scan.asn and not scan.truncated and not asn_split_ranges(scan) and document.asn is None:
         try:
             with transaction.atomic():
                 Document.objects.filter(pk=document.pk, asn__isnull=True).update(asn=scan.asn)

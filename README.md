@@ -134,6 +134,10 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 | --- | --- |
 | ![Desktop learned filing panel with the optional automatic filing switch enabled](qa-artifacts/20261114-auto-filing/desktop/auto-filing.png) | ![Mobile learned filing panel showing the optional switch and per-field readiness](qa-artifacts/20261114-auto-filing/mobile/auto-filing.png) |
 
+| ASN-only scan split on desktop | ASN-only scan split on mobile |
+| --- | --- |
+| ![Desktop document panel showing the second ASN-numbered document and full-scan link](qa-artifacts/20261114-asn-split/desktop/asn-only-split.png) | ![Mobile document panel showing the second ASN-numbered document and full-scan link](qa-artifacts/20261114-asn-split/mobile/asn-only-split.png) |
+
 ## Planning documents
 
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
@@ -360,8 +364,9 @@ Document exports include every older version. Only permanent deletion removes ve
 ### Barcodes on paper scans
 
 PDF and image scans are checked for QR codes and common 1D barcodes on the NAS. Nothing is sent elsewhere.
+
 - **Separator sheets:** a sheet with the code `PATCHT` splits a multi-page PDF into separate documents and is itself dropped. The full scan is kept unchanged as the hidden source of its parts; open it from any part with **Open full scan**.
-- **ASN:** a code such as `ASN00042` gives the document archive number 42. Numbers are unique per owner. A clash is recorded as a note on the document instead of being assigned, and you can change the number on the document. Search with `asn:42`.
+- **ASN:** a code such as `ASN00042` gives the document archive number 42. An ASN barcode on a later PDF page starts a new document, even if it is the only ASN; pages before it become an unnumbered first part. Each barcode page stays with its document, and the full scan is kept unchanged and available from the parts. If the scan also has `PATCHT` sheets, those separators take precedence. Numbers are unique per owner. A clash is recorded as a note instead of being assigned, and you can change the number on the document. Search with `asn:42`.
 - **Tags:** a code such as `TAG:Bills` adds your existing tag "Bills". In **Tags & filing**, you can also give a tag a unique barcode value (for example `ARCHIVE-BILLS`) and print its QR label. Put that label on a scan's first page to add the tag without exposing its name in the code. The mapping is per account, ignores letter case, and respects tags you manually removed from a document.
 
 Set `RIPIANO_BARCODES=0` to turn this off. `RIPIANO_BARCODE_SEPARATOR`, `RIPIANO_BARCODE_ASN_PREFIX`, and `RIPIANO_BARCODE_TAG_PREFIX` change the codes. Up to 100 pages and the first 500 distinct non-control codes per file are checked (`RIPIANO_BARCODE_MAX_PAGES` controls pages). Physical-copy stickers remain a separate, stable identity for the paper itself.

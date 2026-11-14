@@ -10,7 +10,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, override_settings
 from PIL import Image, ImageDraw
 
-from archive.barcodes import BarcodeScan, split_ranges
+from archive.barcodes import BarcodeScan, asn_split_ranges, split_ranges
 
 try:
     from pyzbar import pyzbar  # noqa: F401
@@ -63,6 +63,53 @@ def test_separator_pages_are_dropped_and_empty_parts_ignored():
     scan = BarcodeScan(pages=7, separators=[0, 2, 3, 6])
     assert split_ranges(scan) == [(1, 2), (4, 6)]
     assert split_ranges(BarcodeScan(pages=3)) == [(0, 3)]
+
+
+def test_asn_pages_start_documents_without_discarding_the_barcode_page():
+    assert asn_split_ranges(BarcodeScan(pages=6, asn_pages=[(0, 42), (3, 43)])) == [(0, 3), (3, 6)]
+    assert asn_split_ranges(BarcodeScan(pages=6, asn_pages=[(2, 42), (4, 43)])) == [(0, 2), (2, 4), (4, 6)]
+    assert asn_split_ranges(BarcodeScan(pages=6, asn_pages=[(2, 42)])) == [(0, 2), (2, 6)]
+    assert asn_split_ranges(BarcodeScan(pages=6, asn_pages=[(0, 42)])) == []
+
+
+@pytest.mark.django_db
+def test_multi_asn_scan_is_not_mislabelled_when_a_split_is_unsafe():
+    from django.utils import timezone
+
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    document = Document.objects.create(owner=owner, title="Batch", original_name="batch.pdf",
+                                       original_path="originals/batch.pdf", original_mime="application/pdf",
+                                       original_sha256="a" * 64, original_size=1)
+    scan = BarcodeScan(pages=4, scanned=2, asn=42, asn_pages=[(0, 42), (1, 43)])
+    with patch("archive.barcodes.scan_pdf", return_value=scan), patch("archive.tasks._split") as split:
+        apply_barcodes(document, Path("unused.pdf"), Path("unused.pdf"), Path("."))
+        split.assert_not_called()
+        document.refresh_from_db()
+        assert document.asn is None
+        assert "only the first 2 pages are checked" in DocumentNote.objects.get(document=document).body
+
+        document.processed_at = timezone.now()
+        document.save(update_fields=["processed_at"])
+        scan.scanned = 4
+        apply_barcodes(document, Path("unused.pdf"), Path("unused.pdf"), Path("."))
+        split.assert_not_called()
+        document.refresh_from_db()
+        assert document.asn is None  # reprocessing never hides or mislabels an older curated batch
+
+
+@pytest.mark.django_db
+def test_one_later_asn_stays_unnumbered_if_scanning_stops_early():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    document = Document.objects.create(owner=owner, title="Batch", original_name="batch.pdf",
+                                       original_path="originals/batch.pdf", original_mime="application/pdf",
+                                       original_sha256="a" * 64, original_size=1)
+    scan = BarcodeScan(pages=4, scanned=2, asn=42, asn_pages=[(1, 42)])
+    with patch("archive.barcodes.scan_pdf", return_value=scan), patch("archive.tasks._split") as split:
+        apply_barcodes(document, Path("unused.pdf"), Path("unused.pdf"), Path("."))
+    split.assert_not_called()
+    document.refresh_from_db()
+    assert document.asn is None
+    assert "only the first 2 pages are checked" in DocumentNote.objects.get(document=document).body
 
 
 @pytest.mark.django_db
@@ -164,6 +211,52 @@ def test_separator_sheets_split_a_scan_and_parts_take_their_own_asn_and_tags(tmp
     detail = client.get(f"/api/documents/{second.id}").json()
     assert detail["asn"] == 42 and detail["split_parent"] == {"id": str(source.id), "title": "batch"}
     assert client.get(f"/api/documents/{source.id}").json()["is_split_source"] is True
+
+
+@needs_zbar
+@pytest.mark.django_db
+def test_asn_barcodes_split_a_multi_document_scan_and_keep_the_full_original(tmp_path, django_capture_on_commit_callbacks):
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    scan = pdf(page("First letter", "ASN00042"), page("First letter continued"),
+               page("Second letter", "ASN00043"), page("Second letter continued"))
+    with override_settings(MEDIA_ROOT=tmp_path), patch("archive.ingestion.process_document.delay") as queued:
+        source = ingest_document(owner, SimpleUploadedFile("asn-batch.pdf", scan))
+        with django_capture_on_commit_callbacks(execute=True):
+            process(str(source.id))
+        source.refresh_from_db()
+        assert source.is_split_source and source.asn is None
+        assert (tmp_path / source.original_path).read_bytes() == scan
+        parts = list(Document.objects.filter(split_parent=source).order_by("title"))
+        assert [part.title for part in parts] == ["asn-batch (1/2)", "asn-batch (2/2)"]
+        assert queued.call_count == 3
+        for part in parts:
+            process(str(part.id))
+    for part, expected_asn in zip(parts, (42, 43)):
+        part.refresh_from_db()
+        assert part.asn == expected_asn and part.status == Document.Status.READY
+        assert not Document.objects.filter(split_parent=part).exists()
+    client = Client()
+    client.force_login(owner)
+    assert [item["id"] for item in client.get("/api/documents", {"q": "asn:43"}).json()["documents"]] == [str(parts[1].id)]
+
+
+@needs_zbar
+@pytest.mark.django_db
+def test_one_later_asn_starts_a_new_document(tmp_path, django_capture_on_commit_callbacks):
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    scan = pdf(page("Unnumbered cover"), page("Numbered document", "ASN00044"), page("Numbered continuation"))
+    with override_settings(MEDIA_ROOT=tmp_path), patch("archive.ingestion.process_document.delay"):
+        source = ingest_document(owner, SimpleUploadedFile("later-asn.pdf", scan))
+        with django_capture_on_commit_callbacks(execute=False):
+            process(str(source.id))
+        parts = list(Document.objects.filter(split_parent=source).order_by("title"))
+        assert [part.title for part in parts] == ["later-asn (1/2)", "later-asn (2/2)"]
+        for part in parts:
+            process(str(part.id))
+    first, second = (Document.objects.get(pk=part.pk) for part in parts)
+    assert first.asn is None and second.asn == 44
+    source.refresh_from_db()
+    assert source.is_split_source and (tmp_path / source.original_path).read_bytes() == scan
 
 
 @needs_zbar

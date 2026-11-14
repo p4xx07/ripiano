@@ -425,11 +425,11 @@ export default function DocumentPanel({
         )}
         {current.split_parent && (
           <button type="button" className="split-note" onClick={() => onOpenDuplicate(current.split_parent!.id)}>
-            <Layers size={16} aria-hidden="true" /> Part of a scan split at separator sheets · Open full scan
+            <Layers size={16} aria-hidden="true" /> Part of a scan split by barcodes · Open full scan
           </button>
         )}
         {current.is_split_source && (
-          <p className="email-origin"><Layers size={16} aria-hidden="true" /> This full scan was split at separator sheets into separate documents. It is kept unchanged and is not listed in the Library.</p>
+          <p className="email-origin"><Layers size={16} aria-hidden="true" /> This full scan was split by barcodes into separate documents. It is kept unchanged and is not listed in the Library.</p>
         )}
         {current.email && (
           <p className="email-origin">

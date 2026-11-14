@@ -71,7 +71,7 @@ class Document(models.Model):
     tags = models.ManyToManyField("Tag", through="DocumentTag", related_name="documents")
     # Archive serial number: the owner's own running number, often printed as a barcode label.
     asn = models.PositiveIntegerField(null=True, blank=True)
-    # A scan split at separator sheets stays as the hidden source of its parts.
+    # A scan split at barcode boundaries stays as the hidden source of its parts.
     split_parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="split_parts")
     is_split_source = models.BooleanField(default=False)
     # Folder template for the NAS browse copy; managed originals never move.

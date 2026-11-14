@@ -23,6 +23,7 @@ class BarcodeScan:
     scanned: int = 0
     separators: list[int] = field(default_factory=list)  # zero-based page indexes
     asn: int | None = None
+    asn_pages: list[tuple[int, int]] = field(default_factory=list)  # (zero-based page, ASN)
     tags: list[str] = field(default_factory=list)
     codes: list[str] = field(default_factory=list)
 
@@ -48,8 +49,12 @@ def _classify(scan, page, texts):
             if page not in scan.separators:
                 scan.separators.append(page)
         elif match := asn.match(text):
-            if scan.asn is None and int(match[1]) > 0:
-                scan.asn = int(match[1])
+            value = int(match[1])
+            if value > 0:
+                if scan.asn is None:
+                    scan.asn = value
+                if not any(index == page for index, _ in scan.asn_pages):
+                    scan.asn_pages.append((page, value))
         elif text.casefold().startswith(settings.RIPIANO_BARCODE_TAG_PREFIX.casefold()):
             name = text[len(settings.RIPIANO_BARCODE_TAG_PREFIX):].strip()
             if name and name.casefold() not in {item.casefold() for item in scan.tags}:
@@ -105,4 +110,14 @@ def split_ranges(scan):
         start = separator + 1
     if start < scan.pages:
         ranges.append((start, scan.pages))
+    return ranges
+
+
+def asn_split_ranges(scan):
+    """Each ASN page starts a document and stays with it; preceding pages form a first part."""
+    starts = sorted({page for page, _ in scan.asn_pages if 0 <= page < scan.pages})
+    if not starts or starts == [0]:
+        return []
+    ranges = [(0, starts[0])] if starts[0] else []
+    ranges.extend((start, end) for start, end in zip(starts, starts[1:] + [scan.pages]))
     return ranges

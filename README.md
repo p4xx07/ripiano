@@ -350,7 +350,10 @@ Open **Workflows** to automate routine filing. A workflow runs:
 - mark the document as needing action;
 - add a note;
 - call a webhook;
-- send an email.
+- send an email;
+- unlock password-protected PDFs ("when a document is added" workflows only).
+
+**Unlocking PDFs:** a locked PDF cannot be read for text. Before text recognition, Ripiano tries the saved passwords of each matching "added" workflow, in order. The first one that works produces an unlocked copy, which is used for the searchable PDF, barcodes, and page splits. The original file is kept exactly as uploaded, still locked. Passwords are stored encrypted with the mailbox key (`RIPIANO_MAIL_KEY`, or one derived from the server secret) and are never shown again; the workflow shows only how many are saved. If no password works, the document is marked unreadable with a message saying so. Add the password to a workflow and choose **Retry OCR** on the document. Conditions are checked before text recognition, so a word condition can only match the title at that point.
 
 **Run history:** added and scheduled workflows act once per document, and every run is listed with what it changed.
 

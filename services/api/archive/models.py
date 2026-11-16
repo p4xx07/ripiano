@@ -644,6 +644,8 @@ class Workflow(models.Model):
     webhook_url = models.URLField(max_length=500, blank=True)
     email_to = models.CharField(max_length=500, blank=True)
     email_attach = models.BooleanField(default=False)
+    # Encrypted JSON list of passwords tried on locked PDFs before OCR ("added" workflows only). Never returned by the API.
+    pdf_passwords = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Bell, Clock, Plus, Tag as TagIcon, Workflow as WorkflowIcon, X } from "lucide-react";
+import { Bell, Clock, KeyRound, Plus, Tag as TagIcon, Workflow as WorkflowIcon, X } from "lucide-react";
 import { FilingItem, request, Tag } from "./api";
 import { Button } from "./ui";
 
@@ -10,17 +10,20 @@ type Flow = {
   filter_sources: string[]; filter_filename: string; filter_text: string; filter_tag_id: string | null;
   filter_correspondent_id: string | null; filter_document_type_id: string | null; add_tag_ids: string[]; remove_tag_ids: string[];
   set_correspondent_id: string | null; set_document_type_id: string | null; set_needs_action: boolean; action_note: string;
-  add_note: string; webhook_url: string; email_to: string; email_attach: boolean;
+  add_note: string; webhook_url: string; email_to: string; email_attach: boolean; pdf_password_count: number;
 };
 type Run = { id: string; workflow: string; document: { id: string; title: string }; trigger: Trigger; status: "applied" | "failed"; detail: string; created_at: string };
 type Draft = Omit<Flow, "id" | "filter_tag_id" | "filter_correspondent_id" | "filter_document_type_id" | "set_correspondent_id" | "set_document_type_id"> & {
   filter_tag_id: string; filter_correspondent_id: string; filter_document_type_id: string; set_correspondent_id: string; set_document_type_id: string;
+  // Write-only: typed passwords are sent once and never shown again.
+  pdf_passwords_text: string; clear_pdf_passwords: boolean;
 };
 
 const empty: Draft = {
   name: "", enabled: true, order: 0, trigger: "added", schedule_field: "created", schedule_days: 30, filter_sources: [], filter_filename: "",
   filter_text: "", filter_tag_id: "", filter_correspondent_id: "", filter_document_type_id: "", add_tag_ids: [], remove_tag_ids: [],
   set_correspondent_id: "", set_document_type_id: "", set_needs_action: false, action_note: "", add_note: "", webhook_url: "", email_to: "", email_attach: false,
+  pdf_password_count: 0, pdf_passwords_text: "", clear_pdf_passwords: false,
 };
 const sources: Record<string, string> = { web: "Web upload", android: "Android scanner", telegram: "Telegram", folder: "Watched folder", email: "Email" };
 const triggers: Record<Trigger, string> = { added: "When a document is added", updated: "When I change a document", scheduled: "Some days after a date" };
@@ -29,6 +32,7 @@ const recipes: { label: string; icon: typeof TagIcon; draft: Partial<Draft> }[] 
   { label: "Tag new documents that mention a word", icon: TagIcon, draft: { name: "Tag by word", trigger: "added" } },
   { label: "Remind me some days after the document date", icon: Clock, draft: { name: "Review reminder", trigger: "scheduled", schedule_field: "document_date", schedule_days: 30, set_needs_action: true, action_note: "Review this document" } },
   { label: "Notify another app when a document is added", icon: Bell, draft: { name: "Notify on new document", trigger: "added", webhook_url: "https://" } },
+  { label: "Unlock password-protected PDFs", icon: KeyRound, draft: { name: "Unlock PDFs", trigger: "added" } },
 ];
 
 function describe(flow: Flow, names: Map<string, string>) {
@@ -52,6 +56,7 @@ function describe(flow: Flow, names: Map<string, string>) {
     flow.add_note ? "add a note" : "",
     flow.webhook_url ? "call a webhook" : "",
     flow.email_to ? `email ${flow.email_to}` : "",
+    flow.pdf_password_count ? `unlock PDFs with ${flow.pdf_password_count} saved password${flow.pdf_password_count === 1 ? "" : "s"}` : "",
   ].filter(Boolean);
   return `${when.charAt(0).toUpperCase()}${when.slice(1)}${conditions.length ? `, if it ${conditions.join(" and ")}` : ""}: ${actions.join(", ") || "nothing yet"}.`;
 }
@@ -109,7 +114,7 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
     setDraft({
       ...flow, filter_tag_id: flow.filter_tag_id ?? "", filter_correspondent_id: flow.filter_correspondent_id ?? "",
       filter_document_type_id: flow.filter_document_type_id ?? "", set_correspondent_id: flow.set_correspondent_id ?? "",
-      set_document_type_id: flow.set_document_type_id ?? "",
+      set_document_type_id: flow.set_document_type_id ?? "", pdf_passwords_text: "", clear_pdf_passwords: false,
     });
     focusForm();
   }
@@ -130,8 +135,13 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
   function save(event: FormEvent) {
     event.preventDefault();
     void run(async () => {
+      const { pdf_passwords_text, clear_pdf_passwords, pdf_password_count: _count, ...fields } = draft;
+      const typed = pdf_passwords_text.split("\n").filter((item) => item.length > 0);
+      const passwords = draft.trigger !== "added" || clear_pdf_passwords ? (draft.pdf_password_count || clear_pdf_passwords ? [] : undefined)
+        : typed.length ? typed : undefined;
       const body = JSON.stringify({
-        ...draft,
+        ...fields,
+        ...(passwords ? { pdf_passwords: passwords } : {}),
         webhook_url: draft.webhook_url === "https://" ? "" : draft.webhook_url,
         ...Object.fromEntries(["filter_tag_id", "filter_correspondent_id", "filter_document_type_id", "set_correspondent_id", "set_document_type_id"]
           .map((key) => [key, draft[key as keyof Draft] || null])),
@@ -324,6 +334,19 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                   <input value={draft.email_to} onChange={(event) => set("email_to", event.target.value)} maxLength={500} autoCapitalize="none" />
                 </label>
                 {draft.email_to && <label className="agent-scope-choice"><input type="checkbox" checked={draft.email_attach} onChange={(event) => set("email_attach", event.target.checked)} />Attach the original file (if it is small enough to email)</label>}
+                {draft.trigger === "added" && (
+                  <div className="workflow-unlock">
+                    <label>Unlock PDFs <small>One password per line. Tried on locked PDFs that match, before text recognition. The original file stays locked; only the searchable copy is unlocked. Passwords are stored encrypted and never shown again.</small>
+                      <textarea value={draft.pdf_passwords_text} onChange={(event) => set("pdf_passwords_text", event.target.value)} rows={2}
+                        autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={draft.clear_pdf_passwords}
+                        placeholder={draft.pdf_password_count ? "Type new passwords to replace the saved ones" : ""} />
+                    </label>
+                    {draft.pdf_password_count > 0 && (
+                      <label className="agent-scope-choice"><input type="checkbox" checked={draft.clear_pdf_passwords} onChange={(event) => set("clear_pdf_passwords", event.target.checked)} />
+                        Forget the {draft.pdf_password_count} saved password{draft.pdf_password_count === 1 ? "" : "s"}</label>
+                    )}
+                  </div>
+                )}
               </fieldset>
               <label>Order <small>Lower numbers run first</small><input type="number" min={0} max={10000} value={draft.order} onChange={(event) => set("order", Number(event.target.value))} /></label>
               <Button disabled={busy}><Plus size={17} aria-hidden="true" /> {editing ? "Save workflow" : "Create workflow"}</Button>

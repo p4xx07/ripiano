@@ -208,3 +208,103 @@ def test_completed_follow_ups_stay_done_and_updated_side_effects_happen_once(own
     assert DocumentNote.objects.filter(document=target).count() == 1
     assert client.post("/api/workflows", {"name": "x", "trigger": "added", "filter_sources": [{}]}, content_type="application/json").status_code == 400
     assert client.post("/api/workflows", {"name": "x", "trigger": "added", "webhook_url": "https://" + "a" * 70 + ".example"}, content_type="application/json").status_code == 400
+
+
+def _locked_pdf(password):
+    from io import BytesIO
+
+    from pypdf import PdfWriter
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    writer.encrypt(user_password=password, owner_password=password + "-owner", algorithm="AES-256")
+    data = BytesIO()
+    writer.write(data)
+    return data.getvalue()
+
+
+def _fake_ocr(seen):
+    def run(args, **kwargs):
+        from pathlib import Path
+
+        from pypdf import PdfReader
+        seen.append(PdfReader(args[-2]).is_encrypted)
+        Path(args[-1]).write_bytes(Path(args[-2]).read_bytes())
+    return run
+
+
+@pytest.mark.django_db
+def test_locked_pdf_is_unlocked_by_a_matching_workflow_and_the_original_is_kept(owner, tmp_path):
+    from pathlib import Path
+
+    from archive.ingestion import ingest_document
+    from archive.tasks import process_document
+
+    other = Workflow.objects.create(owner=owner, name="Bank only", trigger=Workflow.Trigger.ADDED, filter_filename="bank*.pdf")
+    flow = Workflow.objects.create(owner=owner, name="Payslips", trigger=Workflow.Trigger.ADDED)
+    from archive.workflows import set_pdf_passwords
+    set_pdf_passwords(other, ["s3cret"])
+    other.save()
+    set_pdf_passwords(flow, ["wrong", "s3cret"])
+    flow.save()
+    assert "s3cret" not in flow.pdf_passwords  # stored encrypted
+    data, seen = _locked_pdf("s3cret"), []
+    with override_settings(MEDIA_ROOT=tmp_path, RIPIANO_BARCODES=False), patch("archive.ingestion.process_document.delay"), \
+            patch("archive.tasks.subprocess.run", side_effect=_fake_ocr(seen)), patch("archive.auto_filing.apply_learned_filing"):
+        created = ingest_document(owner, SimpleUploadedFile("payslip.pdf", data))
+        process_document(str(created.id))
+    created.refresh_from_db()
+    assert created.status == Document.Status.READY and seen == [False]  # OCR only ever sees the unlocked copy
+    assert (Path(tmp_path) / created.original_path).read_bytes() == data  # original unchanged
+    runs = WorkflowRun.objects.filter(document=created)
+    assert [(run.workflow, "removed the PDF password" in run.detail) for run in runs] == [(flow, True)]
+
+
+@pytest.mark.django_db
+def test_locked_pdf_without_a_password_fails_with_a_clear_retryable_message(owner, tmp_path):
+    from archive.ingestion import ingest_document
+    from archive.tasks import process_document
+    from archive.workflows import set_pdf_passwords
+
+    paused = Workflow.objects.create(owner=owner, name="Paused", trigger=Workflow.Trigger.ADDED, enabled=False)
+    set_pdf_passwords(paused, ["s3cret"])
+    paused.save()
+    stranger = get_user_model().objects.create_user("stranger", password="secure-password-2")
+    theirs = Workflow.objects.create(owner=stranger, name="Theirs", trigger=Workflow.Trigger.ADDED)
+    set_pdf_passwords(theirs, ["s3cret"])
+    theirs.save()
+    seen = []
+    with override_settings(MEDIA_ROOT=tmp_path, RIPIANO_BARCODES=False), patch("archive.ingestion.process_document.delay"), \
+            patch("archive.tasks.subprocess.run", side_effect=_fake_ocr(seen)):
+        created = ingest_document(owner, SimpleUploadedFile("locked.pdf", _locked_pdf("s3cret")))
+        process_document(str(created.id))
+        created.refresh_from_db()
+        assert created.status == Document.Status.FAILED and "password-protected" in created.error and seen == []
+        # Adding the password and retrying succeeds; the run is recorded as an "added" run.
+        mine = Workflow.objects.create(owner=owner, name="Mine", trigger=Workflow.Trigger.ADDED)
+        set_pdf_passwords(mine, ["s3cret"])
+        mine.save()
+        Document.objects.filter(pk=created.pk).update(status=Document.Status.PENDING)
+        with patch("archive.auto_filing.apply_learned_filing"):
+            process_document(str(created.id))
+    created.refresh_from_db()
+    assert created.status == Document.Status.READY
+    assert WorkflowRun.objects.get(document=created, workflow=mine).trigger == "added"
+
+
+@pytest.mark.django_db
+def test_pdf_passwords_are_write_only_and_need_an_added_trigger(owner):
+    client = client_for(owner)
+    created = client.post("/api/workflows", {"name": "Unlock", "trigger": "added", "pdf_passwords": ["one", "two", "one"]}, content_type="application/json")
+    assert created.status_code == 201
+    body = created.json()
+    assert body["pdf_password_count"] == 2 and "pdf_passwords" not in body
+    assert "one" not in client.get("/api/workflows").content.decode()
+    flow_id = body["id"]
+    kept = client.patch(f"/api/workflows/{flow_id}", {"name": "Renamed"}, content_type="application/json")
+    assert kept.json()["pdf_password_count"] == 2  # omitted means unchanged
+    refused = client.patch(f"/api/workflows/{flow_id}", {"trigger": "updated"}, content_type="application/json")
+    assert refused.status_code == 400 and "added" in refused.json()["error"]
+    assert client.patch(f"/api/workflows/{flow_id}", {"pdf_passwords": ["x" * 201]}, content_type="application/json").status_code == 400
+    assert client.patch(f"/api/workflows/{flow_id}", {"pdf_passwords": [""]}, content_type="application/json").status_code == 400
+    cleared = client.patch(f"/api/workflows/{flow_id}", {"pdf_passwords": [], "trigger": "updated"}, content_type="application/json")
+    assert cleared.status_code == 200 and cleared.json()["pdf_password_count"] == 0

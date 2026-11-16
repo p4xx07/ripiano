@@ -10,7 +10,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from .models import Correspondent, Document, DocumentType, Tag, Workflow, WorkflowRun
-from .workflows import run_workflow
+from .workflows import MAX_PDF_PASSWORDS, pdf_passwords, run_workflow, set_pdf_passwords
 
 
 def _signed_in(request):
@@ -40,6 +40,8 @@ def _workflow_json(item):
         "set_document_type_id": str(item.set_document_type_id) if item.set_document_type_id else None,
         "set_needs_action": item.set_needs_action, "action_note": item.action_note, "add_note": item.add_note,
         "webhook_url": item.webhook_url, "email_to": item.email_to, "email_attach": item.email_attach,
+        # Passwords are write-only; only how many are saved is ever shown.
+        "pdf_password_count": len(pdf_passwords(item)),
     }
 
 
@@ -133,6 +135,14 @@ def _apply(item, body, owner):
         except ValidationError as exc:
             raise ValueError(f"“{address}” is not an email address") from exc
     item.email_to = recipients
+    if "pdf_passwords" in body:
+        values = body["pdf_passwords"]
+        if (not isinstance(values, list) or len(values) > MAX_PDF_PASSWORDS
+                or not all(isinstance(value, str) and 0 < len(value) <= 200 for value in values)):
+            raise ValueError(f"PDF passwords must be a list of up to {MAX_PDF_PASSWORDS} passwords, each up to 200 characters")
+        set_pdf_passwords(item, list(dict.fromkeys(values)))
+    if item.pdf_passwords and item.trigger != Workflow.Trigger.ADDED:
+        raise ValueError("PDF passwords only work in workflows that run when a document is added")
     add = _tags(owner, body["add_tag_ids"]) if "add_tag_ids" in body else None
     remove = _tags(owner, body["remove_tag_ids"]) if "remove_tag_ids" in body else None
     return add, remove

@@ -25,6 +25,10 @@ from .purge import record_purge, remove_job_media
 logger = logging.getLogger(__name__)
 
 
+class LockedPdfError(Exception):
+    """A password-protected PDF that no workflow password unlocked."""
+
+
 @shared_task(name="archive.tasks.process_document")
 def process_document(document_id):
     with transaction.atomic():
@@ -42,6 +46,7 @@ def process_document(document_id):
     archive_dir = media_root / "archive" / str(document.id)[:2]
     archive_dir.mkdir(parents=True, exist_ok=True)
     archive = archive_dir / f"{document.id}.pdf"
+    unlocked_by = None
 
     try:
         with tempfile.TemporaryDirectory(dir=media_root) as work_dir:
@@ -63,6 +68,15 @@ def process_document(document_id):
                 convert_office(original, document.original_name, document.original_mime, input_file)
                 # PDF/A conversion can damage LibreOffice's text map; keep its searchable text.
                 output_type = "pdf"
+            elif document.original_mime == "application/pdf":
+                from .workflows import pdf_is_encrypted, unlock_pdf
+
+                if pdf_is_encrypted(original):
+                    input_file = work_dir / "unlocked.pdf"
+                    unlocked_by = unlock_pdf(document, original, input_file)
+                    if unlocked_by is None:
+                        raise LockedPdfError(
+                            "This PDF is password-protected. Add its password to a workflow’s “Unlock PDFs” action, then retry.")
             if settings.RIPIANO_BARCODES and (document.original_mime == "application/pdf" or document.original_mime.startswith("image/")):
                 apply_barcodes(document, original, input_file, work_dir)
             output_file = work_dir / "archive.pdf"
@@ -88,7 +102,10 @@ def process_document(document_id):
         document.processed_at = timezone.now()
         document.save(update_fields=["archive_path", "extracted_text", "status", "error", "processed_at"])
     except Exception as exc:
-        logger.exception("Document processing failed: %s", document.id)
+        if isinstance(exc, LockedPdfError):
+            logger.info("Document %s is a locked PDF with no matching workflow password", document.id)
+        else:
+            logger.exception("Document processing failed: %s", document.id)
         if isinstance(exc, subprocess.CalledProcessError):
             logger.error("OCR diagnostic: %s", (exc.stderr or "")[-2000:])
         document.status = Document.Status.FAILED
@@ -114,6 +131,13 @@ def process_document(document_id):
             run_for_document(document, "added")
         except Exception:
             logger.exception("Workflows failed for document %s", document.id)
+    if first_run and unlocked_by is not None:
+        try:
+            from .workflows import record_unlock
+
+            record_unlock(unlocked_by, document)
+        except Exception:
+            logger.exception("Could not record the PDF unlock for document %s", document.id)
 
 
 @shared_task(name="archive.tasks.reconcile_pending_documents")

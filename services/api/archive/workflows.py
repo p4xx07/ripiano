@@ -38,6 +38,91 @@ def matches(workflow, document):
     return True
 
 
+MAX_PDF_PASSWORDS = 20
+UNLOCKED_DETAIL = "removed the PDF password for the searchable copy (the original stays locked)"
+
+
+def pdf_passwords(workflow):
+    """The workflow's saved PDF passwords, decrypted; an unreadable value yields none."""
+    import json
+
+    from .mail import MailError, decrypt_secret
+
+    if not workflow.pdf_passwords:
+        return []
+    try:
+        values = json.loads(decrypt_secret(workflow.pdf_passwords))
+    except (MailError, ValueError):
+        logger.warning("Saved PDF passwords for workflow %s can no longer be read", workflow.id)
+        return []
+    return [value for value in values if isinstance(value, str)] if isinstance(values, list) else []
+
+
+def set_pdf_passwords(workflow, values):
+    import json
+
+    from .mail import MailError, encrypt_secret
+
+    try:
+        workflow.pdf_passwords = encrypt_secret(json.dumps(values)) if values else ""
+    except MailError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def pdf_is_encrypted(path):
+    from pypdf import PdfReader
+    from pypdf.errors import PyPdfError
+
+    try:
+        return PdfReader(path).is_encrypted
+    except (PyPdfError, OSError, ValueError):
+        return False  # Unreadable files fail later in OCR with their own message.
+
+
+def unlock_pdf(document, source, destination):
+    """Try the passwords of the owner's matching "added" workflows, in order.
+
+    Writes an unlocked copy to ``destination`` and returns the workflow whose password worked, or None.
+    The managed original is never changed.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.errors import PyPdfError
+
+    candidates = (Workflow.objects.filter(owner_id=document.owner_id, enabled=True, trigger=Workflow.Trigger.ADDED)
+                  .exclude(pdf_passwords=""))
+    for workflow in candidates:
+        if not matches(workflow, document):
+            continue
+        for password in pdf_passwords(workflow):
+            try:
+                reader = PdfReader(source)
+                if not reader.decrypt(password):
+                    continue
+                writer = PdfWriter(clone_from=reader)
+                with open(destination, "wb") as target:
+                    writer.write(target)
+            except (PyPdfError, OSError, ValueError, NotImplementedError):
+                logger.warning("PDF unlock attempt failed for document %s", document.id, exc_info=True)
+                continue
+            return workflow
+    return None
+
+
+def record_unlock(workflow, document):
+    """Make sure the unlock is visible in run history, even if the workflow's other conditions stopped matching after OCR."""
+    run = WorkflowRun.objects.filter(workflow=workflow, document=document, trigger=Workflow.Trigger.ADDED).first()
+    if run:
+        if UNLOCKED_DETAIL not in run.detail:
+            detail = UNLOCKED_DETAIL if run.detail.startswith("conditions matched") else f"{UNLOCKED_DETAIL}, {run.detail}"
+            WorkflowRun.objects.filter(pk=run.pk).update(detail=detail[:500])
+        return
+    try:
+        with transaction.atomic():
+            WorkflowRun.objects.create(workflow=workflow, document=document, trigger=Workflow.Trigger.ADDED, detail=UNLOCKED_DETAIL)
+    except IntegrityError:
+        pass
+
+
 def _apply(workflow, document, *, first_time=True):
     """Apply metadata actions; return a short description of what changed.
 

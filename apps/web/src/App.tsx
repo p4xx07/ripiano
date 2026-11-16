@@ -1373,10 +1373,12 @@ function App() {
                 </button>
                 {selectionMode && <div className="bulk-actions">
                   <strong>{selectedIds.length} selected</strong>
-                  <button type="button" className="text-action" disabled={bulkBusy} onClick={() => setSelectedIds(documents.slice(0, 100).map((doc) => doc.id))}>
+                  <button type="button" className="text-action" disabled={bulkBusy || documents.length === 0} onClick={() => setSelectedIds(documents.slice(0, 100).map((doc) => doc.id))}>
                     {documents.length > 100 ? "Select first 100 loaded" : "Select loaded"}
                   </button>
                   {selectedIds.length > 0 && <button type="button" className="text-action" disabled={bulkBusy} onClick={() => setSelectedIds([])}>Clear selection</button>}
+                  {selectedIds.length === 0 && <p className="bulk-selection-hint">Choose documents below, or select the loaded results.</p>}
+                  <div className="bulk-action-content" hidden={selectedIds.length === 0}>
                   <select aria-label="Tag for selected documents" value={bulkTagId} disabled={bulkBusy || !filterOptions.tags.length} onChange={(event) => setBulkTagId(event.target.value)}>
                     <option value="">Choose a tag</option>
                     {tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}
@@ -1454,6 +1456,7 @@ function App() {
                       </Button>}
                     </div>
                   </details>
+                  </div>
                 </div>}
                 {bulkError && <p className="inline-error" role="alert">{bulkError}</p>}
                 {bulkNotice && <p className="bulk-notice" role="status">{bulkNotice}</p>}

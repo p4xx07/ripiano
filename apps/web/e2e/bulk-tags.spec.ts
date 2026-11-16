@@ -54,8 +54,11 @@ test("select documents and file tags, sender, and type together", async ({ page 
   const rows = titles.map((title) => page.locator(".document-row").filter({ has: page.getByRole("button", { name: title, exact: true }) }));
   for (const row of rows) await expect(row).toBeVisible();
   await page.getByRole("button", { name: "Select documents" }).click();
+  await expect(page.getByText("Choose documents below, or select the loaded results.")).toBeVisible();
+  await expect(page.locator(".bulk-action-content")).toBeHidden();
   for (const title of titles) await page.getByRole("checkbox", { name: `Select ${title}` }).check();
-  await expect(page.getByText("2 selected")).toBeVisible();
+  await expect(page.getByText("2 selected", { exact: true })).toBeVisible();
+  await expect(page.locator(".bulk-action-content")).toBeVisible();
   await page.getByRole("combobox", { name: "Tag for selected documents" }).selectOption({ label: tagName });
   await page.getByRole("button", { name: "Add tag", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: `Added ${tagName} to 2 documents.` })).toBeVisible();
@@ -66,8 +69,8 @@ test("select documents and file tags, sender, and type together", async ({ page 
   await page.getByRole("button", { name: "Remove tag", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: `Removed ${tagName} from 2 documents.` })).toBeVisible();
   for (const row of rows) await expect(row).not.toContainText(tagName);
-  await page.getByText("Change sender or document type").click();
   for (const title of titles) await page.getByRole("checkbox", { name: `Select ${title}` }).check();
+  await page.getByText("Change sender or document type").click();
   await page.getByRole("combobox", { name: "Sender for selected documents" }).selectOption({ label: senderName });
   await page.getByRole("button", { name: "Set sender" }).click();
   await expect(page.getByRole("status").filter({ hasText: `Set sender to ${senderName} for 2 documents.` })).toBeVisible();

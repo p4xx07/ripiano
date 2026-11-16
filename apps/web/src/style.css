@@ -753,6 +753,22 @@ button:disabled {
   color: var(--color-heading);
   font-size: var(--type-small);
 }
+.bulk-selection-hint {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--type-small);
+}
+.bulk-action-content {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.bulk-action-content[hidden] {
+  display: none;
+}
 .bulk-actions select {
   min-height: 42px;
   min-width: 160px;

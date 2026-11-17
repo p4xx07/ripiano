@@ -9,7 +9,8 @@ x-api-env: &api-env
   RIPIANO_DB_HOST: db
   RIPIANO_DB_NAME: ripiano
   RIPIANO_DB_USER: ripiano
-  RIPIANO_DB_PASSWORD: ${RIPIANO_DB_PASSWORD:?Set RIPIANO_DB_PASSWORD}
+  # Required (see deploy/README.md); PostgreSQL refuses to start without it.
+  RIPIANO_DB_PASSWORD: ${RIPIANO_DB_PASSWORD}
   RIPIANO_BROKER_URL: redis://broker:6379/0
   RIPIANO_MEDIA_ROOT: /data
   RIPIANO_BACKUP_ROOT: /backup
@@ -55,7 +56,7 @@ services:
     environment:
       POSTGRES_DB: ripiano
       POSTGRES_USER: ripiano
-      POSTGRES_PASSWORD: ${RIPIANO_DB_PASSWORD:?Set RIPIANO_DB_PASSWORD}
+      POSTGRES_PASSWORD: ${RIPIANO_DB_PASSWORD}
     volumes:
       - ${RIPIANO_DB_PATH:-ripiano_postgres}:/var/lib/postgresql/data
     healthcheck:

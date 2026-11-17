@@ -135,3 +135,26 @@ def test_shared_list_filters_by_shared_objects_and_grants_end_with_the_object(pe
     owner_client.delete(f"/api/tags/{house.pk}")
     assert not ObjectAccess.objects.exists()
     assert client_for(editor).get("/api/shared-filing").json()["tags"] == []
+
+@pytest.mark.django_db
+def test_shared_editor_cannot_clear_private_sender_or_type(people):
+    owner, editor, _ = people
+    private_sender = Correspondent.objects.create(owner=owner, name="Private sender")
+    private_type = DocumentType.objects.create(owner=owner, name="Private type")
+    shared_sender = Correspondent.objects.create(owner=owner, name="Shared sender")
+    shared_type = DocumentType.objects.create(owner=owner, name="Shared type")
+    document = doc(owner, correspondent=private_sender, document_type=private_type)
+    DocumentAccess.objects.create(document=document, user=editor, level=DocumentAccess.Level.EDIT)
+    owner_client = client_for(owner)
+    share(owner_client, "correspondent", shared_sender, user_id=editor.pk)
+    share(owner_client, "document_type", shared_type, user_id=editor.pk)
+    editor_client = client_for(editor)
+    url = f"/api/documents/{document.pk}"
+
+    assert editor_client.patch(url, {"correspondent_id": None}, content_type="application/json").status_code == 403
+    assert editor_client.patch(url, {"document_type_id": None}, content_type="application/json").status_code == 403
+    assert editor_client.patch(url, {"correspondent_id": str(shared_sender.pk)}, content_type="application/json").status_code == 403
+    assert editor_client.patch(url, {"document_type_id": str(shared_type.pk)}, content_type="application/json").status_code == 403
+    document.refresh_from_db()
+    assert document.correspondent_id == private_sender.pk
+    assert document.document_type_id == private_type.pk

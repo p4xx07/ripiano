@@ -871,6 +871,11 @@ def document_detail(request, document_id):
             if key not in body:
                 continue
             raw = body[key]
+            kind = "correspondent" if model is Correspondent else "document_type"
+            usable_field_ids = usable(kind)
+            current_id = getattr(document, f"{field}_id")
+            if level == document_access.EDIT and current_id is not None and current_id not in usable_field_ids:
+                return JsonResponse({"error": f"This {'sender' if kind == 'correspondent' else 'document type'} was not shared with you"}, status=403)
             if raw is None or raw == "":
                 item = None
             else:
@@ -878,9 +883,8 @@ def document_detail(request, document_id):
                     item_id = UUID(raw) if isinstance(raw, str) else None
                 except ValueError:
                     item_id = None
-                kind = "correspondent" if model is Correspondent else "document_type"
                 item = model.objects.filter(pk=item_id, owner=document.owner).first() if item_id else None
-                if item is not None and item.pk not in usable(kind):
+                if item is not None and item.pk not in usable_field_ids:
                     return JsonResponse({"error": f"This {'sender' if kind == 'correspondent' else 'document type'} was not shared with you"}, status=403)
                 if item is None:
                     return JsonResponse({"error": f"{field.replace('_', ' ').title()} not found"}, status=400)

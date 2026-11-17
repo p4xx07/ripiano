@@ -157,6 +157,9 @@ def test_breaking_change_rules():
     assert breaking_changes(old, shape({"id": 5, "tags": [], "date": None, "count": 1})) == ["$.id: type changed from ['string'] to ['integer']"]
     assert breaking_changes(old, shape({"id": "x", "tags": [{"label": "a"}], "date": None, "count": 1})) == ["$.tags[].name: field removed"]
     assert merge(shape(None), shape("2026-01-01")) == {"type": ["null", "string"]}
+    assert breaking_changes(shape({"id": "x"}), shape({"id": 1})) == ["$.id: type changed from ['string'] to ['integer']"]
+    assert breaking_changes(shape({"id": "x"}), merge(shape({"id": "x"}), shape({"id": 1}))) == ["$.id: type changed from ['string'] to ['integer', 'string']"]
+    assert breaking_changes(shape({"id": "x"}), shape({"id": None})) == ["$.id: type changed from ['string'] to ['null']"]
 
 
 @pytest.mark.django_db

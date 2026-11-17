@@ -61,9 +61,12 @@ def breaking_changes(expected, actual, path="$"):
     """Differences that would break a client written against `expected`. New fields are allowed."""
     problems = []
     # A type that was promised must still be possible; "null" alone (an optional value) does not pin a type.
-    promised = set(expected.get("type", [])) - {"null"}
+    expected_types = set(expected.get("type", []))
+    promised = expected_types - {"null"}
     seen = set(actual.get("type", []))
-    if promised and not promised & seen and seen != {"null"}:
+    # A newly observed type (including null) can break a client, even if the old type still occurs.
+    # A field observed only as null in v1 did not establish its eventual non-null type.
+    if promised and ((seen - expected_types) or (promised - seen)):
         problems.append(f"{path}: type changed from {sorted(promised)} to {sorted(seen)}")
     for key, value in expected.get("properties", {}).items():
         if "properties" in actual or "object" in seen:

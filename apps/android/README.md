@@ -10,4 +10,13 @@ Scanned PDFs are copied into a server-specific private `pending-scans` folder be
 
 Open this directory in Android Studio or run `./gradlew :app:assembleDebug` with Android SDK API 36 installed. Install `app/build/outputs/apk/debug/app-debug.apk` on an Android device for real scanner testing. Release signing and device validation remain release gates.
 
+## Sign-in gateway (Authelia)
+
+If a sign-in page protects Ripiano (for example the [Raspberry Pi gateway](../../deploy/gateway/README.md) with Authelia), enter its address under **Sign-in address** on the server screen, for example `https://auth.example.com`. Use the menu's **Change server** to add it later.
+
+- Only the Ripiano address and that sign-in address load inside the app. Every other address opens in the browser, as before.
+- The sign-in page's cookie is stored in the app, so you stay signed in (30 days with **Remember me**). Without this setting, the gateway redirect would open in the browser, whose cookies the app cannot use, and the app would keep returning to the sign-in page.
+- The scanner, uploads, and downloads stay bound to the Ripiano address; the sign-in page cannot use them.
+- Scan uploads carry the gateway cookie automatically. If the gateway session has expired, the upload is refused, the scan stays on the phone, and it is retried after you sign in again.
+
 The configured NAS must serve a certificate trusted by Android. Changing the server address does not transfer pending scans; retry them against the original archive first.

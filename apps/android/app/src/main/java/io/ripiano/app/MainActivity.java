@@ -66,6 +66,9 @@ public final class MainActivity extends ComponentActivity {
     private LinearLayout shell;
     private LinearLayout toolbar;
     private String origin;
+    // Optional sign-in gateway origin (e.g. https://auth.example.com). It may load inside the WebView so its
+    // cookie lands in the app. It never gets the scanner bridge or downloads, which stay bound to the server origin.
+    private String signInOrigin;
     private String scanOrigin;
     private ValueCallback<Uri[]> fileChoice;
 
@@ -106,6 +109,7 @@ public final class MainActivity extends ComponentActivity {
         super.onCreate(savedInstanceState);
         if (savedInstanceState != null) scanOrigin = savedInstanceState.getString("scan_origin");
         String saved = Origin.serverOrigin(getPreferences(MODE_PRIVATE).getString("server_origin", ""));
+        signInOrigin = Origin.serverOrigin(getPreferences(MODE_PRIVATE).getString("signin_origin", ""));
         if (saved == null) askForServer(); else {
             getPreferences(MODE_PRIVATE).edit().putString("server_origin", saved).apply();
             openServer(saved);
@@ -127,10 +131,22 @@ public final class MainActivity extends ComponentActivity {
         input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         input.setHint("https://ripiano.example.com");
         if (origin != null) input.setText(origin);
+        TextView signInLabel = new TextView(this);
+        signInLabel.setText("Sign-in address (optional). Only if a sign-in page such as Authelia protects Ripiano.");
+        signInLabel.setPadding(0, 16 * density(), 0, 0);
+        EditText signInInput = new EditText(this);
+        signInInput.setSingleLine(true);
+        signInInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        signInInput.setHint("https://auth.example.com");
+        signInInput.setContentDescription("Sign-in address, optional");
+        if (signInOrigin != null) signInInput.setText(signInOrigin);
         int pad = (int) (24 * getResources().getDisplayMetrics().density);
         LinearLayout holder = new LinearLayout(this);
+        holder.setOrientation(LinearLayout.VERTICAL);
         holder.setPadding(pad, 0, pad, 0);
         holder.addView(input, new LinearLayout.LayoutParams(-1, -2));
+        holder.addView(signInLabel, new LinearLayout.LayoutParams(-1, -2));
+        holder.addView(signInInput, new LinearLayout.LayoutParams(-1, -2));
         new AlertDialog.Builder(this)
                 .setTitle("Connect to Ripiano")
                 .setMessage("Enter the HTTPS address of your Ripiano archive on the NAS.")
@@ -138,11 +154,18 @@ public final class MainActivity extends ComponentActivity {
                 .setCancelable(false)
                 .setPositiveButton("Connect", (dialog, which) -> {
                     String address = Origin.serverOrigin(input.getText().toString());
+                    String signInText = signInInput.getText().toString().trim();
+                    String signIn = signInText.isEmpty() ? null : Origin.serverOrigin(signInText);
                     if (address == null) {
                         Toast.makeText(this, "Enter an HTTPS origin without a path", Toast.LENGTH_LONG).show();
                         askForServer();
+                    } else if (!signInText.isEmpty() && signIn == null) {
+                        Toast.makeText(this, "Enter the sign-in address as an HTTPS origin without a path, or leave it empty", Toast.LENGTH_LONG).show();
+                        askForServer();
                     } else {
-                        getPreferences(MODE_PRIVATE).edit().putString("server_origin", address).apply();
+                        signInOrigin = address.equals(signIn) ? null : signIn;
+                        getPreferences(MODE_PRIVATE).edit().putString("server_origin", address)
+                                .putString("signin_origin", signInOrigin == null ? "" : signInOrigin).apply();
                         openServer(address);
                     }
                 }).show();
@@ -196,7 +219,7 @@ public final class MainActivity extends ComponentActivity {
         webView.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri target = request.getUrl();
-                if (origin.equals(Origin.originOfUrl(target.toString()))) return false;
+                if (Origin.allowedInApp(target.toString(), origin, signInOrigin)) return false;
                 if ("https".equals(target.getScheme())) startActivity(new Intent(Intent.ACTION_VIEW, target));
                 return true;
             }

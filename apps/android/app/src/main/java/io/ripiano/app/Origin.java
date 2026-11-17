@@ -14,6 +14,16 @@ final class Origin {
         } catch (Exception ignored) { return null; }
     }
 
+    /**
+     * Whether a navigation may stay inside the app: the Ripiano server, or the optional sign-in
+     * gateway (for example Authelia in front of Ripiano). Everything else opens in the browser.
+     */
+    static boolean allowedInApp(String url, String server, String signIn) {
+        String target = originOfUrl(url);
+        if (target == null) return false;
+        return target.equals(server) || (signIn != null && target.equals(signIn));
+    }
+
     static String originOfUrl(String value) {
         try {
             URI uri = new URI(value.trim());

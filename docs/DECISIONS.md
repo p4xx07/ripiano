@@ -30,6 +30,17 @@ Ripiano finds passages; the MCP client's own model writes answers. Ripiano does 
 5. MCP tool `semantic_search` returning passages with document IDs, enforcing each agent grant's scopes and document filters.
 6. No LangChain/LlamaIndex: pgvector + simple chunking is enough for one personal archive.
 
+**Measured 2026-11-17 — waiting for the owner's decision before building:**
+
+| Item | Measurement (Apple Silicon, one thread; the DS923+ CPU is slower) |
+| --- | --- |
+| fastembed packages (onnxruntime, numpy, tokenizers, huggingface-hub, …) | about 146 MB installed (onnxruntime alone 80 MB) |
+| Smallest multilingual model offered by fastembed (`paraphrase-multilingual-MiniLM-L12-v2`, 384 dimensions) | 240 MB download; multilingual-e5-small is not offered |
+| RAM with the model loaded | about **780 MB**, independent of batch size |
+| Speed | about 100 passages of ~1,200 characters in 2.6 s (expect roughly 3–5× slower on the NAS) |
+
+The RAM figure is much higher than the earlier ~300 MB estimate; on a 4 GB DS923+ that is significant next to PostgreSQL, OCR, and other services. Search queries also need the model, so it cannot simply be loaded only during indexing without slow first searches.
+
 **Constraint — the NAS must not get bloated or slow.** The NAS is a Synology DS923+ (4 GB RAM by default, no GPU). Run initial indexing at low priority in small batches. Measure image size, RAM, and indexing time, and record them in the docs. If any part of this work makes the NAS noticeably heavier or slower, stop and report it to the owner before continuing; the owner decides how to avoid it.
 
 ## D3 — External access gateway on the Raspberry Pi (2026-11-17) — In progress
@@ -57,9 +68,9 @@ Deliverables (written and tested locally on 2026-11-17, not yet deployed on the 
 
 Local test: the gateway ran with `traefik:v3.5.3` and `authelia/authelia:4.39.4` and a stand-in backend; every routing and bypass rule behaved as intended (see "What was tested" in the gateway README). The test found and fixed one bug: indented multi-line Traefik rules keep their line breaks in YAML and are rejected. Still to verify on the real setup: Let's Encrypt issuance, a full Authelia sign-in with TOTP, the Android app on a phone, and pinning image digests.
 
-**Ripiano Android change — Done (uncommitted):** the server screen has an optional **Sign-in address**. That origin may load inside the WebView (`Origin.allowedInApp`), so the Authelia cookie stays in the app; all other origins still open externally, and the scanner bridge and downloads stay bound to the Ripiano origin. Unit tests in `OriginTest`; debug APK builds. Needs a real-phone check behind the gateway.
+**Ripiano Android change — Done (`f05a9f3`):** the server screen has an optional **Sign-in address**. That origin may load inside the WebView (`Origin.allowedInApp`), so the Authelia cookie stays in the app; all other origins still open externally, and the scanner bridge and downloads stay bound to the Ripiano origin. Unit tests in `OriginTest`; debug APK builds. Needs a real-phone check behind the gateway.
 
-## D4 — S3 import (2026-11-17) — Done (uncommitted)
+## D4 — S3 import (2026-11-17) — Done (`d1bc2c8`)
 
 - An optional input adapter using the shared ingestion contract in [ARCHITECTURE.md](ARCHITECTURE.md) (same path as the watched folder and Telegram).
 - Any S3-compatible service; develop and test against MinIO.
@@ -77,7 +88,7 @@ Local test: the gateway ran with `traefik:v3.5.3` and `authelia/authelia:4.39.4`
 
 In the owner's suggested order:
 
-1. ~~Task controls (cancel/requeue) for background jobs other than backups and NAS browse copies.~~ Done 2026-11-17 (uncommitted): Background jobs section on Overview; see README "Overview".
+1. ~~Task controls (cancel/requeue) for background jobs other than backups and NAS browse copies.~~ Done 2026-11-17 (`1aa3872`): Background jobs section on Overview; see README "Overview".
 2. Permissions on tags, senders, types, and saved views.
 3. API request/response body schemas in `/api/schema.json` and a versioned compatibility test suite.
 4. Italian translation of the remaining screens and API messages.

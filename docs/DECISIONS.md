@@ -93,7 +93,7 @@ Local test: the gateway ran with `traefik:v3.5.3` and `authelia/authelia:4.39.4`
 - Known limitation: a Google OAuth app left in "Testing" status gets refresh tokens that expire after 7 days. Tell the owner before building it.
 - After-import behavior (leave the file or move it to an "Imported" folder) is not decided yet; ask.
 
-## D6 — Sources: external storage set up in the app (2026-11-17) — In progress
+## D6 — Sources: external storage set up in the app (2026-11-17) — Done (`59b67f5` … `fb0f2e7`)
 
 The owner wants external storage to work like Synology Hyper Backup destinations: log in to the service inside Ripiano, choose a folder with filters and a recursive option, and Ripiano uses it as an input channel. Telegram must work the same way: paste the bot token in Ripiano, and files sent to the bot become documents. No Compose profiles or environment variables for inputs.
 

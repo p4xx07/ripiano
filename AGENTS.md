@@ -3,7 +3,7 @@
 Read these before starting work in this repository:
 
 1. [docs/DECISIONS.md](docs/DECISIONS.md) — decisions agreed with the owner (AI via MCP only, RAG, gateway on the Raspberry Pi, S3/Drive import) and the remaining work list. It overrides older planning text where they conflict.
-2. The newest `docs/HANDOFF_*.md` — how to run the tests, the local stack, and browser journeys.
+2. [docs/HANDOFF_2026-11-17.md](docs/HANDOFF_2026-11-17.md) — current state, verification, and release blockers.
 3. [docs/FEATURE_PARITY.md](docs/FEATURE_PARITY.md) and [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) — the parity contract and gates.
 
 Rules:

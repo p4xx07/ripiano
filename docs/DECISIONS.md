@@ -6,9 +6,11 @@ Status keys: **Agreed** (decided, not started), **In progress**, **Done** (link 
 
 ## Status snapshot — 2026-11-17
 
-- Branch `codex/initial-implementation` (draft PR #1). Do not merge into `main` until every parity row is verified and the 9.5 judge score is reached (see [QUALITY_JUDGES.md](QUALITY_JUDGES.md)).
-- Roughly 85% of [FEATURE_PARITY.md](FEATURE_PARITY.md) is implemented (counting partial rows as half); 0 rows are verified for R4.
-- Latest slices: `0640042` hide Library batch controls until a document is selected; `bbe32e3` "Unlock PDFs" workflow action (password removal). The unlock action still needs a live-browser run and an independent review in `.omo/evidence/`.
+- Branch `codex/initial-implementation` (draft PR #1), at `76774b3` before this handoff update. The five items in "Remaining work that needs no further decision" are implemented; their rows and individual decision statuses below are the source of truth. This snapshot does not claim R4 parity or a release score.
+- Sources are configured in the app: S3-compatible storage, WebDAV, NAS folders, the built-in consume folder, Google Drive, OneDrive, Dropbox, and Telegram. Cloud connections and Telegram still need real-account validation; the consume folder needs deployment validation on the NAS.
+- Semantic search is optional and off by default. The Library currently shows separate "Related by meaning" results; merging them into the main Library ranking is open. The NAS embedder's measured memory cost is about 780 MB with its model loaded, so the owner must opt in.
+- The latest slices after `bbe32e3` added Sources and cloud drives, optional semantic search, object sharing, API v1 body contracts, full English/Italian screen coverage, keyboard shortcuts, and an accessibility pass. They need the independent review described in [HANDOFF_2026-11-17.md](HANDOFF_2026-11-17.md).
+- Release gates remain: independent review and fixes, real-device and NAS checks, published images, and row-by-row R4 parity verification under [QUALITY_JUDGES.md](QUALITY_JUDGES.md). Do not merge into `main` until those gates are met.
 
 ## D1 — AI goes through MCP only (2026-11-17) — Agreed
 

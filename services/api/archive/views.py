@@ -13,7 +13,7 @@ from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import IntegrityError, connection, transaction
-from django.db.models import BigIntegerField, BooleanField, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, Value, prefetch_related_objects
+from django.db.models import BigIntegerField, BooleanField, Case, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, Value, When, prefetch_related_objects
 from django.db.models.functions import Cast, Lower, Substr
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
@@ -42,6 +42,11 @@ SHARED_EDIT_FIELDS = {"title", "document_date", "action_status", "action_due_dat
                       # Filing with the owner's tags, senders, and types that were shared with the recipient.
                       "correspondent_id", "document_type_id", "add_tag_id", "tags"}
 LIBRARY_SORTS = {"relevance", "newest", "oldest", "document_newest", "document_oldest", "title_asc", "title_desc"}
+HYBRID_KEYWORD_LIMIT = 50
+HYBRID_SEMANTIC_LIMIT = 10
+HYBRID_MIN_SIMILARITY = 0.3
+HYBRID_RRF_K = 60
+HYBRID_SCORE_SCALE = 1_000_000_000
 
 
 def _tag_subtree_ids(owner, root_id):
@@ -102,6 +107,18 @@ def _read_page_cursor(raw, owner, query, view, filters, sort):
         score = int(value["score"]) if sort == "relevance" and view == "search" else None
         if score is not None and score < 0:
             raise ValueError
+        hybrid = value.get("hybrid", False)
+        if not isinstance(hybrid, bool):
+            raise ValueError
+        hybrid_score = int(value["hybrid_score"]) if hybrid else None
+        if hybrid_score is not None and hybrid_score < 0:
+            raise ValueError
+        raw_semantic_ids = value.get("semantic_ids", []) if hybrid else []
+        if not isinstance(raw_semantic_ids, list) or len(raw_semantic_ids) > HYBRID_SEMANTIC_LIMIT:
+            raise ValueError
+        semantic_ids = [UUID(item) for item in raw_semantic_ids]
+        if len(semantic_ids) != len(set(semantic_ids)):
+            raise ValueError
         sort_value = value.get("sort_value")
         if sort in {"title_asc", "title_desc"} and not isinstance(sort_value, str):
             raise ValueError
@@ -110,18 +127,20 @@ def _read_page_cursor(raw, owner, query, view, filters, sort):
         counts = value["counts"]
         if not isinstance(counts, dict) or not all(isinstance(counts.get(key), int) and counts[key] >= 0 for key in ("total", "ready", "waiting")):
             raise ValueError
-        return created_at, document_id, due_date, score, sort_value, counts
+        return created_at, document_id, due_date, score, hybrid_score, sort_value, counts, hybrid, semantic_ids
     except (signing.BadSignature, KeyError, TypeError, ValueError, OverflowError) as exc:
         raise ValueError("Invalid page cursor") from exc
 
 
-def _next_page_cursor(document, owner, query, view, filters, sort, counts):
+def _next_page_cursor(document, owner, query, view, filters, sort, counts, hybrid=False, semantic_ids=()):
     sort_value = document.sort_title if sort in {"title_asc", "title_desc"} else document.document_date.isoformat() if sort in {"document_newest", "document_oldest"} and document.document_date else None
     return signing.dumps({
-        "owner": str(owner.pk), "query": query, "view": view, "filters": filters, "sort": sort,
+        "owner": str(owner.pk), "query": query, "view": view, "filters": filters, "sort": sort, "hybrid": hybrid,
         "created_at": (document.trashed_at if view == "trash" else document.created_at).isoformat(), "id": str(document.id),
         "due_date": document.action_due_date.isoformat() if document.action_due_date else None,
         "score": int(getattr(document, "search_score", 0)) if sort == "relevance" and view == "search" else None,
+        "hybrid_score": int(document.hybrid_score) if hybrid else None,
+        "semantic_ids": [str(item) for item in semantic_ids] if hybrid else [],
         "sort_value": sort_value,
         "counts": counts,
     }, salt=CURSOR_SALT)
@@ -468,10 +487,19 @@ def documents(request):
             sort = requested_sort or ("relevance" if free_query else "newest")
             if sort == "relevance" and not free_query:
                 return JsonResponse({"error": "Relevance needs search text"}, status=400)
+        cursor_raw = request.GET.get("cursor")
+        cursor_state = None
+        if cursor_raw:
+            try:
+                cursor_state = _read_page_cursor(cursor_raw, request.user, query, view, filters, sort)
+            except ValueError:
+                return JsonResponse({"error": "Invalid page cursor"}, status=400)
         if view == "actions":
             queryset = queryset.filter(action_status=Document.ActionStatus.OPEN)
         elif view == "exceptions":
             queryset = queryset.filter(Q(status=Document.Status.FAILED) | Q(duplicate_of__isnull=False, duplicate_of__trashed_at__isnull=True, duplicate_reviewed_at__isnull=True))
+        # Preserve the owner/metadata filters before keyword matching so semantic-only hits obey them too.
+        filtered_queryset = queryset
         if free_query:
             queryset = queryset.annotate(
                 tag_match=Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=free_query)),
@@ -488,8 +516,54 @@ def documents(request):
                 ).filter(Q(search_vector=search_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
             else:
                 queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
+        hybrid = False
+        semantic_ids = []
+        eligible_for_hybrid = (view == "search" and sort == "relevance" and not shared and requested_view in (None, "documents")
+                               and len(free_query) >= 3 and not re.search(r"\b\w+:", query))
+        if eligible_for_hybrid:
+            from . import semantic
+
+            if semantic.enabled() and semantic.storage_ready() and (cursor_state is None or cursor_state[7]):
+                keyword_queryset = queryset
+                keyword_order = ("-search_score", "-created_at", "-id") if connection.vendor == "postgresql" else ("-created_at", "-id")
+                keyword_ids = list(keyword_queryset.order_by(*keyword_order).values_list("pk", flat=True)[:HYBRID_KEYWORD_LIMIT])
+                passages = None
+                if cursor_state is not None:
+                    semantic_ids = cursor_state[8]  # signed first-page candidates; do not call the model again
+                else:
+                    try:
+                        passages = semantic.search(request.user, free_query, allowed=filtered_queryset, limit=HYBRID_SEMANTIC_LIMIT)
+                    except semantic.SemanticError:
+                        passages = None  # The Mac/embedder may be off; ordinary keyword search still works.
+                    if passages is not None:
+                        candidate_ids = [UUID(item["document"]["id"]) for item in passages if item["similarity"] >= HYBRID_MIN_SIMILARITY]
+                        # Recheck against the exact Library filters even if a search backend changes its candidate behavior.
+                        semantic_ids = list(filtered_queryset.filter(pk__in=candidate_ids).values_list("pk", flat=True))
+                        semantic_ids.sort(key=lambda item: candidate_ids.index(item))
+                if cursor_state is not None or passages is not None:
+                    ranks = {}
+                    for rank, doc_id in enumerate(keyword_ids, 1):
+                        # Keep an exact keyword hit ahead of a semantic-only hit at the same RRF rank.
+                        ranks[doc_id] = int(HYBRID_SCORE_SCALE / (HYBRID_RRF_K + rank)) + 1
+                    for rank, doc_id in enumerate(semantic_ids, 1):
+                        ranks[doc_id] = ranks.get(doc_id, 0) + int(HYBRID_SCORE_SCALE / (HYBRID_RRF_K + rank))
+                    queryset = filtered_queryset.filter(Q(pk__in=keyword_queryset.values("pk")) | Q(pk__in=semantic_ids))
+                    if connection.vendor == "postgresql":
+                        vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
+                        queryset = queryset.annotate(search_score=Cast(SearchRank(vector, SearchQuery(free_query, search_type="plain", config="simple")) * 1000000, BigIntegerField()))
+                    else:
+                        queryset = queryset.annotate(search_score=Value(0, output_field=BigIntegerField()))
+                    queryset = queryset.annotate(hybrid_score=Case(
+                        *(When(pk=doc_id, then=Value(score)) for doc_id, score in ranks.items()),
+                        default=Value(0), output_field=BigIntegerField(),
+                    ))
+                    hybrid = True
+        if cursor_state is not None and cursor_state[7] != hybrid:
+            return JsonResponse({"error": "Search mode changed. Run the search again."}, status=409)
         if view == "actions":
             queryset = queryset.order_by(F("action_due_date").asc(nulls_last=True), "-created_at", "-id")
+        elif hybrid:
+            queryset = queryset.order_by("-hybrid_score", "-search_score", "-created_at", "-id")
         elif sort == "relevance" and connection.vendor == "postgresql":
             queryset = queryset.order_by("-search_score", "-created_at", "-id")
         elif sort == "oldest":
@@ -507,12 +581,8 @@ def documents(request):
         else:
             queryset = queryset.order_by("-created_at", "-id")
 
-        cursor_raw = request.GET.get("cursor")
-        if cursor_raw:
-            try:
-                created_at, document_id, due_date, score, sort_value, counts = _read_page_cursor(cursor_raw, request.user, query, view, filters, sort)
-            except ValueError:
-                return JsonResponse({"error": "Invalid page cursor"}, status=400)
+        if cursor_state is not None:
+            created_at, document_id, due_date, score, hybrid_score, sort_value, counts, _, _ = cursor_state
             older = Q(created_at__lt=created_at) | Q(created_at=created_at, id__lt=document_id)
             newer = Q(created_at__gt=created_at) | Q(created_at=created_at, id__gt=document_id)
             if view == "actions":
@@ -520,6 +590,9 @@ def documents(request):
                     queryset = queryset.filter(Q(action_due_date__isnull=True) & older)
                 else:
                     queryset = queryset.filter(Q(action_due_date__gt=due_date) | Q(action_due_date__isnull=True) | (Q(action_due_date=due_date) & older))
+            elif hybrid:
+                queryset = queryset.filter(Q(hybrid_score__lt=hybrid_score) | (Q(hybrid_score=hybrid_score) &
+                    (Q(search_score__lt=score) | (Q(search_score=score) & older))))
             elif sort == "relevance" and connection.vendor == "postgresql":
                 queryset = queryset.filter(Q(search_score__lt=score) | (Q(search_score=score) & older))
             elif sort == "oldest":
@@ -553,7 +626,7 @@ def documents(request):
             prefetch_related_objects(visible, Prefetch("custom_values", queryset=CustomFieldValue.objects.filter(field__owner=request.user, value__icontains=snippet_query).select_related("field"), to_attr="matching_custom_fields"))
         return JsonResponse({
             "documents": [_document_json(doc, query=snippet_query, access=("edit" if doc.can_edit else "view") if shared else "owner") for doc in visible],
-            "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, sort, counts) if len(page) > 50 else None,
+            "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, sort, counts, hybrid, semantic_ids) if len(page) > 50 else None,
             "counts": counts,
         })
 

@@ -422,7 +422,7 @@ Drop files into the consume folder and Ripiano imports them by itself, like Pape
 Watched folders are sources too (see **Sources** below). Mount one NAS folder into Ripiano with `RIPIANO_SOURCES_PATH` (default `/volume1/docker/ripiano/sources`; Ripiano runs as UID 10001 and needs read access, plus write access if a source moves or deletes imported files). Then, as the archive owner, add **Folder on the NAS** sources in the app for any subfolder of it, for example the folder your scanner saves to, each with its own filters and after-import action.
 ### Optional semantic search
 
-**Off by default; Ripiano works fully without it.** When on, the Library shows **Related by meaning** above the normal results for plain-language searches, and MCP agents with OCR-text permission get a `semantic_search` tool that returns the passages most related to a question, so the agent's own model can answer. Ripiano never generates answers and never calls a paid AI provider.
+**Off by default; Ripiano works fully without it.** When on, plain-language searches in the Library combine keyword and meaning matches in one ranked list. A document found both ways ranks higher; semantic-only matches appear in the same list when similarity is at least 0.3. Field searches and explicit date/title sorts keep their normal behavior. If the model computer is unavailable, the Library still returns keyword results. MCP agents with OCR-text permission keep a `semantic_search` tool that returns passages for the agent's own model to answer from. Ripiano never generates answers and never calls a paid AI provider.
 
 Turn it on as the archive owner under **Agents → Search by meaning**, choosing where the model runs:
 

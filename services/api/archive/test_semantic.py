@@ -225,3 +225,88 @@ def test_database_without_pgvector_refuses_clearly_and_stays_off(owner, monkeypa
     refused = enable(client)
     assert refused.status_code == 409 and "pgvector/pgvector:pg17" in refused.json()["error"]
     assert SemanticSettings.current().mode == "off"
+
+@pytest.mark.django_db
+def test_library_hybrid_includes_semantic_only_documents_and_respects_filters(vectors, owner, monkeypatch):
+    monkeypatch.setattr("archive.tasks.semantic_index.delay", lambda: None)
+    keyword = doc(owner, "Electricity bill", "Current electricity charge")
+    related = doc(owner, "Power invoice", "Amount to pay in April")
+    excluded = doc(owner, "Another power invoice", "Different account")
+    weak = doc(owner, "Old receipt", "Miscellaneous paper")
+    chosen = Tag.objects.create(owner=owner, name="Home")
+    DocumentTag.objects.create(document=keyword, tag=chosen)
+    DocumentTag.objects.create(document=related, tag=chosen)
+    DocumentTag.objects.create(document=weak, tag=chosen)
+    client = Client()
+    client.force_login(owner)
+    assert enable(client).status_code == 200
+    calls = []
+
+    def related_passages(_owner, query, *, allowed, limit):
+        calls.append((query, limit))
+        return [{"document": {"id": str(item.pk), "title": item.title}, "passage": item.extracted_text, "similarity": score}
+                for item, score in ((related, 0.8), (excluded, 0.7), (weak, 0.2))]
+
+    monkeypatch.setattr(semantic, "search", related_passages)
+    result = client.get("/api/documents", {"q": "electricity", "tag_id": str(chosen.pk)}).json()
+    assert [item["id"] for item in result["documents"]] == [str(keyword.pk), str(related.pk)]
+    assert result["counts"]["total"] == 2
+    assert calls == [("electricity", 10)]
+    assert [item["id"] for item in client.get("/api/documents", {"q": "electricity", "sort": "newest"}).json()["documents"]] == [str(keyword.pk)]
+    client.patch("/api/semantic-settings", {"mode": "off"}, content_type="application/json")
+    assert [item["id"] for item in client.get("/api/documents", {"q": "electricity"}).json()["documents"]] == [str(keyword.pk)]
+
+
+@pytest.mark.django_db
+def test_library_hybrid_falls_back_to_keywords_when_embedder_is_down(vectors, owner, monkeypatch):
+    monkeypatch.setattr("archive.tasks.semantic_index.delay", lambda: None)
+    keyword = doc(owner, "Electricity bill", "Current electricity charge")
+    client = Client()
+    client.force_login(owner)
+    assert enable(client).status_code == 200
+
+    def unavailable(*args, **kwargs):
+        raise semantic.SemanticError("Embedding computer is offline")
+
+    monkeypatch.setattr(semantic, "search", unavailable)
+    result = client.get("/api/documents", {"q": "electricity"})
+    assert result.status_code == 200
+    assert [item["id"] for item in result.json()["documents"]] == [str(keyword.pk)]
+
+@pytest.mark.django_db
+def test_library_hybrid_cursor_pages_without_duplicates(vectors, owner, monkeypatch):
+    monkeypatch.setattr("archive.tasks.semantic_index.delay", lambda: None)
+    keyword_docs = [doc(owner, f"Electricity bill {index:02d}", "Electricity charge") for index in range(55)]
+    related = doc(owner, "Power invoice", "Amount due in April")
+    client = Client()
+    client.force_login(owner)
+    assert enable(client).status_code == 200
+    monkeypatch.setattr(semantic, "search", lambda *_args, **_kwargs: [
+        {"document": {"id": str(related.pk), "title": related.title}, "passage": "Amount due", "similarity": 0.8}
+    ])
+    first = client.get("/api/documents", {"q": "electricity"}).json()
+    assert first["counts"]["total"] == 56 and len(first["documents"]) == 50 and first["next_cursor"]
+    def offline(*args, **kwargs):
+        raise AssertionError("A later page must reuse the signed semantic candidates without calling the model")
+    monkeypatch.setattr(semantic, "search", offline)
+    second = client.get("/api/documents", {"q": "electricity", "cursor": first["next_cursor"]}).json()
+    all_ids = [item["id"] for item in first["documents"] + second["documents"]]
+    assert len(all_ids) == len(set(all_ids)) == 56
+    assert {str(item.pk) for item in keyword_docs} | {str(related.pk)} == set(all_ids)
+    assert second["next_cursor"] is None
+
+@pytest.mark.django_db
+def test_library_hybrid_ranks_a_document_found_both_ways_first(vectors, owner, monkeypatch):
+    monkeypatch.setattr("archive.tasks.semantic_index.delay", lambda: None)
+    keyword_only = doc(owner, "Electricity bill", "Current charge")
+    both = doc(owner, "Electricity invoice", "Amount due")
+    semantic_only = doc(owner, "Power statement", "Payment due")
+    client = Client()
+    client.force_login(owner)
+    assert enable(client).status_code == 200
+    monkeypatch.setattr(semantic, "search", lambda *_args, **_kwargs: [
+        {"document": {"id": str(semantic_only.pk), "title": semantic_only.title}, "passage": "Payment due", "similarity": 0.9},
+        {"document": {"id": str(both.pk), "title": both.title}, "passage": "Amount due", "similarity": 0.8},
+    ])
+    result = client.get("/api/documents", {"q": "electricity"}).json()
+    assert [item["id"] for item in result["documents"]] == [str(both.pk), str(semantic_only.pk), str(keyword_only.pk)]

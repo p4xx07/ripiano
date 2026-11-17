@@ -8,7 +8,7 @@ Status keys: **Agreed** (decided, not started), **In progress**, **Done** (link 
 
 - Branch `codex/initial-implementation` (draft PR #1), at `76774b3` before this handoff update. The five items in "Remaining work that needs no further decision" are implemented; their rows and individual decision statuses below are the source of truth. This snapshot does not claim R4 parity or a release score.
 - Sources are configured in the app: S3-compatible storage, WebDAV, NAS folders, the built-in consume folder, Google Drive, OneDrive, Dropbox, and Telegram. Cloud connections and Telegram still need real-account validation; the consume folder needs deployment validation on the NAS.
-- Semantic search is optional and off by default. The Library currently shows separate "Related by meaning" results; merging them into the main Library ranking is open. The NAS embedder's measured memory cost is about 780 MB with its model loaded, so the owner must opt in.
+- Semantic search is optional and off by default. Plain-language Library searches now merge keyword and meaning hits into one ranking when semantic search is on; field searches and other sorts stay keyword-based. The NAS embedder's measured memory cost is about 780 MB with its model loaded, so the owner must opt in.
 - The latest slices after `bbe32e3` added Sources and cloud drives, optional semantic search, object sharing, API v1 body contracts, full English/Italian screen coverage, keyboard shortcuts, and an accessibility pass. They need the independent review described in [HANDOFF_2026-11-17.md](HANDOFF_2026-11-17.md).
 - Release gates remain: independent review and fixes, real-device and NAS checks, published images, and row-by-row R4 parity verification under [QUALITY_JUDGES.md](QUALITY_JUDGES.md). Do not merge into `main` until those gates are met.
 
@@ -37,9 +37,9 @@ Ripiano finds passages; the MCP client's own model writes answers. Ripiano does 
 - Settings card under **Agents → Search by meaning** (archive owner): Off (default) / Ollama on another computer / On the NAS, optional model name, and "keep the model loaded" (off = unload after 10 idle minutes).
 - One code path: Ripiano calls an Ollama-compatible `POST /api/embed` endpoint. The NAS option is the `embedder` Compose service (`manage.py semantic_embedder`), which installs the hash-pinned `semantic-requirements.txt` into its own volume on first start, so the Ripiano image does not grow. The API process never loads a model.
 - pgvector is created only when the feature is switched on; the Postgres image is `RIPIANO_DB_IMAGE` (default unchanged). On a database without pgvector, enabling is refused with instructions and everything else keeps working (full suite verified on plain postgres:17.6).
-- Library "Related by meaning" (top 5, similarity ≥ 0.3) and MCP `semantic_search` (scope `documents:text`, grant filter applied).
+- Library hybrid ranking (keyword and meaning hits merged with reciprocal rank fusion, similarity ≥ 0.3) and MCP `semantic_search` (scope `documents:text`, grant filter applied).
 - Verified end to end with the real model on pgvector: 3 of 4 bilingual test questions ranked the right document first; first model load 17.5 s.
-- Not done: merging meaning results into the main Library ranking (hybrid ranking); measuring on the DS923+ itself.
+- Still not measured on the DS923+ itself; a real NAS performance check remains an R4 gate.
 
 **Measured 2026-11-17 (before building):**
 

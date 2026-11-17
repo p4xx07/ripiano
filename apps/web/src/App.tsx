@@ -60,7 +60,7 @@ import BundlePanel from "./BundlePanel";
 import OverviewPanel from "./OverviewPanel";
 import SourcesPanel from "./SourcesPanel";
 import KeyboardHelp from "./KeyboardHelp";
-import SemanticPanel, { MeaningResults } from "./SemanticPanel";
+import SemanticPanel from "./SemanticPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
 import SavedSearchBar from "./SavedSearchBar";
@@ -539,6 +539,7 @@ function App() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [counts, setCounts] = useState({ total: 0, ready: 0, waiting: 0 });
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [semanticAvailable, setSemanticAvailable] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("");
@@ -912,9 +913,19 @@ function App() {
 
   useEffect(() => {
     if (!session?.authenticated || view !== "documents") return;
-    const timer = window.setTimeout(() => loadDocuments(query), 200);
+    let cancelled = false;
+    request<{ enabled: boolean }>("/api/semantic-search/available")
+      .then((value) => { if (!cancelled) setSemanticAvailable(value.enabled); })
+      .catch(() => { if (!cancelled) setSemanticAvailable(false); });
+    return () => { cancelled = true; };
+  }, [session?.authenticated, view]);
+
+  useEffect(() => {
+    if (!session?.authenticated || view !== "documents") return;
+    const useMeaning = semanticAvailable && query.trim().length >= 3 && !/\b\w+:/.test(query) && (!sort || sort === "relevance");
+    const timer = window.setTimeout(() => loadDocuments(query), useMeaning ? 600 : 200);
     return () => window.clearTimeout(timer);
-  }, [session?.authenticated, query, view, loadDocuments]);
+  }, [session?.authenticated, query, view, sort, semanticAvailable, loadDocuments]);
 
   useEffect(() => {
     setSelectedIds([]);
@@ -1516,8 +1527,6 @@ function App() {
                 {bulkError && <p className="inline-error" role="alert">{bulkError}</p>}
                 {bulkNotice && <p className="bulk-notice" role="status">{bulkNotice}</p>}
               </div>}
-
-              <MeaningResults query={query} onOpenDocument={(id) => void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch((cause) => setError(cause.message))} />
 
               {listError ? null : isEmpty ? (
                 <div className="empty-state">

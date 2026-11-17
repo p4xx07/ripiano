@@ -591,3 +591,24 @@ def semantic_index():
     if indexed and remaining:
         semantic_index.apply_async(countdown=5)
     return indexed
+
+
+@shared_task(name="archive.tasks.poll_storage_source", soft_time_limit=1800, time_limit=1900)
+def poll_storage_source(source_id):
+    from .storage_sources import claim, run_claimed
+
+    source = claim(source_id)
+    return run_claimed(source) if source else 0
+
+
+@shared_task(name="archive.tasks.poll_storage_sources")
+def poll_storage_sources():
+    """Every minute: queue each enabled storage source whose check interval has passed."""
+    from .storage_sources import due_sources
+
+    for source_id in due_sources():
+        try:
+            poll_storage_source.delay(str(source_id))
+        except Exception:
+            logger.exception("Queue unavailable for storage source %s", source_id)
+            return

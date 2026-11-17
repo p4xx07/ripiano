@@ -842,3 +842,74 @@ class SemanticDocument(models.Model):
     model_name = models.CharField(max_length=200)
     passages = models.PositiveIntegerField(default=0)
     indexed_at = models.DateTimeField()
+
+
+class StorageSource(models.Model):
+    """An external storage the owner connected as a document input (like a Hyper Backup destination, in reverse).
+
+    Credentials are encrypted at rest and never returned. Ripiano polls enabled sources in the background.
+    """
+
+    class Kind(models.TextChoices):
+        S3 = "s3", "S3-compatible storage"
+
+    class After(models.TextChoices):
+        KEEP = "keep", "Leave the file and remember it"
+        MOVE = "move", "Move to a processed folder"
+        DELETE = "delete", "Delete the file"
+
+    class Addressing(models.TextChoices):
+        PATH = "path", "Path style (MinIO, SeaweedFS, most self-hosted)"
+        VIRTUAL = "virtual", "Virtual-hosted (AWS S3)"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="storage_sources")
+    name = models.CharField(max_length=100)
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.S3)
+    enabled = models.BooleanField(default=True)
+    # Connection
+    endpoint = models.CharField(max_length=300)
+    region = models.CharField(max_length=50, blank=True, default="us-east-1")
+    bucket = models.CharField(max_length=100, blank=True)
+    addressing = models.CharField(max_length=10, choices=Addressing.choices, default=Addressing.PATH)
+    username = models.CharField(max_length=200, blank=True)  # S3 access key ID
+    secret = models.TextField(blank=True)  # encrypted S3 secret key
+    # What to import
+    path = models.CharField(max_length=500, blank=True)
+    recursive = models.BooleanField(default=True)
+    include_patterns = models.CharField(max_length=500, blank=True)
+    exclude_patterns = models.CharField(max_length=500, blank=True)
+    file_types = models.JSONField(default=list, blank=True)  # empty: every supported type
+    max_size_mb = models.PositiveIntegerField(default=25)
+    modified_after = models.DateField(null=True, blank=True)
+    # After import
+    after = models.CharField(max_length=10, choices=After.choices, default=After.MOVE)
+    processed_path = models.CharField(max_length=500, blank=True, default="processed/")
+    retention_days = models.PositiveIntegerField(default=30)  # for moved files; 0 keeps them
+    # Filing for imported documents
+    tags = models.ManyToManyField("Tag", blank=True, related_name="storage_sources")
+    correspondent = models.ForeignKey("Correspondent", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    document_type = models.ForeignKey("DocumentType", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    poll_minutes = models.PositiveIntegerField(default=15)
+    # Status
+    running_since = models.DateTimeField(null=True, blank=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=300, blank=True)
+    last_imported = models.PositiveIntegerField(default=0)
+    total_imported = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        constraints = [models.UniqueConstraint(Lower("name"), "owner", name="unique_storage_source_name_per_owner")]
+
+
+class StorageSourceSeen(models.Model):
+    """A file version a source already handled, so it is never imported twice (even after its document is deleted)."""
+
+    source = models.ForeignKey(StorageSource, on_delete=models.CASCADE, related_name="seen")
+    ref = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["source", "ref"], name="unique_storage_source_seen")]

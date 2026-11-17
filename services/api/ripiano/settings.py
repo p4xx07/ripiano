@@ -124,6 +124,8 @@ CELERY_TASK_ROUTES = {
     "archive.tasks.run_scheduled_workflows": {"queue": "maintenance"},
     "archive.tasks.poll_mail_account": {"queue": "maintenance"},
     "archive.tasks.semantic_index": {"queue": "maintenance"},
+    "archive.tasks.poll_storage_source": {"queue": "maintenance"},
+    "archive.tasks.poll_storage_sources": {"queue": "maintenance"},
 }
 
 RIPIANO_BACKUP_ROOT = Path(os.environ.get("RIPIANO_BACKUP_ROOT", "/backup"))

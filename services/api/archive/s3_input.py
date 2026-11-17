@@ -1,32 +1,19 @@
-"""Optional S3 bucket intake, using the same durable ingestion pipeline as other inputs.
+"""S3-compatible storage client used by storage sources (see archive/storage_sources.py).
 
-New objects under an inbox prefix are imported, then moved to ``<processed prefix><UTC date>/<name>``.
-Processed objects are deleted after a grace period (default 30 days). Nothing outside the two prefixes
-is ever touched.
-
-The client is a small AWS Signature Version 4 implementation over httpx (already a dependency), so the
-NAS image does not grow by the size of boto3/botocore. It covers exactly the calls used here:
-ListObjectsV2, GetObject, CopyObject, and DeleteObject.
+A small AWS Signature Version 4 implementation over httpx (already a dependency), so the NAS image does
+not grow by the size of boto3/botocore. It covers exactly the calls Ripiano needs: ListObjectsV2,
+GetObject, CopyObject, and DeleteObject.
 """
 
 import hashlib
 import hmac
 import logging
-import tempfile
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone as dt_timezone
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone as dt_timezone
-from pathlib import PurePosixPath
 from urllib.parse import quote, urlsplit
 
 import httpx
-from django.conf import settings
-from django.core.files import File
-from django.db import IntegrityError
-
-from .ingestion import ingest_document
-from .models import Document
-from .storage import SUPPORTED_EXTENSIONS, InvalidDocument
 
 logger = logging.getLogger(__name__)
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
@@ -130,11 +117,13 @@ class S3Client:
             raise S3Error(f"{method} refused by the bucket ({response.status_code}{' ' + code if code else ''})")
         return response
 
-    def list(self, prefix):
-        """Every object under a prefix, following continuation tokens."""
+    def list(self, prefix, recursive=True):
+        """Every object under a prefix, following continuation tokens. Not recursive: only objects directly in it."""
         token = None
         while True:
             query = {"list-type": "2", "prefix": prefix}
+            if not recursive:
+                query["delimiter"] = "/"
             if token:
                 query["continuation-token"] = token
             root = ET.fromstring(self._request("GET", query=query).content)
@@ -169,97 +158,3 @@ class S3Client:
 
     def delete(self, key):
         self._request("DELETE", key)
-
-
-@dataclass
-class S3Settings:
-    inbox: str
-    processed: str
-    retention_days: int
-
-
-def _prefix(value):
-    value = value.strip().lstrip("/")
-    return value if not value or value.endswith("/") else value + "/"
-
-
-def settings_from_env(env):
-    inbox, processed = _prefix(env.get("RIPIANO_S3_PREFIX", "inbox/")), _prefix(env.get("RIPIANO_S3_PROCESSED_PREFIX", "processed/"))
-    if not processed or inbox.startswith(processed) or processed.startswith(inbox):
-        raise S3Error("RIPIANO_S3_PREFIX and RIPIANO_S3_PROCESSED_PREFIX must not contain each other, and the processed prefix cannot be empty")
-    try:
-        days = int(env.get("RIPIANO_S3_PROCESSED_RETENTION_DAYS", "30"))
-    except ValueError as exc:
-        raise S3Error("RIPIANO_S3_PROCESSED_RETENTION_DAYS must be a whole number") from exc
-    if days < 0:
-        raise S3Error("RIPIANO_S3_PROCESSED_RETENTION_DAYS cannot be negative")
-    return S3Settings(inbox=inbox, processed=processed, retention_days=days)
-
-
-class BucketImporter:
-    def __init__(self, client, owner, config):
-        self.client, self.owner, self.config = client, owner, config
-        self.skipped = set()  # (key, etag) already reported, so logs do not repeat every pass
-
-    def source_ref(self, item):
-        return hashlib.sha256(f"{self.client.bucket}\0{item.key}\0{item.etag}".encode()).hexdigest()
-
-    def processed_key(self, item, now):
-        relative = item.key[len(self.config.inbox):]
-        return f"{self.config.processed}{now:%Y-%m-%d}/{relative}"
-
-    def _skip(self, item, reason):
-        if (item.key, item.etag) not in self.skipped:
-            logger.warning("S3 object left in place: %s (%s)", item.key, reason)
-            self.skipped.add((item.key, item.etag))
-
-    def import_new(self, now=None):
-        """Import every supported object under the inbox prefix, then move it. Returns how many were imported."""
-        now = now or datetime.now(dt_timezone.utc)
-        imported = 0
-        for item in list(self.client.list(self.config.inbox)):
-            if item.key.endswith("/"):
-                continue  # a folder marker
-            name = PurePosixPath(item.key).name
-            if PurePosixPath(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
-                self._skip(item, "unsupported file type")
-                continue
-            if item.size > settings.RIPIANO_MAX_UPLOAD_BYTES:
-                self._skip(item, "larger than the upload limit")
-                continue
-            reference = self.source_ref(item)
-            already = Document.objects.filter(owner=self.owner, source=Document.Source.S3, source_ref=reference).exists()
-            if not already:
-                try:
-                    with tempfile.TemporaryFile() as handle:
-                        self.client.download(item.key, handle, settings.RIPIANO_MAX_UPLOAD_BYTES)
-                        handle.seek(0)
-                        ingest_document(self.owner, File(handle, name=name), source=Document.Source.S3, source_ref=reference)
-                except InvalidDocument as error:
-                    self._skip(item, str(error))
-                    continue
-                except IntegrityError:
-                    # Another poller imported the same object version after the existence check.
-                    if not Document.objects.filter(owner=self.owner, source=Document.Source.S3, source_ref=reference).exists():
-                        raise
-                else:
-                    imported += 1
-                    logger.info("Imported S3 object %s", item.key)
-            # The original is durable in Ripiano before the object leaves the inbox; a crash here only repeats the move.
-            self.client.copy(item.key, self.processed_key(item, now))
-            self.client.delete(item.key)
-        return imported
-
-    def expire_processed(self, now=None):
-        """Delete processed objects older than the grace period. 0 days keeps them forever."""
-        if not self.config.retention_days:
-            return 0
-        cutoff = (now or datetime.now(dt_timezone.utc)) - timedelta(days=self.config.retention_days)
-        removed = 0
-        for item in list(self.client.list(self.config.processed)):
-            if item.last_modified < cutoff and not item.key.endswith("/"):
-                self.client.delete(item.key)
-                removed += 1
-        if removed:
-            logger.info("Deleted %d processed S3 object(s) after the grace period", removed)
-        return removed

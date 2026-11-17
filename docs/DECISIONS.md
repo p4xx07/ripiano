@@ -79,7 +79,7 @@ Local test: the gateway ran with `traefik:v3.5.3` and `authelia/authelia:4.39.4`
 
 **Ripiano Android change — Done (`f05a9f3`):** the server screen has an optional **Sign-in address**. That origin may load inside the WebView (`Origin.allowedInApp`), so the Authelia cookie stays in the app; all other origins still open externally, and the scanner bridge and downloads stay bound to the Ripiano origin. Unit tests in `OriginTest`; debug APK builds. Needs a real-phone check behind the gateway.
 
-## D4 — S3 import (2026-11-17) — Done (`d1bc2c8`)
+## D4 — S3 import (2026-11-17) — Done (`d1bc2c8`), replaced by D6 the same day
 
 - An optional input adapter using the shared ingestion contract in [ARCHITECTURE.md](ARCHITECTURE.md) (same path as the watched folder and Telegram).
 - Any S3-compatible service; develop and test against MinIO.
@@ -92,6 +92,16 @@ Local test: the gateway ran with `traefik:v3.5.3` and `authelia/authelia:4.39.4`
 - Import new files from one chosen Drive folder through the same ingestion contract, using OAuth like the existing Gmail connection (the same Google Cloud project can enable the Drive API) and the Drive changes list for incremental polling. Google Docs/Sheets are exported to PDF.
 - Known limitation: a Google OAuth app left in "Testing" status gets refresh tokens that expire after 7 days. Tell the owner before building it.
 - After-import behavior (leave the file or move it to an "Imported" folder) is not decided yet; ask.
+
+## D6 — Sources: external storage set up in the app (2026-11-17) — In progress
+
+The owner wants external storage to work like Synology Hyper Backup destinations: log in to the service inside Ripiano, choose a folder with filters and a recursive option, and Ripiano uses it as an input channel. Telegram must work the same way: paste the bot token in Ripiano, and files sent to the bot become documents. No Compose profiles or environment variables for inputs.
+
+- Done (S3): `StorageSource` model and **Sources** screen; engine in `services/api/archive/storage_sources.py` (Backend interface: `entries`, `download`, `move`, `delete`, `processed_entries`), polled every minute by `archive.tasks.poll_storage_sources` on the maintenance queue with a per-source claim. The env-based `s3_input` command and `s3` Compose profile from `d1bc2c8` were removed.
+- Each file version is recorded in `StorageSourceSeen`, so a deleted document is not re-imported. Moves happen only after the original is stored.
+- Only the archive owner may use home-network addresses; others need public `https://` endpoints.
+- Verified live against SeaweedFS through the UI: preview, filters, recursive import, move to `processed/<date>/`, no second import.
+- Next, in order: WebDAV (Nextcloud, Synology WebDAV, ownCloud), Telegram bot (token pasted in the app; replaces the `telegram` profile), watched folder (choose subfolders of a mounted root in the app), then Google Drive / OneDrive / Dropbox (need OAuth app registration by the owner).
 
 ## Remaining work that needs no further decision
 

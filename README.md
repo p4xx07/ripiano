@@ -420,18 +420,20 @@ Turn it on as the archive owner under **Agents → Search by meaning**, choosing
 - **Indexing** runs in the background on the maintenance queue, 20 documents at a time, after each new document and every 15 minutes. Changed text and a changed model are indexed again. **Test connection** checks the settings before you rely on them; the last problem is shown in the card.
 - **Quality:** the small NAS model (`paraphrase-multilingual-MiniLM-L12-v2`, Italian and English) is good but not perfect; in a four-document test it found the right document first for three of four questions. Larger models through Ollama (such as `bge-m3`) are better.
 
-### Optional S3 bucket
+### Sources (external storage)
 
-Ripiano can import files dropped into an S3-compatible bucket (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others). Fill in the `RIPIANO_S3_*` values and start `docker compose --profile s3 up -d`.
+Open **Sources** to connect a storage as a document input, much like adding a Hyper Backup destination. Ripiano checks each source on its own schedule and imports new files. Everything is set up in the app; no Compose profile or environment variable is needed.
 
-- **What happens:** every minute (`RIPIANO_S3_POLL_SECONDS`), new PDF, image, Office, and email files under `RIPIANO_S3_PREFIX` (default `inbox/`) are imported for `RIPIANO_S3_OWNER_USERNAME`. Only after the original is safely stored in Ripiano is the object moved to `<RIPIANO_S3_PROCESSED_PREFIX><date>/<name>` (default `processed/2026-11-17/…`), keeping any subfolders.
-- **Grace period:** processed objects are deleted after `RIPIANO_S3_PROCESSED_RETENTION_DAYS` (default 30) days, counted from the move. `0` keeps them forever. Nothing outside the two prefixes is ever read, moved, or deleted.
-- **Left in place:** unsupported file types and files above the 25 MB upload limit stay in the inbox and are reported in the service log.
-- **No duplicates:** each object version imports once, even if the service restarts between importing and moving it.
-- **Addressing:** MinIO, SeaweedFS, and most self-hosted servers use `RIPIANO_S3_ADDRESSING=path` (default). For AWS S3, use `virtual` with an endpoint like `https://s3.eu-south-1.amazonaws.com` and the matching `RIPIANO_S3_REGION`.
-- **Least privilege:** give Ripiano its own key that can only list the bucket, read and delete under the inbox prefix, and write, read, and delete under the processed prefix. With AWS IAM that is `s3:ListBucket` on the bucket (limited to both prefixes) plus `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on `inbox/*` and `processed/*`.
-- **Weight:** the service reuses the API image and adds no Python packages (Ripiano signs S3 requests itself), so it costs one small idle process on the NAS.
+Available now: **S3-compatible storage** (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others). WebDAV, Telegram, and the watched folder follow on the same screen.
 
-Ripiano does not create the bucket or change its settings. The S3 secret is read from the environment like the other service secrets.
+- **Connection:** address, bucket, region, address style (path style for MinIO/SeaweedFS and most self-hosted servers; virtual-hosted for AWS), access key, and secret key. The secret is stored encrypted (with `RIPIANO_MAIL_KEY` or a key derived from the server secret) and never shown again.
+- **What to import:** a folder (prefix), **Include subfolders** (recursive) or this folder only, name patterns to include and to skip (for example `fattura*` and `drafts/*`), file types (PDF, images, Office, email), the largest file size (up to the 25 MB upload limit), and an optional "changed after" date.
+- **After import:** leave the file and remember it, move it to a processed folder (`<processed folder>/<date>/<original subfolders>`, deleted after a grace period, default 30 days; 0 keeps them), or delete it. Nothing happens to a file until its original is safely stored in Ripiano.
+- **Filing:** optional tags, sender, and type for every imported document; your own later choices are never overwritten.
+- **Preview** lists what the next check would import and why other files are skipped, without downloading or changing anything. **Check now** runs a check immediately; the card shows the last check, how many files were new, and any problem.
+- **Once only:** each file version is imported once, even if its document is later deleted or the service restarts mid-move. A changed file is imported as a new document.
+- **Home network:** only the archive owner can connect storage on the home network (for example MinIO on the NAS). Other people can connect internet storage over `https://` only.
+- **Least privilege:** give Ripiano its own key that can list the bucket, read and delete under the source folder, and write, read, and delete under the processed folder. With AWS IAM that is `s3:ListBucket` (limited to both prefixes) plus `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on both prefixes.
+- **Weight:** sources run on the existing maintenance worker and add no Python packages (Ripiano signs S3 requests itself).
 
 The planning documents remain the implementation baseline. No Paperless source code is included in this repository.

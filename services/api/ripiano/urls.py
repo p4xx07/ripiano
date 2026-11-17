@@ -9,7 +9,7 @@ admin.site.login = never_cache(lambda request, extra_context=None: redirect("/")
 admin.site.has_permission = admin_has_permission
 from django.urls import path
 
-from archive import semantic_views, agent_views, learning_views, people_views, storage_path_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
+from archive import source_views, semantic_views, agent_views, learning_views, people_views, storage_path_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
 
 urlpatterns = [
     path("healthz", views.health),
@@ -75,6 +75,10 @@ urlpatterns = [
     path("api/documents/<uuid:document_id>/retry", views.retry_document),
     path("api/documents/<uuid:document_id>/cancel-processing", job_views.cancel_document_processing),
     path("api/jobs", job_views.jobs),
+    path("api/sources", source_views.sources),
+    path("api/sources/<uuid:source_id>", source_views.source_detail),
+    path("api/sources/<uuid:source_id>/preview", source_views.source_preview),
+    path("api/sources/<uuid:source_id>/run", source_views.source_run),
     path("api/semantic-settings", semantic_views.semantic_settings),
     path("api/semantic-settings/test", semantic_views.semantic_test),
     path("api/semantic-search", semantic_views.semantic_search),

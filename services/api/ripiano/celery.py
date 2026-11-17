@@ -12,6 +12,10 @@ app.autodiscover_tasks()
 
 app.conf.beat_schedule = {
     # Does nothing while semantic search is off; catches up after the embedding service was unreachable.
+    "storage-sources": {
+        "task": "archive.tasks.poll_storage_sources",
+        "schedule": 60.0,
+    },
     "semantic-index": {
         "task": "archive.tasks.semantic_index",
         "schedule": 900.0,

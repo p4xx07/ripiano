@@ -42,6 +42,7 @@ import {
   UserCog,
   Users,
   UploadCloud,
+  Cloud,
   X,
 } from "lucide-react";
 import { ApiError, CustomField, Document, FilingItem, formatDate, LibraryFilters, request, Session, Tag, tagPathLabel } from "./api";
@@ -57,6 +58,7 @@ import SharedPanel from "./SharedPanel";
 import SharedDocumentPanel from "./SharedDocumentPanel";
 import BundlePanel from "./BundlePanel";
 import OverviewPanel from "./OverviewPanel";
+import SourcesPanel from "./SourcesPanel";
 import SemanticPanel, { MeaningResults } from "./SemanticPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
@@ -571,7 +573,7 @@ function App() {
     return failed ? { kind: "error" as const, text: failed } : { kind: "ok" as const, text: connected ?? "" };
   });
   const [view, setView] = useState<
-    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations" | "workflows" | "security" | "overview" | "shared" | "people"
+    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations" | "sources" | "workflows" | "security" | "overview" | "shared" | "people"
   >(initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
@@ -1013,7 +1015,7 @@ function App() {
   const viewLabels = {
     documents: m.allDocuments, inbox: m.inbox, actions: m.needsAction, tags: m.tags,
     physical: m.physical, backups: m.backups, agents: m.agents, trash: m.trash,
-    integrations: m.email, workflows: m.workflows, security: m.security,
+    integrations: m.email, sources: "Sources", workflows: m.workflows, security: m.security,
     overview: m.overview, shared: m.shared, people: m.people,
   };
 
@@ -1093,6 +1095,9 @@ function App() {
         </button>
         <button className={`nav-link ${view === "integrations" ? "active" : ""}`} onClick={() => { setView("integrations"); setMenuOpen(false); }}>
           <Mail size={18} /> {m.email}
+        </button>
+        <button className={`nav-link ${view === "sources" ? "active" : ""}`} onClick={() => { setView("sources"); setMenuOpen(false); }}>
+          <Cloud size={18} /> Sources
         </button>
         <button className={`nav-link ${view === "shared" ? "active" : ""}`} onClick={() => { setView("shared"); setMenuOpen(false); }}>
           <Users size={18} /> {m.shared}
@@ -1195,6 +1200,8 @@ function App() {
             <SecurityPanel />
           ) : view === "workflows" ? (
             <WorkflowsPanel onOpenDocument={(id) => void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch((cause) => setError(cause.message))} />
+          ) : view === "sources" ? (
+            <SourcesPanel />
           ) : view === "integrations" ? (
             <MailPanel notice={initialMailNotice} />
           ) : view === "tags" ? (

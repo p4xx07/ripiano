@@ -59,6 +59,7 @@ import SharedDocumentPanel from "./SharedDocumentPanel";
 import BundlePanel from "./BundlePanel";
 import OverviewPanel from "./OverviewPanel";
 import SourcesPanel from "./SourcesPanel";
+import KeyboardHelp from "./KeyboardHelp";
 import SemanticPanel, { MeaningResults } from "./SemanticPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
@@ -515,6 +516,10 @@ function BackupPanel() {
   );
 }
 
+const GO_TO_VIEWS: Record<string, "documents" | "inbox" | "actions" | "tags" | "overview" | "shared" | "workflows" | "sources"> = {
+  l: "documents", i: "inbox", a: "actions", t: "tags", o: "overview", s: "shared", w: "workflows", r: "sources",
+};
+
 function App() {
   const m = useMessages(appMessages);
   const l = useMessages(libraryMessages);
@@ -558,6 +563,10 @@ function App() {
   const [nativeScanner] = useState(() => Boolean(window.RipianoAndroid));
   const [dropActive, setDropActive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  // Keyboard navigation in the Library list (j / k / Enter); -1 when nothing is highlighted.
+  const [activeRow, setActiveRow] = useState(-1);
+  const goPending = useRef(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const initialSticker =
@@ -634,15 +643,37 @@ function App() {
           focusSearchOnView.current = true;
           setView("documents");
         }
+      } else if (event.key === "?") {
+        event.preventDefault();
+        setShowShortcuts(true);
+      } else if (Date.now() - goPending.current < 1500 && event.key.toLowerCase() in GO_TO_VIEWS) {
+        // "g" then a letter: go to a screen.
+        event.preventDefault();
+        goPending.current = 0;
+        setMenuOpen(false);
+        setView(GO_TO_VIEWS[event.key.toLowerCase()]);
+      } else if (event.key.toLowerCase() === "g") {
+        goPending.current = Date.now();
       } else if (event.key.toLowerCase() === "n") {
         event.preventDefault();
         setMenuOpen(false);
         setShowAdd(true);
+      } else if (view === "documents" && (event.key === "j" || event.key === "k") && documents.length) {
+        event.preventDefault();
+        setActiveRow((row) => event.key === "j" ? Math.min(documents.length - 1, row + 1) : Math.max(0, row - 1));
+      } else if (view === "documents" && event.key === "Enter" && activeRow >= 0 && documents[activeRow]) {
+        event.preventDefault();
+        setSelectedDocument(documents[activeRow]);
       }
     }
     document.addEventListener("keydown", shortcut);
     return () => document.removeEventListener("keydown", shortcut);
-  }, [session?.authenticated, view]);
+  }, [session?.authenticated, view, documents, activeRow]);
+
+  useEffect(() => { setActiveRow(-1); }, [documents, view]);
+  useEffect(() => {
+    if (activeRow >= 0) document.querySelector(".document-row.keyboard-active")?.scrollIntoView({ block: "nearest" });
+  }, [activeRow]);
 
   const loadFilterOptions = useCallback(async () => {
     try {
@@ -683,12 +714,12 @@ function App() {
         method: "POST",
         body: JSON.stringify({ action, document_ids: selectedIds, tag_id: bulkTagId }),
       });
-      const tagName = filterOptions.tags.find((tag) => tag.id === bulkTagId)?.name ?? "tag";
-      setBulkNotice(`${action === "add" ? "Added" : "Removed"} ${tagName} ${action === "add" ? "to" : "from"} ${result.updated} documents.`);
+      const tagName = filterOptions.tags.find((tag) => tag.id === bulkTagId)?.name ?? l.tagFallback;
+      setBulkNotice(action === "add" ? l.bulkTagAdded(tagName, result.updated) : l.bulkTagRemoved(tagName, result.updated));
       setSelectedIds([]);
       await loadDocuments(query);
     } catch (cause) {
-      setBulkError(cause instanceof Error ? cause.message : "Could not update selected documents");
+      setBulkError(cause instanceof Error ? cause.message : l.bulkUpdateFailed);
     } finally {
       setBulkBusy(false);
     }
@@ -705,14 +736,15 @@ function App() {
         method: "POST",
         body: JSON.stringify({ field, document_ids: selectedIds, value_id: choice === "none" ? null : choice }),
       });
-      const label = field === "correspondent" ? "sender" : "document type";
       const options = field === "correspondent" ? filterOptions.correspondents : filterOptions.document_types;
-      const name = options.find((item) => item.id === choice)?.name;
-      setBulkNotice(`${choice === "none" ? `Cleared ${label}` : `Set ${label} to ${name ?? "the selected value"}`} for ${result.updated} documents.`);
+      const name = options.find((item) => item.id === choice)?.name ?? l.selectedValue;
+      setBulkNotice(field === "correspondent"
+        ? (choice === "none" ? l.senderCleared(result.updated) : l.senderSet(name, result.updated))
+        : (choice === "none" ? l.typeCleared(result.updated) : l.typeSet(name, result.updated)));
       setSelectedIds([]);
       await loadDocuments(query);
     } catch (cause) {
-      setBulkError(cause instanceof Error ? cause.message : "Could not update selected documents");
+      setBulkError(cause instanceof Error ? cause.message : l.bulkUpdateFailed);
     } finally {
       setBulkBusy(false);
     }
@@ -732,11 +764,11 @@ function App() {
       );
       setSelectedIds(result.skipped_ids);
       setBulkNotice(result.updated
-        ? `The local model added ${result.assignments} filing ${result.assignments === 1 ? "detail" : "details"} to ${result.updated} ${result.updated === 1 ? "document" : "documents"}.${result.skipped ? ` ${result.skipped} still selected with no new confident change.` : ""}`
-        : "No selected documents received a confident new filing detail. File a few examples yourself, then use Learn now in Tags & filing.");
+        ? l.learnedFiled(result.assignments, result.updated, result.skipped)
+        : l.learnedNone);
       if (result.updated) await loadDocuments(query);
     } catch (cause) {
-      setBulkError(cause instanceof Error ? cause.message : "Could not file selected documents with the local model");
+      setBulkError(cause instanceof Error ? cause.message : l.learnedFailed);
     } finally {
       setBulkBusy(false);
     }
@@ -752,11 +784,11 @@ function App() {
         method: "POST",
         body: JSON.stringify({ document_ids: selectedIds, document_date: clear ? null : bulkDate }),
       });
-      setBulkNotice(`${clear ? "Cleared document date" : `Set document date to ${bulkDate}`} for ${result.updated} ${result.updated === 1 ? "document" : "documents"}.`);
+      setBulkNotice(clear ? l.dateCleared(result.updated) : l.dateSet(bulkDate, result.updated));
       setSelectedIds([]);
       await loadDocuments(query);
     } catch (cause) {
-      setBulkError(cause instanceof Error ? cause.message : "Could not update document dates");
+      setBulkError(cause instanceof Error ? cause.message : l.dateFailed);
     } finally {
       setBulkBusy(false);
     }
@@ -776,11 +808,11 @@ function App() {
       );
       setSelectedIds(result.skipped_ids);
       setBulkNotice(result.scheduled
-        ? `Started OCR for ${result.scheduled} ${result.scheduled === 1 ? "document" : "documents"}.${result.skipped ? ` ${result.skipped} still selected because ${result.skipped === 1 ? "it was" : "they were"} not eligible.` : ""}`
-        : "No selected documents are eligible for this OCR action.");
+        ? l.ocrStarted(result.scheduled, result.skipped)
+        : l.ocrNone);
       if (result.scheduled) await loadDocuments(query);
     } catch (cause) {
-      setBulkError(cause instanceof Error ? cause.message : "Could not start OCR");
+      setBulkError(cause instanceof Error ? cause.message : l.ocrFailed);
     } finally {
       setBulkBusy(false);
     }
@@ -797,10 +829,10 @@ function App() {
         body: JSON.stringify({ document_ids: selectedIds }),
       });
       setSelectedIds([]);
-      setBulkNotice(`Created “${merged.title}”. The selected documents are unchanged.`);
+      setBulkNotice(l.mergeCreated(merged.title));
       await loadDocuments(query);
     } catch (cause) {
-      setBulkError(cause instanceof Error ? cause.message : "Could not merge documents");
+      setBulkError(cause instanceof Error ? cause.message : l.mergeFailed);
     } finally {
       setBulkBusy(false);
     }
@@ -818,13 +850,13 @@ function App() {
       });
       setSelectedIds([]);
       setConfirmBulkTrash(false);
-      setBulkNotice(`Moved ${result.updated} ${result.updated === 1 ? "document" : "documents"} to Trash. Restore them from Trash if needed.`);
+      setBulkNotice(l.trashMoved(result.updated));
       await loadDocuments(query);
       setTrashRefresh((value) => value + 1);
       setActionRefresh((value) => value + 1);
       setInboxRefresh((value) => value + 1);
     } catch (cause) {
-      setBulkError(cause instanceof Error ? cause.message : "Could not move documents to Trash");
+      setBulkError(cause instanceof Error ? cause.message : l.trashFailed);
     } finally {
       setBulkBusy(false);
     }
@@ -1023,7 +1055,7 @@ function App() {
   const viewLabels = {
     documents: m.allDocuments, inbox: m.inbox, actions: m.needsAction, tags: m.tags,
     physical: m.physical, backups: m.backups, agents: m.agents, trash: m.trash,
-    integrations: m.email, sources: "Sources", workflows: m.workflows, security: m.security,
+    integrations: m.email, sources: m.sources, workflows: m.workflows, security: m.security,
     overview: m.overview, shared: m.shared, people: m.people,
   };
 
@@ -1040,6 +1072,8 @@ function App() {
       }}
       onDrop={drop}
     >
+      <a className="skip-link" href="#main-content">{m.skipToContent}</a>
+      {showShortcuts && <KeyboardHelp onClose={() => setShowShortcuts(false)} />}
       <aside className={`sidebar ${menuOpen ? "sidebar-open" : ""}`}>
         <div className="sidebar-brand">
           <span className="brand-mark">
@@ -1105,7 +1139,7 @@ function App() {
           <Mail size={18} /> {m.email}
         </button>
         <button className={`nav-link ${view === "sources" ? "active" : ""}`} onClick={() => { setView("sources"); setMenuOpen(false); }}>
-          <Cloud size={18} /> Sources
+          <Cloud size={18} /> {m.sources}
         </button>
         <button className={`nav-link ${view === "shared" ? "active" : ""}`} onClick={() => { setView("shared"); setMenuOpen(false); }}>
           <Users size={18} /> {m.shared}
@@ -1161,7 +1195,7 @@ function App() {
         </button>
       </aside>
 
-      <main className="main-content">
+      <main className="main-content" id="main-content" tabIndex={-1}>
         <header className="topbar">
           <button
             className="icon-button mobile-menu"
@@ -1390,90 +1424,90 @@ function App() {
               )}
               {!listError && (!isEmpty || selectionMode || bulkNotice) && <div className="bulk-controls">
                 <button type="button" className="text-action" disabled={bulkBusy || (isEmpty && !selectionMode)} onClick={() => { setSelectionMode(!selectionMode); setSelectedIds([]); setConfirmBulkTrash(false); setBulkError(""); setBulkNotice(""); }}>
-                  {selectionMode ? "Done selecting" : "Select documents"}
+                  {selectionMode ? l.doneSelecting : l.selectDocuments}
                 </button>
                 {selectionMode && <div className="bulk-actions">
-                  <strong>{selectedIds.length} selected</strong>
+                  <strong>{l.selectedCount(selectedIds.length)}</strong>
                   <button type="button" className="text-action" disabled={bulkBusy || documents.length === 0} onClick={() => setSelectedIds(documents.slice(0, 100).map((doc) => doc.id))}>
-                    {documents.length > 100 ? "Select first 100 loaded" : "Select loaded"}
+                    {documents.length > 100 ? l.selectFirstLoaded : l.selectLoaded}
                   </button>
-                  {selectedIds.length > 0 && <button type="button" className="text-action" disabled={bulkBusy} onClick={() => setSelectedIds([])}>Clear selection</button>}
-                  {selectedIds.length === 0 && <p className="bulk-selection-hint">Choose documents below, or select the loaded results.</p>}
+                  {selectedIds.length > 0 && <button type="button" className="text-action" disabled={bulkBusy} onClick={() => setSelectedIds([])}>{l.clearSelection}</button>}
+                  {selectedIds.length === 0 && <p className="bulk-selection-hint">{l.selectionHint}</p>}
                   <div className="bulk-action-content" hidden={selectedIds.length === 0}>
-                  <select aria-label="Tag for selected documents" value={bulkTagId} disabled={bulkBusy || !filterOptions.tags.length} onChange={(event) => setBulkTagId(event.target.value)}>
-                    <option value="">Choose a tag</option>
+                  <select aria-label={l.bulkTagAria} value={bulkTagId} disabled={bulkBusy || !filterOptions.tags.length} onChange={(event) => setBulkTagId(event.target.value)}>
+                    <option value="">{l.chooseTag}</option>
                     {tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}
                   </select>
-                  <Button type="button" disabled={bulkBusy || !selectedIds.length || !bulkTagId} onClick={() => void applyBulkTag("add")}>Add tag</Button>
-                  <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTagId} onClick={() => void applyBulkTag("remove")}>Remove tag</Button>
+                  <Button type="button" disabled={bulkBusy || !selectedIds.length || !bulkTagId} onClick={() => void applyBulkTag("add")}>{l.addTag}</Button>
+                  <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTagId} onClick={() => void applyBulkTag("remove")}>{l.removeTag}</Button>
                   <details className="bulk-filing-details">
-                    <summary>Change sender or document type</summary>
+                    <summary>{l.changeFiling}</summary>
                     <div className="bulk-filing">
-                    <select aria-label="Sender for selected documents" value={bulkSenderId} disabled={bulkBusy} onChange={(event) => setBulkSenderId(event.target.value)}>
-                      <option value="">Choose sender</option>
-                      <option value="none">Clear sender</option>
+                    <select aria-label={l.bulkSenderAria} value={bulkSenderId} disabled={bulkBusy} onChange={(event) => setBulkSenderId(event.target.value)}>
+                      <option value="">{l.chooseSender}</option>
+                      <option value="none">{l.clearSender}</option>
                       {filterOptions.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                     </select>
-                    <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkSenderId} onClick={() => void applyBulkFiling("correspondent")}>Set sender</Button>
-                    <select aria-label="Document type for selected documents" value={bulkTypeId} disabled={bulkBusy} onChange={(event) => setBulkTypeId(event.target.value)}>
-                      <option value="">Choose type</option>
-                      <option value="none">Clear type</option>
+                    <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkSenderId} onClick={() => void applyBulkFiling("correspondent")}>{l.setSender}</Button>
+                    <select aria-label={l.bulkTypeAria} value={bulkTypeId} disabled={bulkBusy} onChange={(event) => setBulkTypeId(event.target.value)}>
+                      <option value="">{l.chooseType}</option>
+                      <option value="none">{l.clearType}</option>
                       {filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                     </select>
-                    <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTypeId} onClick={() => void applyBulkFiling("document_type")}>Set type</Button>
+                    <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkTypeId} onClick={() => void applyBulkFiling("document_type")}>{l.setType}</Button>
                     </div>
                   </details>
                   <details className="bulk-filing-details">
-                    <summary>File with local model</summary>
+                    <summary>{l.learnedSummary}</summary>
                     <div className="bulk-filing">
-                      <p>Try the local model on selected ready documents. It fills empty sender/type fields and adds up to 3 tags only when its confidence checks pass. Your choices stay in place. This does not turn on automatic filing for future documents.</p>
-                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkLearnedFiling()}><Brain size={16} aria-hidden="true" /> File {selectedIds.length} selected</Button>
+                      <p>{l.learnedIntro}</p>
+                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkLearnedFiling()}><Brain size={16} aria-hidden="true" /> {l.learnedButton(selectedIds.length)}</Button>
                     </div>
                   </details>
                   <details className="bulk-filing-details">
-                    <summary>Change document date</summary>
+                    <summary>{l.dateSummary}</summary>
                     <div className="bulk-filing">
-                      <input type="date" aria-label="Document date for selected documents" value={bulkDate} disabled={bulkBusy} onChange={(event) => setBulkDate(event.target.value)} />
-                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkDate} onClick={() => void applyBulkDate(false)}>Set date</Button>
-                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkDate(true)}>Clear date</Button>
+                      <input type="date" aria-label={l.bulkDateAria} value={bulkDate} disabled={bulkBusy} onChange={(event) => setBulkDate(event.target.value)} />
+                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length || !bulkDate} onClick={() => void applyBulkDate(false)}>{l.setDate}</Button>
+                      <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkDate(true)}>{l.clearDate}</Button>
                     </div>
                   </details>
                   <details className="bulk-filing-details">
-                    <summary>OCR actions</summary>
+                    <summary>{l.ocrSummary}</summary>
                     <div className="bulk-filing">
                       <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkOcr("retry")}>
-                        <RotateCcw size={16} /> Retry failed OCR
+                        <RotateCcw size={16} /> {l.retryFailedOcr}
                       </Button>
                       <Button type="button" variant="secondary" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkOcr("rebuild")}>
-                        <RotateCcw size={16} /> Rebuild searchable PDFs
+                        <RotateCcw size={16} /> {l.rebuildPdfs}
                       </Button>
                     </div>
                   </details>
                   <details className="bulk-filing-details">
-                    <summary>Merge into one PDF</summary>
+                    <summary>{l.mergeSummary}</summary>
                     <div className="bulk-filing">
-                      <p>Creates a new document with the pages of the selected documents, in this order. The originals stay as they are.</p>
-                      {selectedIds.length > 1 && <ol className="merge-order">{selectedIds.map((id) => <li key={id}>{documents.find((item) => item.id === id)?.title ?? "Selected document"}</li>)}</ol>}
+                      <p>{l.mergeIntro}</p>
+                      {selectedIds.length > 1 && <ol className="merge-order">{selectedIds.map((id) => <li key={id}>{documents.find((item) => item.id === id)?.title ?? l.selectedDocumentFallback}</li>)}</ol>}
                       <Button type="button" variant="secondary" disabled={bulkBusy || selectedIds.length < 2 || selectedIds.length > 50} onClick={() => void mergeSelected()}>
-                        <Layers size={16} /> Merge {selectedIds.length} {selectedIds.length === 1 ? "document" : "documents"}
+                        <Layers size={16} /> {l.mergeButton(selectedIds.length)}
                       </Button>
                     </div>
                   </details>
                   <BundlePanel selectedIds={selectedIds} />
                   <details className="bulk-filing-details">
-                    <summary>Export selected</summary>
+                    <summary>{l.exportSummary}</summary>
                     <div className="bulk-filing">
-                      <p>Download originals, searchable PDFs, OCR text, and metadata in one ZIP. Select up to 20 documents.</p>
-                      {selectedIds.length > 20 && <p className="inline-error">Choose 20 or fewer documents for one export.</p>}
-                      {selectedIds.length > 0 && selectedIds.length <= 20 && !bulkBusy && <a className="button button-secondary" href={`/api/documents/export?${new URLSearchParams(selectedIds.map((id) => ["document_ids", id]))}`} download="ripiano-documents.zip"><ArrowDownToLine size={16} /> Download {selectedIds.length} {selectedIds.length === 1 ? "document" : "documents"}</a>}
+                      <p>{l.exportIntro}</p>
+                      {selectedIds.length > 20 && <p className="inline-error">{l.exportTooMany}</p>}
+                      {selectedIds.length > 0 && selectedIds.length <= 20 && !bulkBusy && <a className="button button-secondary" href={`/api/documents/export?${new URLSearchParams(selectedIds.map((id) => ["document_ids", id]))}`} download="ripiano-documents.zip"><ArrowDownToLine size={16} /> {l.downloadCount(selectedIds.length)}</a>}
                     </div>
                   </details>
                   <details className="bulk-filing-details" open={confirmBulkTrash} onToggle={(event) => setConfirmBulkTrash(event.currentTarget.open)}>
-                    <summary>Move to Trash</summary>
+                    <summary>{l.trashSummary}</summary>
                     <div className="bulk-filing">
-                      <p>The selected documents will disappear from search and agent access. Originals, notes, and paper sticker history stay available for restore.</p>
+                      <p>{l.trashIntro}</p>
                       {confirmBulkTrash && <Button type="button" variant="danger" disabled={bulkBusy || !selectedIds.length} onClick={() => void applyBulkTrash()}>
-                        <Trash2 size={16} /> Confirm move of {selectedIds.length}
+                        <Trash2 size={16} /> {l.confirmTrash(selectedIds.length)}
                       </Button>}
                     </div>
                   </details>
@@ -1511,8 +1545,8 @@ function App() {
               ) : (
                 <>
                 <div className="document-list">
-                  {documents.map((doc) => (
-                    <article className="document-row" key={doc.id}>
+                  {documents.map((doc, index) => (
+                    <article className={`document-row${activeRow === index ? " keyboard-active" : ""}`} key={doc.id} aria-current={activeRow === index ? "true" : undefined}>
                       {selectionMode ? <label className="document-select">
                         <input type="checkbox" checked={selectedIds.includes(doc.id)} disabled={bulkBusy || (selectedIds.length >= 100 && !selectedIds.includes(doc.id))} onChange={() => toggleSelected(doc.id)} />
                         <span className="visually-hidden">{l.selectDocument(doc.title)}</span>

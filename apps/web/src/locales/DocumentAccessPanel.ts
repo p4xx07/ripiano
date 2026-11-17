@@ -1,0 +1,58 @@
+import { defineMessages } from "../i18n";
+
+export default defineMessages({
+  docHeading: "People with access",
+  docIntro: "Share this document with people who sign in to this Ripiano. They see it under Shared with me. Filing, files, links, and Trash stay with you.",
+  docEmpty: "Only you can open this document.",
+  docEditLabel: "Can edit details",
+  docRemoved: "can no longer open this document.",
+  docGranted: "view and edit details",
+  canView: "Can view",
+  loadError: "Could not load who can open this document",
+  changeError: "Could not change access",
+  nowCan: (who: string | undefined, group: boolean, edit: boolean, granted: string) =>
+    `${who ?? "They"} ${group ? "members " : ""}can now ${edit ? granted : "view"}.`,
+  manage: "Manage access",
+  loading: "Loading…",
+  noOne: "No one else has an account yet. An admin can add people under People.",
+  personOrGroup: "Person or group",
+  choose: "Choose…",
+  people: "People",
+  groups: "Groups",
+  access: "Access",
+  share: "Share",
+  groupSuffix: " · group",
+  accountOff: " · account off",
+  accessFor: (name: string) => `Access for ${name}`,
+  removeAccessFor: (name: string) => `Remove access for ${name}`,
+  remove: "Remove",
+}, {
+  docHeading: "Persone con accesso",
+  docIntro: "Condividi questo documento con chi accede a questo Ripiano. Lo vedranno in Condivisi con me. Archiviazione, file, link e Cestino restano a te.",
+  docEmpty: "Solo tu puoi aprire questo documento.",
+  docEditLabel: "Può modificare i dettagli",
+  docRemoved: "non può più aprire questo documento.",
+  docGranted: "vedere e modificare i dettagli",
+  canView: "Può vedere",
+  loadError: "Impossibile caricare chi può aprire questo documento",
+  changeError: "Impossibile modificare l'accesso",
+  nowCan: (who: string | undefined, group: boolean, edit: boolean, granted: string) => {
+    const what = edit ? granted : "vedere";
+    if (group) return who ? `I membri di ${who} ora possono ${what}.` : `I membri ora possono ${what}.`;
+    return who ? `${who} ora può ${what}.` : `Ora possono ${what}.`;
+  },
+  manage: "Gestisci accesso",
+  loading: "Caricamento…",
+  noOne: "Nessun altro ha ancora un account. Un amministratore può aggiungere persone in Persone.",
+  personOrGroup: "Persona o gruppo",
+  choose: "Scegli…",
+  people: "Persone",
+  groups: "Gruppi",
+  access: "Accesso",
+  share: "Condividi",
+  groupSuffix: " · gruppo",
+  accountOff: " · account disattivato",
+  accessFor: (name: string) => `Accesso per ${name}`,
+  removeAccessFor: (name: string) => `Rimuovi l'accesso per ${name}`,
+  remove: "Rimuovi",
+});

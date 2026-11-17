@@ -21,6 +21,7 @@ export default defineMessages({
   keepBoth: "Keep both",
   loadingMore: "Loading…",
   showMore: "Show more exceptions",
+  listHeading: "Documents to review",
 }, {
   loadError: "Impossibile caricare In arrivo",
   copyReviewed: "Copia controllata. Entrambi i documenti restano nell'Archivio.",
@@ -42,4 +43,5 @@ export default defineMessages({
   keepBoth: "Tienili entrambi",
   loadingMore: "Caricamento…",
   showMore: "Mostra altre eccezioni",
+  listHeading: "Documenti da controllare",
 });

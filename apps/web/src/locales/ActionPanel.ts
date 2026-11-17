@@ -17,6 +17,7 @@ export default defineMessages({
   done: "Done",
   loadingMore: "Loading…",
   showMore: "Show more follow-ups",
+  listHeading: "Documents that need action",
 }, {
   eyebrow: "QUANDO SERVE IL TUO INTERVENTO",
   heading: "Da fare",
@@ -34,4 +35,5 @@ export default defineMessages({
   done: "Fatto",
   loadingMore: "Caricamento…",
   showMore: "Mostra altre cose da fare",
+  listHeading: "Documenti da gestire",
 });

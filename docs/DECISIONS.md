@@ -115,7 +115,7 @@ In the owner's suggested order:
 1. ~~Task controls (cancel/requeue) for background jobs other than backups and NAS browse copies.~~ Done 2026-11-17 (`1aa3872`): Background jobs section on Overview; see README "Overview".
 2. ~~Permissions on tags, senders, types, and saved views.~~ Done 2026-11-17: `ObjectAccess` (view/edit per person or group), Share buttons, Shared with me filters, filing with shared objects; see README "People and sharing".
 3. ~~API request/response body schemas in `/api/schema.json` and a versioned compatibility test suite.~~ Done 2026-11-17: `archive/api_contract.py`, `api_contract_v1.json`, `test_api_contract.py` (additions allowed; removals, type or status changes, and removed routes fail).
-4. Italian translation of the remaining screens and API messages.
-5. Keyboard shortcuts and an accessibility pass.
+4. ~~Italian translation of the remaining screens and API messages.~~ Done 2026-11-17: every screen has English/Italian message files; ~130 more API messages translated (see README "Language").
+5. ~~Keyboard shortcuts and an accessibility pass.~~ Done 2026-11-17: `?`, `G`+letter, `J`/`K`/Enter, skip link, heading/label fixes, `e2e/accessibility.spec.ts`. A full axe-core scan needs a new dev dependency the owner has not approved yet.
 
 Not possible without the owner's hardware: real iOS/Android device tests, Synology ACL/restore checks, published digest-pinned images, and the R4 parity verification.

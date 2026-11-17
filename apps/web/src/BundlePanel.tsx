@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import { Check, Copy, Link2 } from "lucide-react";
 import { request } from "./api";
 import { Button, Field } from "./ui";
+import { useMessages } from "./i18n";
+import messages from "./locales/BundlePanel";
 
 type Bundle = { id: string; title: string; documents: { id: string; title: string }[]; expires_at: string; downloads: number; active: boolean; status: "building" | "ready" | "failed" };
 
 export default function BundlePanel({ selectedIds }: { selectedIds: string[] }) {
+  const m = useMessages(messages);
   const [bundles, setBundles] = useState<Bundle[] | null>(null);
   const [title, setTitle] = useState("");
   const [days, setDays] = useState(7);
@@ -26,7 +29,7 @@ export default function BundlePanel({ selectedIds }: { selectedIds: string[] }) 
     try {
       setBundles((await request<{ bundles: Bundle[] }>("/api/share-bundles")).bundles);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load shared bundles");
+      setError(cause instanceof Error ? cause.message : m.loadError);
     }
   }
 
@@ -42,7 +45,7 @@ export default function BundlePanel({ selectedIds }: { selectedIds: string[] }) 
       setTitle("");
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create the link");
+      setError(cause instanceof Error ? cause.message : m.createError);
     } finally {
       setBusy(false);
     }
@@ -55,7 +58,7 @@ export default function BundlePanel({ selectedIds }: { selectedIds: string[] }) 
       await request(`/api/share-bundles/${bundle.id}`, { method: "DELETE" });
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not revoke the link");
+      setError(cause instanceof Error ? cause.message : m.revokeError);
     } finally {
       setBusy(false);
     }
@@ -63,38 +66,38 @@ export default function BundlePanel({ selectedIds }: { selectedIds: string[] }) 
 
   return (
     <details className="bulk-filing-details" onToggle={(event) => { if (event.currentTarget.open && bundles === null) void load(); }}>
-      <summary>Share as one link</summary>
+      <summary>{m.summary}</summary>
       <div className="bulk-filing bundle-panel">
-        <p>Anyone with the link can download the selected originals as one ZIP until it expires or you revoke it. Documents you move to Trash drop out.</p>
+        <p>{m.intro}</p>
         {error && <p className="inline-error" role="alert">{error}</p>}
-        <Field label="Name of the bundle" hint="Optional" className="detail-label"><input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} placeholder="e.g. Documents for the accountant" /></Field>
-        <Field label="Expires after" className="detail-label">
+        <Field label={m.name} hint={m.optional} className="detail-label"><input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} placeholder={m.namePlaceholder} /></Field>
+        <Field label={m.expiresAfter} className="detail-label">
           <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
-            {[1, 3, 7, 14, 30].map((value) => <option key={value} value={value}>{value} day{value === 1 ? "" : "s"}</option>)}
+            {[1, 3, 7, 14, 30].map((value) => <option key={value} value={value}>{m.days(value)}</option>)}
           </select>
         </Field>
         <Button type="button" variant="secondary" disabled={busy || !selectedIds.length || selectedIds.length > 50} onClick={() => void create()}>
-          <Link2 size={16} aria-hidden="true" /> Create link for {selectedIds.length} {selectedIds.length === 1 ? "document" : "documents"}
+          <Link2 size={16} aria-hidden="true" /> {m.createLink(selectedIds.length)}
         </Button>
         {url && (
           <div className="agent-token-row" role="status">
-            <input aria-label="New bundle link" readOnly value={url} onFocus={(event) => event.target.select()} />
-            <Button type="button" variant="secondary" onClick={() => void navigator.clipboard.writeText(url).then(() => setCopied(true)).catch(() => setError("Copy is unavailable here. Select and copy the link."))}>
-              {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />} {copied ? "Copied" : "Copy"}
+            <input aria-label={m.newLink} readOnly value={url} onFocus={(event) => event.target.select()} />
+            <Button type="button" variant="secondary" onClick={() => void navigator.clipboard.writeText(url).then(() => setCopied(true)).catch(() => setError(m.copyUnavailable))}>
+              {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />} {copied ? m.copied : m.copy}
             </Button>
           </div>
         )}
-        {url && <small>Copy it now. Ripiano shows each link only once. The download works once the bundle is ready below.</small>}
-        {selectedIds.length > 50 && <p className="inline-error">Choose 50 or fewer documents for one link.</p>}
+        {url && <small>{m.copyNow}</small>}
+        {selectedIds.length > 50 && <p className="inline-error">{m.tooMany}</p>}
         {bundles && bundles.some((item) => item.active) && (
           <ul className="bundle-list">
             {bundles.filter((item) => item.active).map((item) => (
               <li key={item.id}>
                 <span>
-                  <strong>{item.title}</strong> · {item.status === "building" ? "Preparing…" : item.status === "failed" ? "Could not be prepared: a file changed or is missing" : `downloaded ${item.downloads}×`} · expires {new Date(item.expires_at).toLocaleDateString()}
+                  <strong>{item.title}</strong> · {item.status === "building" ? m.preparing : item.status === "failed" ? m.failed : m.downloaded(item.downloads)} · {m.expires(new Date(item.expires_at).toLocaleDateString())}
                   <small className="bundle-documents">{item.documents.map((document) => document.title).join(", ")}</small>
                 </span>
-                <Button type="button" variant="secondary" disabled={busy} onClick={() => void revoke(item)} aria-label={`Revoke bundle ${item.title}`}>Revoke</Button>
+                <Button type="button" variant="secondary" disabled={busy} onClick={() => void revoke(item)} aria-label={m.revokeLabel(item.title)}>{m.revoke}</Button>
               </li>
             ))}
           </ul>

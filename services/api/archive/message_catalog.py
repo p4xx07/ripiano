@@ -20,6 +20,21 @@ def extract(root=None):
                 parts.append("{%d}" % index); index += 1
         return "".join(parts)
 
+    def variants(node):
+        # f"This {'a' if x else 'b'} …" also yields each full sentence, so it can be translated whole.
+        texts = [""]
+        for value in node.values:
+            if isinstance(value, ast.Constant):
+                options = [str(value.value)]
+            elif (isinstance(value, ast.FormattedValue) and value.conversion == -1 and value.format_spec is None
+                  and isinstance(value.value, ast.IfExp)
+                  and all(isinstance(part, ast.Constant) and isinstance(part.value, str) for part in (value.value.body, value.value.orelse))):
+                options = [value.value.body.value, value.value.orelse.value]
+            else:
+                return []
+            texts = [text + option for text in texts for option in options]
+        return texts
+
     def collect(node):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             text = node.value
@@ -29,6 +44,8 @@ def extract(root=None):
             text = template(node)
             if " " in text and text[:1].isupper():
                 templates.add(text)
+                for variant in variants(node):
+                    collect(ast.Constant(variant))
         elif isinstance(node, ast.IfExp):
             collect(node.body); collect(node.orelse)
 

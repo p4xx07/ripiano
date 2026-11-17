@@ -166,7 +166,7 @@ The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and O
 
 ### Interface language (in progress)
 
-English is the default interface language on every device. The sign-in screen and sidebar let you opt into the partial Italian preview or follow the device language instead. The choice is saved in this browser and also controls date formatting and the language requested from the API. The app shell, daily Library search/filter/upload flow, Backups, and several filing and archive panels have Italian text. Advanced Library bulk actions, document detail, other screens, and many API errors still use English. Further localization is deferred; the [parity matrix](docs/FEATURE_PARITY.md) tracks it separately from the English experience.
+English is the default interface language on every device. The sign-in screen and sidebar let you switch to Italian or follow the device language instead. The choice is saved in this browser and also controls date formatting and the language requested from the API. Every screen is available in Italian, including Library bulk actions, document detail, mail, workflows, sharing, Sources, Overview and background jobs, semantic search, and People. API error messages are translated for Italian clients where the message has a reviewed translation; a few messages that embed raw field names stay in English, and the Telegram bot replies in English.
 
 ### Run locally
 
@@ -182,7 +182,14 @@ For a batch of files, Ripiano continues after an unsupported file and names each
 
 Word `.docx`, Excel `.xlsx`, and PowerPoint `.pptx` files use the private Gotenberg LibreOffice service in the Compose stack. The original bytes are preserved; a searchable PDF is generated for viewing and search. Older binary `.doc`, `.xls`, and `.ppt` files, OpenDocument `.odt`, `.ods`, and `.odp`, and `.rtf` use the same path; files are checked by content, and OpenDocument or OOXML files with macros are refused. Emails (`.eml`) keep the original message and become a searchable PDF of the sender, recipients, date, subject, text, and attachment names. The page is built from escaped text, so remote images, links, scripts, and styles in the message are never loaded. Outlook `.msg` files are read locally (subject, sender, recipients, date, text, and attachment names) and rendered the same way. Office-derived PDFs currently use normal PDF output because PDF/A conversion damaged extracted text in a real local test. The converter has no published port and does not contact a cloud provider.
 
-With a hardware keyboard, press **/** to focus Library search from any archive screen, or **N** to open Add. These shortcuts stay inactive while typing or using a dialog.
+With a hardware keyboard (shortcuts stay inactive while typing or while a dialog is open):
+- **?** lists all shortcuts.
+- **/** focuses Library search from any screen; **N** opens Add.
+- **G** then a letter goes to a screen: **L** Library, **I** Inbox, **A** Needs action, **T** Tags & filing, **O** Overview, **S** Shared with me, **W** Workflows, **R** Sources.
+- In the Library, **J** / **K** move through the list and **Enter** opens the highlighted document; **Esc** closes it.
+- **Tab** from the top of the page reaches a **Skip to content** link.
+
+Dialogs keep focus inside until closed and return it afterwards. `apps/web/e2e/accessibility.spec.ts` checks the sign-in page and the main screens for controls without names, unlabeled fields, duplicate ids, images without alt text, skipped heading levels, and missing landmarks.
 
 1. Copy `.env.example` to `.env` and replace the three example secrets with strong unique values.
 2. Run `docker compose up --build -d` from this directory.

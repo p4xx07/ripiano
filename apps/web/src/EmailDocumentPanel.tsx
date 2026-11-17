@@ -2,10 +2,13 @@ import { FormEvent, useEffect, useState } from "react";
 import { Mail } from "lucide-react";
 import { request } from "./api";
 import { Button, Field } from "./ui";
+import { useMessages } from "./i18n";
+import messages from "./locales/EmailDocumentPanel";
 
 type Send = { id: string; recipients: string; status: "queued" | "sent" | "failed"; detail: string; created_at: string };
 
 export default function EmailDocumentPanel({ documentId, searchableReady }: { documentId: string; searchableReady: boolean }) {
+  const m = useMessages(messages);
   const [opened, setOpened] = useState(false);
   const [configured, setConfigured] = useState(true);
   const [sends, setSends] = useState<Send[]>([]);
@@ -22,7 +25,7 @@ export default function EmailDocumentPanel({ documentId, searchableReady }: { do
       setConfigured(result.configured);
       setSends(result.sends);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load email history");
+      setError(cause instanceof Error ? cause.message : m.loadError);
     }
   }
 
@@ -41,12 +44,12 @@ export default function EmailDocumentPanel({ documentId, searchableReady }: { do
     setNotice("");
     try {
       await request(`/api/documents/${documentId}/email`, { method: "POST", body: JSON.stringify({ to, message, attachment }) });
-      setNotice("Sending now. The result appears below.");
+      setNotice(m.sendingNow);
       setTo("");
       setMessage("");
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not send the email");
+      setError(cause instanceof Error ? cause.message : m.sendError);
     } finally {
       setBusy(false);
     }
@@ -54,35 +57,35 @@ export default function EmailDocumentPanel({ documentId, searchableReady }: { do
 
   return (
     <section className="pages-section email-document" aria-labelledby="email-document-heading">
-      <h3 id="email-document-heading"><Mail size={17} aria-hidden="true" /> Email this document</h3>
+      <h3 id="email-document-heading"><Mail size={17} aria-hidden="true" /> {m.heading}</h3>
       {!opened ? (
-        <Button type="button" variant="secondary" onClick={() => { setOpened(true); void load(); }}>Write an email</Button>
+        <Button type="button" variant="secondary" onClick={() => { setOpened(true); void load(); }}>{m.write}</Button>
       ) : !configured ? (
-        <p>Emailing documents is not turned on for this server. The administrator can enable it with RIPIANO_DOCUMENT_EMAIL=1 and the RIPIANO_SMTP settings. You can share a link instead.</p>
+        <p>{m.notConfigured}</p>
       ) : (
-        <form onSubmit={send} aria-label="Email this document">
+        <form onSubmit={send} aria-label={m.formLabel}>
           {error && <div className="inline-error" role="alert">{error}</div>}
           {notice && <p className="bulk-notice" role="status">{notice}</p>}
-          <Field label="To" hint="Up to 10 addresses, separated by commas">
+          <Field label={m.to} hint={m.toHint}>
             <input value={to} onChange={(event) => setTo(event.target.value)} autoCapitalize="none" inputMode="email" maxLength={500} required />
           </Field>
-          <Field label="Message" hint="Optional">
+          <Field label={m.message} hint={m.optional}>
             <textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={2000} rows={3} />
           </Field>
-          <Field label="Attach">
+          <Field label={m.attach}>
             <select value={attachment} onChange={(event) => setAttachment(event.target.value as "original" | "searchable")}>
-              <option value="original">The original file</option>
-              <option value="searchable" disabled={!searchableReady}>The searchable PDF{searchableReady ? "" : " (not ready yet)"}</option>
+              <option value="original">{m.original}</option>
+              <option value="searchable" disabled={!searchableReady}>{m.searchable}{searchableReady ? "" : m.notReadyYet}</option>
             </select>
           </Field>
-          <p className="email-hint">The subject is the document title, and the message says it comes from you through Ripiano. Replies go to your account’s email address, if it has one.</p>
-          <Button disabled={busy}>Send email</Button>
+          <p className="email-hint">{m.hint}</p>
+          <Button disabled={busy}>{m.send}</Button>
         </form>
       )}
       {sends.length > 0 && (
         <ul className="email-sends">
           {sends.map((item) => (
-            <li key={item.id}>{item.status === "sent" ? "Sent" : item.status === "failed" ? "Not sent" : "Sending"} to {item.recipients} · {new Date(item.created_at).toLocaleString()}{item.detail ? ` · ${item.detail}` : ""}</li>
+            <li key={item.id}>{m.sendStatus(item.status, item.recipients)} · {new Date(item.created_at).toLocaleString()}{item.detail ? ` · ${item.detail}` : ""}</li>
           ))}
         </ul>
       )}

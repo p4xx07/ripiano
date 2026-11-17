@@ -54,7 +54,7 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
   useEffect(() => {
     if (!moveFocusAfterLoad.current) return;
     moveFocusAfterLoad.current = false;
-    contentRef.current?.querySelector<HTMLElement>(".exception-row .document-title-button, .empty-state h3")?.focus();
+    contentRef.current?.querySelector<HTMLElement>(".exception-row .document-title-button, .empty-state h2")?.focus();
   }, [documents]);
 
   async function keepBoth(document: Document) {
@@ -107,10 +107,11 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
     {loading ? <p>{m.loading}</p> : error && !documents.length ? null : documents.length === 0 ? (
       <div className="empty-state">
         <div className="empty-icon"><Inbox size={32} strokeWidth={1.5} /></div>
-        <h3 tabIndex={-1}>{m.emptyTitle}</h3>
+        <h2 tabIndex={-1}>{m.emptyTitle}</h2>
         <p>{m.emptyText}</p>
       </div>
     ) : <>
+      <h2 className="visually-hidden">{m.listHeading}</h2>
       <div className="document-list">
         {documents.map((document) => <article className="document-row exception-row" key={document.id}>
           <div className="document-icon">{document.status === "failed" ? <AlertCircle size={21} /> : <FileText size={21} />}</div>

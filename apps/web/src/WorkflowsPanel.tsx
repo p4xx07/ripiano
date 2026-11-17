@@ -2,6 +2,8 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bell, Clock, KeyRound, Plus, Tag as TagIcon, Workflow as WorkflowIcon, X } from "lucide-react";
 import { FilingItem, request, Tag } from "./api";
 import { Button } from "./ui";
+import { useMessages } from "./i18n";
+import messages from "./locales/WorkflowsPanel";
 
 type Trigger = "added" | "updated" | "scheduled";
 type DateField = "created" | "document_date" | "action_due_date";
@@ -25,43 +27,50 @@ const empty: Draft = {
   set_correspondent_id: "", set_document_type_id: "", set_needs_action: false, action_note: "", add_note: "", webhook_url: "", email_to: "", email_attach: false,
   pdf_password_count: 0, pdf_passwords_text: "", clear_pdf_passwords: false,
 };
-const sources: Record<string, string> = { web: "Web upload", android: "Android scanner", telegram: "Telegram", folder: "Watched folder", email: "Email", s3: "S3 bucket" };
-const triggers: Record<Trigger, string> = { added: "When a document is added", updated: "When I change a document", scheduled: "Some days after a date" };
-const dateFields: Record<DateField, string> = { created: "the date it was added", document_date: "the document date", action_due_date: "the follow-up due date" };
-const recipes: { label: string; icon: typeof TagIcon; draft: Partial<Draft> }[] = [
-  { label: "Tag new documents that mention a word", icon: TagIcon, draft: { name: "Tag by word", trigger: "added" } },
-  { label: "Remind me some days after the document date", icon: Clock, draft: { name: "Review reminder", trigger: "scheduled", schedule_field: "document_date", schedule_days: 30, set_needs_action: true, action_note: "Review this document" } },
-  { label: "Notify another app when a document is added", icon: Bell, draft: { name: "Notify on new document", trigger: "added", webhook_url: "https://" } },
-  { label: "Unlock password-protected PDFs", icon: KeyRound, draft: { name: "Unlock PDFs", trigger: "added" } },
+type M = typeof messages.en;
+const sourcesFor = (m: M): Record<string, string> => ({ web: m.sourceWeb, android: m.sourceAndroid, telegram: m.sourceTelegram, folder: m.sourceFolder, email: m.sourceEmail, s3: m.sourceS3 });
+const triggersFor = (m: M): Record<Trigger, string> => ({ added: m.triggerAdded, updated: m.triggerUpdated, scheduled: m.triggerScheduled });
+const dateFieldsFor = (m: M): Record<DateField, string> => ({ created: m.dateCreated, document_date: m.dateDocument, action_due_date: m.dateActionDue });
+const recipesFor = (m: M): { label: string; icon: typeof TagIcon; draft: Partial<Draft> }[] => [
+  { label: m.recipeTag, icon: TagIcon, draft: { name: m.recipeTagName, trigger: "added" } },
+  { label: m.recipeReminder, icon: Clock, draft: { name: m.recipeReminderName, trigger: "scheduled", schedule_field: "document_date", schedule_days: 30, set_needs_action: true, action_note: m.recipeReminderNote } },
+  { label: m.recipeNotify, icon: Bell, draft: { name: m.recipeNotifyName, trigger: "added", webhook_url: "https://" } },
+  { label: m.recipeUnlock, icon: KeyRound, draft: { name: m.recipeUnlockName, trigger: "added" } },
 ];
 
-function describe(flow: Flow, names: Map<string, string>) {
+function describe(flow: Flow, names: Map<string, string>, m: M) {
+  const sources = sourcesFor(m);
   const when = flow.trigger === "scheduled"
-    ? `${Math.abs(flow.schedule_days)} days ${flow.schedule_days < 0 ? "before" : "after"} ${dateFields[flow.schedule_field]}`
-    : triggers[flow.trigger].replace("When ", "when ");
+    ? m.whenScheduled(Math.abs(flow.schedule_days), flow.schedule_days < 0, dateFieldsFor(m)[flow.schedule_field])
+    : triggersFor(m)[flow.trigger].replace("When ", "when ");
   const conditions = [
-    flow.filter_sources.length ? `from ${flow.filter_sources.map((item) => sources[item] ?? item).join(" or ")}` : "",
-    flow.filter_text ? `mentions “${flow.filter_text}”` : "",
-    flow.filter_filename ? `file name ${flow.filter_filename}` : "",
-    flow.filter_tag_id ? `tagged ${names.get(flow.filter_tag_id) ?? "…"}` : "",
-    flow.filter_correspondent_id ? `sender ${names.get(flow.filter_correspondent_id) ?? "…"}` : "",
-    flow.filter_document_type_id ? `type ${names.get(flow.filter_document_type_id) ?? "…"}` : "",
+    flow.filter_sources.length ? m.condFrom(flow.filter_sources.map((item) => sources[item] ?? item)) : "",
+    flow.filter_text ? m.condMentions(flow.filter_text) : "",
+    flow.filter_filename ? m.condFileName(flow.filter_filename) : "",
+    flow.filter_tag_id ? m.condTagged(names.get(flow.filter_tag_id) ?? "…") : "",
+    flow.filter_correspondent_id ? m.condSender(names.get(flow.filter_correspondent_id) ?? "…") : "",
+    flow.filter_document_type_id ? m.condType(names.get(flow.filter_document_type_id) ?? "…") : "",
   ].filter(Boolean);
   const actions = [
-    flow.add_tag_ids.length ? `add ${flow.add_tag_ids.map((id) => names.get(id) ?? "…").join(", ")}` : "",
-    flow.remove_tag_ids.length ? `remove ${flow.remove_tag_ids.map((id) => names.get(id) ?? "…").join(", ")}` : "",
-    flow.set_correspondent_id ? `set sender ${names.get(flow.set_correspondent_id) ?? "…"}` : "",
-    flow.set_document_type_id ? `set type ${names.get(flow.set_document_type_id) ?? "…"}` : "",
-    flow.set_needs_action ? "mark as needing action" : "",
-    flow.add_note ? "add a note" : "",
-    flow.webhook_url ? "call a webhook" : "",
-    flow.email_to ? `email ${flow.email_to}` : "",
-    flow.pdf_password_count ? `unlock PDFs with ${flow.pdf_password_count} saved password${flow.pdf_password_count === 1 ? "" : "s"}` : "",
+    flow.add_tag_ids.length ? m.actAdd(flow.add_tag_ids.map((id) => names.get(id) ?? "…").join(", ")) : "",
+    flow.remove_tag_ids.length ? m.actRemove(flow.remove_tag_ids.map((id) => names.get(id) ?? "…").join(", ")) : "",
+    flow.set_correspondent_id ? m.actSetSender(names.get(flow.set_correspondent_id) ?? "…") : "",
+    flow.set_document_type_id ? m.actSetType(names.get(flow.set_document_type_id) ?? "…") : "",
+    flow.set_needs_action ? m.actNeedsAction : "",
+    flow.add_note ? m.actAddNote : "",
+    flow.webhook_url ? m.actWebhook : "",
+    flow.email_to ? m.actEmail(flow.email_to) : "",
+    flow.pdf_password_count ? m.actUnlock(flow.pdf_password_count) : "",
   ].filter(Boolean);
-  return `${when.charAt(0).toUpperCase()}${when.slice(1)}${conditions.length ? `, if it ${conditions.join(" and ")}` : ""}: ${actions.join(", ") || "nothing yet"}.`;
+  return m.summary(`${when.charAt(0).toUpperCase()}${when.slice(1)}`, conditions, actions);
 }
 
 export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id: string) => void }) {
+  const m = useMessages(messages);
+  const sources = sourcesFor(m);
+  const triggers = triggersFor(m);
+  const dateFields = dateFieldsFor(m);
+  const recipes = recipesFor(m);
   const [flows, setFlows] = useState<Flow[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -89,7 +98,7 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
       setSenders(senderResponse.correspondents);
       setTypes(typeResponse.document_types);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load workflows");
+      setError(cause instanceof Error ? cause.message : m.loadError);
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -148,27 +157,27 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
       });
       if (editing) await request(`/api/workflows/${editing}`, { method: "PATCH", body });
       else await request("/api/workflows", { method: "POST", body });
-      setStatus(`Workflow “${draft.name}” saved. ${draft.trigger === "scheduled" ? "It runs each morning for documents that become due from now on." : "It applies to documents from now on."}`);
+      setStatus(m.saved(draft.name, draft.trigger === "scheduled"));
       setDraft(empty);
       setEditing(null);
       await load();
-    }, "Could not save the workflow");
+    }, m.saveError);
   }
 
   function toggle(flow: Flow) {
     void run(async () => {
       await request(`/api/workflows/${flow.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !flow.enabled }) });
       await load();
-    }, "Could not update the workflow");
+    }, m.updateError);
   }
 
   function remove(flow: Flow) {
     void run(async () => {
       await request(`/api/workflows/${flow.id}`, { method: "DELETE" });
       setConfirming(null);
-      setStatus(`Workflow “${flow.name}” removed. Changes it already made stay in place.`);
+      setStatus(m.removed(flow.name));
       await load();
-    }, "Could not remove the workflow");
+    }, m.removeError);
   }
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
@@ -179,37 +188,37 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
     <>
       <div className="page-heading">
         <div>
-          <div className="eyebrow"><span className="eyebrow-line" /> AUTOMATION</div>
-          <h1>Workflows<span className="heading-period">.</span></h1>
-          <p>Let routine filing happen by itself. Each workflow acts once per document and leaves a record.</p>
+          <div className="eyebrow"><span className="eyebrow-line" /> {m.eyebrow}</div>
+          <h1>{m.heading}<span className="heading-period">.</span></h1>
+          <p>{m.intro}</p>
         </div>
       </div>
-      {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss error"><X size={16} /></button></div>}
+      {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={m.dismissError}><X size={16} /></button></div>}
       {status && <p className="bulk-notice" role="status">{status}</p>}
       <div className="agent-layout">
         <section className="agent-main">
-          <div className="section-heading"><div><h2>Your workflows</h2><p>They run in order. Your own choices of sender and type are never overwritten.</p></div></div>
+          <div className="section-heading"><div><h2>{m.yourWorkflows}</h2><p>{m.yourWorkflowsIntro}</p></div></div>
           {flows.length ? (
             <div className="agent-list">
               {flows.map((flow) => (
                 <article className="agent-card mail-card" key={flow.id}>
                   <span className="agent-avatar"><WorkflowIcon size={21} aria-hidden="true" /></span>
                   <div className="agent-card-body">
-                    <strong>{flow.name}{!flow.enabled && " · Paused"}</strong>
-                    <span>{describe(flow, names)}</span>
+                    <strong>{flow.name}{!flow.enabled && m.paused}</strong>
+                    <span>{describe(flow, names, m)}</span>
                   </div>
                   <div className="mail-actions">
                     {confirming === flow.id ? (
                       <>
-                        <span>Remove this workflow?</span>
-                        <Button variant="danger" disabled={busy} onClick={() => remove(flow)}>Remove</Button>
-                        <Button variant="secondary" autoFocus onClick={() => setConfirming(null)}>Keep</Button>
+                        <span>{m.confirmRemove}</span>
+                        <Button variant="danger" disabled={busy} onClick={() => remove(flow)}>{m.remove}</Button>
+                        <Button variant="secondary" autoFocus onClick={() => setConfirming(null)}>{m.keep}</Button>
                       </>
                     ) : (
                       <>
-                        <Button variant="secondary" disabled={busy} onClick={() => toggle(flow)}>{flow.enabled ? "Pause" : "Resume"}</Button>
-                        <Button variant="secondary" onClick={() => edit(flow)}>Edit</Button>
-                        <Button variant="secondary" aria-label={`Remove workflow ${flow.name}`} onClick={() => setConfirming(flow.id)}>Remove</Button>
+                        <Button variant="secondary" disabled={busy} onClick={() => toggle(flow)}>{flow.enabled ? m.pause : m.resume}</Button>
+                        <Button variant="secondary" onClick={() => edit(flow)}>{m.edit}</Button>
+                        <Button variant="secondary" aria-label={m.removeLabel(flow.name)} onClick={() => setConfirming(flow.id)}>{m.remove}</Button>
                       </>
                     )}
                   </div>
@@ -219,28 +228,28 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
           ) : (
             <div className="tag-empty">
               <WorkflowIcon size={27} aria-hidden="true" />
-              <strong>No workflows yet</strong>
-              <p>Optional. Start from a recipe on the right, or write your own.</p>
+              <strong>{m.emptyTitle}</strong>
+              <p>{m.emptyText}</p>
             </div>
           )}
-          <div className="section-heading agent-activity-heading"><div><h2>Recent runs</h2><p>What each workflow did, and to which document.</p></div></div>
+          <div className="section-heading agent-activity-heading"><div><h2>{m.recentRuns}</h2><p>{m.recentRunsIntro}</p></div></div>
           {runs.length ? (
             <div className="agent-events">
               {runs.map((item) => (
                 <div key={item.id}>
-                  <span>{item.workflow} · {item.status === "failed" ? "Problem" : "Applied"}</span>
+                  <span>{item.workflow} · {item.status === "failed" ? m.problem : m.applied}</span>
                   <strong><button type="button" className="text-action" onClick={() => onOpenDocument(item.document.id)}>{item.document.title}</button></strong>
                   <small>{item.detail} · {new Date(item.created_at).toLocaleString()}</small>
                 </div>
               ))}
             </div>
-          ) : <p className="agent-empty-activity">No workflow has run yet.</p>}
+          ) : <p className="agent-empty-activity">{m.noRuns}</p>}
         </section>
 
         <div className="mail-side">
           {!editing && (
             <section className="tag-create-card agent-create-card">
-              <h2>Start from a recipe</h2>
+              <h2>{m.startFromRecipe}</h2>
               <div className="mail-oauth">
                 {recipes.map((recipe) => (
                   <Button key={recipe.label} type="button" variant="secondary" onClick={() => start(recipe.draft)}>
@@ -252,18 +261,18 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
           )}
           <section className="tag-create-card agent-create-card">
             <div className="tag-create-icon"><WorkflowIcon size={21} aria-hidden="true" /></div>
-            <h2>{editing ? "Edit workflow" : "New workflow"}</h2>
-            <form ref={formRef} onSubmit={save} aria-label="Workflow">
-              <label>Name<input value={draft.name} onChange={(event) => set("name", event.target.value)} maxLength={100} required placeholder="e.g. File utility bills" /></label>
-              <label>Runs
+            <h2>{editing ? m.editWorkflow : m.newWorkflow}</h2>
+            <form ref={formRef} onSubmit={save} aria-label={m.formLabel}>
+              <label>{m.name}<input value={draft.name} onChange={(event) => set("name", event.target.value)} maxLength={100} required placeholder={m.namePlaceholder} /></label>
+              <label>{m.runs}
                 <select value={draft.trigger} onChange={(event) => set("trigger", event.target.value as Trigger)}>
                   {Object.entries(triggers).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </label>
               {draft.trigger === "scheduled" && (
                 <div className="mail-row">
-                  <label>Days after <small>Negative means before</small><input type="number" min={-3650} max={3650} value={draft.schedule_days} onChange={(event) => set("schedule_days", Number(event.target.value))} required /></label>
-                  <label>Counting from
+                  <label>{m.daysAfter} <small>{m.negativeHint}</small><input type="number" min={-3650} max={3650} value={draft.schedule_days} onChange={(event) => set("schedule_days", Number(event.target.value))} required /></label>
+                  <label>{m.countingFrom}
                     <select value={draft.schedule_field} onChange={(event) => set("schedule_field", event.target.value as DateField)}>
                       {Object.entries(dateFields).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                     </select>
@@ -271,36 +280,36 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                 </div>
               )}
               <fieldset>
-                <legend>Only documents that <small>All optional</small></legend>
-                <label>Mention this word or phrase<input value={draft.filter_text} onChange={(event) => set("filter_text", event.target.value)} maxLength={200} placeholder="Searches the title and OCR text" /></label>
-                <label>Have this tag
+                <legend>{m.onlyDocuments} <small>{m.allOptional}</small></legend>
+                <label>{m.mention}<input value={draft.filter_text} onChange={(event) => set("filter_text", event.target.value)} maxLength={200} placeholder={m.mentionPlaceholder} /></label>
+                <label>{m.haveTag}
                   <select value={draft.filter_tag_id} onChange={(event) => set("filter_tag_id", event.target.value)}>
-                    <option value="">Any</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                    <option value="">{m.any}</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
                   </select>
                 </label>
-                <label>Have this sender
+                <label>{m.haveSender}
                   <select value={draft.filter_correspondent_id} onChange={(event) => set("filter_correspondent_id", event.target.value)}>
-                    <option value="">Any</option>{senders.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    <option value="">{m.any}</option>{senders.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
-                <label>Have this type
+                <label>{m.haveType}
                   <select value={draft.filter_document_type_id} onChange={(event) => set("filter_document_type_id", event.target.value)}>
-                    <option value="">Any</option>{types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    <option value="">{m.any}</option>{types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
-                <label>File name matches<input value={draft.filter_filename} onChange={(event) => set("filter_filename", event.target.value)} maxLength={200} placeholder="e.g. fattura*.pdf" /></label>
-                <div className="workflow-choices" role="group" aria-label="Came from">
-                  <span>Came from</span>
+                <label>{m.fileNameMatches}<input value={draft.filter_filename} onChange={(event) => set("filter_filename", event.target.value)} maxLength={200} placeholder={m.fileNamePlaceholder} /></label>
+                <div className="workflow-choices" role="group" aria-label={m.cameFrom}>
+                  <span>{m.cameFrom}</span>
                   {Object.entries(sources).map(([value, label]) => (
                     <label className="agent-scope-choice" key={value}><input type="checkbox" checked={draft.filter_sources.includes(value)} onChange={() => toggleIn("filter_sources", value)} />{label}</label>
                   ))}
                 </div>
               </fieldset>
               <fieldset>
-                <legend>Then</legend>
+                <legend>{m.then}</legend>
                 {tags.length > 0 && (
                   <div className="workflow-choices" role="group" aria-labelledby="workflow-add-tags">
-                    <span id="workflow-add-tags">Add tags</span>
+                    <span id="workflow-add-tags">{m.addTags}</span>
                     <div className="workflow-choices mail-tags">
                     {tags.map((tag) => <label className="agent-scope-choice" key={tag.id}><input type="checkbox" checked={draft.add_tag_ids.includes(tag.id)} onChange={() => toggleIn("add_tag_ids", tag.id)} />{tag.name}</label>)}
                     </div>
@@ -308,49 +317,49 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                 )}
                 {tags.length > 0 && (
                   <details className="workflow-remove">
-                    <summary>Remove tags</summary>
-                    <div className="workflow-choices mail-tags" role="group" aria-label="Remove tags">
+                    <summary>{m.removeTags}</summary>
+                    <div className="workflow-choices mail-tags" role="group" aria-label={m.removeTags}>
                       {tags.map((tag) => <label className="agent-scope-choice" key={tag.id}><input type="checkbox" checked={draft.remove_tag_ids.includes(tag.id)} onChange={() => toggleIn("remove_tag_ids", tag.id)} />{tag.name}</label>)}
                     </div>
                   </details>
                 )}
-                <label>Set sender
+                <label>{m.setSender}
                   <select value={draft.set_correspondent_id} onChange={(event) => set("set_correspondent_id", event.target.value)}>
-                    <option value="">Don’t change</option>{senders.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    <option value="">{m.dontChange}</option>{senders.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
-                <label>Set type
+                <label>{m.setType}
                   <select value={draft.set_document_type_id} onChange={(event) => set("set_document_type_id", event.target.value)}>
-                    <option value="">Don’t change</option>{types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    <option value="">{m.dontChange}</option>{types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
-                <label className="agent-scope-choice"><input type="checkbox" checked={draft.set_needs_action} onChange={(event) => set("set_needs_action", event.target.checked)} />Mark as needing action</label>
-                {draft.set_needs_action && <label>What needs doing<input value={draft.action_note} onChange={(event) => set("action_note", event.target.value)} maxLength={500} /></label>}
-                <label>Add a note<textarea value={draft.add_note} onChange={(event) => set("add_note", event.target.value)} maxLength={2000} rows={2} /></label>
-                <label>Call a webhook <small>Sends title, tags, sender, type, and a link, never the text. Addresses on your home network need the server setting RIPIANO_WEBHOOK_ALLOW_PRIVATE.</small>
+                <label className="agent-scope-choice"><input type="checkbox" checked={draft.set_needs_action} onChange={(event) => set("set_needs_action", event.target.checked)} />{m.markNeedsAction}</label>
+                {draft.set_needs_action && <label>{m.whatNeedsDoing}<input value={draft.action_note} onChange={(event) => set("action_note", event.target.value)} maxLength={500} /></label>}
+                <label>{m.addNote}<textarea value={draft.add_note} onChange={(event) => set("add_note", event.target.value)} maxLength={2000} rows={2} /></label>
+                <label>{m.callWebhook} <small>{m.webhookHint}</small>
                   <input type="url" value={draft.webhook_url} onChange={(event) => set("webhook_url", event.target.value)} maxLength={500} placeholder="https://" />
                 </label>
-                <label>Email <small>Comma-separated addresses; needs the server’s mail settings</small>
+                <label>{m.email} <small>{m.emailHint}</small>
                   <input value={draft.email_to} onChange={(event) => set("email_to", event.target.value)} maxLength={500} autoCapitalize="none" />
                 </label>
-                {draft.email_to && <label className="agent-scope-choice"><input type="checkbox" checked={draft.email_attach} onChange={(event) => set("email_attach", event.target.checked)} />Attach the original file (if it is small enough to email)</label>}
+                {draft.email_to && <label className="agent-scope-choice"><input type="checkbox" checked={draft.email_attach} onChange={(event) => set("email_attach", event.target.checked)} />{m.attachOriginal}</label>}
                 {draft.trigger === "added" && (
                   <div className="workflow-unlock">
-                    <label>Unlock PDFs <small>One password per line. Tried on locked PDFs that match, before text recognition. The original file stays locked; only the searchable copy is unlocked. Passwords are stored encrypted and never shown again.</small>
+                    <label>{m.unlockPdfs} <small>{m.unlockHint}</small>
                       <textarea value={draft.pdf_passwords_text} onChange={(event) => set("pdf_passwords_text", event.target.value)} rows={2}
                         autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={draft.clear_pdf_passwords}
-                        placeholder={draft.pdf_password_count ? "Type new passwords to replace the saved ones" : ""} />
+                        placeholder={draft.pdf_password_count ? m.replacePasswords : ""} />
                     </label>
                     {draft.pdf_password_count > 0 && (
                       <label className="agent-scope-choice"><input type="checkbox" checked={draft.clear_pdf_passwords} onChange={(event) => set("clear_pdf_passwords", event.target.checked)} />
-                        Forget the {draft.pdf_password_count} saved password{draft.pdf_password_count === 1 ? "" : "s"}</label>
+                        {m.forgetPasswords(draft.pdf_password_count)}</label>
                     )}
                   </div>
                 )}
               </fieldset>
-              <label>Order <small>Lower numbers run first</small><input type="number" min={0} max={10000} value={draft.order} onChange={(event) => set("order", Number(event.target.value))} /></label>
-              <Button disabled={busy}><Plus size={17} aria-hidden="true" /> {editing ? "Save workflow" : "Create workflow"}</Button>
-              {editing && <Button type="button" variant="secondary" onClick={() => { setEditing(null); setDraft(empty); }}>Cancel</Button>}
+              <label>{m.order} <small>{m.orderHint}</small><input type="number" min={0} max={10000} value={draft.order} onChange={(event) => set("order", Number(event.target.value))} /></label>
+              <Button disabled={busy}><Plus size={17} aria-hidden="true" /> {editing ? m.saveWorkflow : m.createWorkflow}</Button>
+              {editing && <Button type="button" variant="secondary" onClick={() => { setEditing(null); setDraft(empty); }}>{m.cancel}</Button>}
             </form>
           </section>
         </div>

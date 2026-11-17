@@ -2,6 +2,8 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Filter, Inbox, Mail, Plus, RefreshCw, X } from "lucide-react";
 import { FilingItem, request, Tag } from "./api";
 import { Button } from "./ui";
+import { useMessages } from "./i18n";
+import messages from "./locales/MailPanel";
 
 type Account = {
   id: string;
@@ -52,12 +54,13 @@ type Processed = {
 };
 type Overview = { accounts: Account[]; rules: Rule[]; recent: Processed[]; oauth_providers: { id: string; label: string }[] };
 
-const afterLabels: Record<Rule["after"], string> = {
-  mark_read: "Mark as read",
-  flag: "Flag it",
-  move: "Move to a folder",
-  nothing: "Leave it unchanged",
-};
+type M = typeof messages.en;
+const afterLabelsFor = (m: M): Record<Rule["after"], string> => ({
+  mark_read: m.afterMarkRead,
+  flag: m.afterFlag,
+  move: m.afterMove,
+  nothing: m.afterNothing,
+});
 const emptyAccount = { name: "", host: "", port: 993, security: "ssl" as Account["security"], username: "", password: "" };
 const emptyRule = {
   account_id: "", name: "", folder: "INBOX", filter_from: "", filter_subject: "", filter_body: "", filter_attachment: "", include_inline: false, consume: "attachments" as Rule["consume"], order: 0,
@@ -65,22 +68,24 @@ const emptyRule = {
   tag_ids: [] as string[], correspondent_id: "", document_type_id: "",
 };
 
-const oauthErrors: Record<string, string> = {
-  signin: "Sign in to Ripiano, then connect the mailbox again.",
-  cancelled: "Sign-in was cancelled. Nothing was connected.",
-  expired: "The sign-in took too long or was not started here. Start again.",
-  other_user: "That sign-in was started by another Ripiano account.",
-  not_configured: "This provider is not set up on this server.",
-  offline: "The provider did not allow ongoing access. Try again and accept all permissions.",
-  address: "The provider did not share the mailbox address. Try again.",
-  provider: "The provider refused the sign-in. Try again later.",
-};
+const oauthErrorsFor = (m: M): Record<string, string> => ({
+  signin: m.oauthSignin,
+  cancelled: m.oauthCancelled,
+  expired: m.oauthExpired,
+  other_user: m.oauthOtherUser,
+  not_configured: m.oauthNotConfigured,
+  offline: m.oauthOffline,
+  address: m.oauthAddress,
+  provider: m.oauthProvider,
+});
 
 function message(cause: unknown, fallback: string) {
   return cause instanceof Error ? cause.message : fallback;
 }
 
 export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; text: string } | null }) {
+  const m = useMessages(messages);
+  const afterLabels = afterLabelsFor(m);
   const [data, setData] = useState<Overview | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
   const [senders, setSenders] = useState<FilingItem[]>([]);
@@ -93,8 +98,12 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
   const [results, setResults] = useState<Record<string, string>>({});
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(notice?.kind === "error" ? oauthErrors[notice.text] ?? oauthErrors.provider : "");
-  const [status, setStatus] = useState(notice?.kind === "ok" ? "Mailbox connected. Add a rule to start importing." : "");
+  const [error, setError] = useState(() => {
+    if (notice?.kind !== "error") return "";
+    const oauthErrors = oauthErrorsFor(m);
+    return oauthErrors[notice.text] ?? oauthErrors.provider;
+  });
+  const [status, setStatus] = useState(notice?.kind === "ok" ? m.connectedNotice : "");
   const accountFormRef = useRef<HTMLFormElement>(null);
   const ruleFormRef = useRef<HTMLFormElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -112,7 +121,7 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
       setSenders(senderResponse.correspondents);
       setTypes(typeResponse.document_types);
     } catch (cause) {
-      setError(message(cause, "Could not load email settings"));
+      setError(message(cause, m.loadError));
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -123,7 +132,7 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
     // Stop waiting if the worker never picks the check up; the result appears on a later visit.
     const timer = window.setTimeout(() => {
       setWaiting({});
-      setStatus("The check is queued and will finish in the background.");
+      setStatus(m.checkQueued);
     }, 60000);
     return () => window.clearTimeout(timer);
   }, [waiting]);
@@ -168,18 +177,18 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
       setEditingAccount(null);
       await load();
       await test(saved);
-    }, "Could not save the mailbox");
+    }, m.saveMailboxError);
   }
 
   async function test(item: Account) {
     const result = await request<{ ok: boolean; folders?: string[]; error?: string }>(`/api/mail/accounts/${item.id}/test`, { method: "POST" });
     if (result.ok && result.folders) {
       setFolders((value) => ({ ...value, [item.id]: result.folders! }));
-      setResults((value) => ({ ...value, [item.id]: `Connected · ${result.folders!.length} folder${result.folders!.length === 1 ? "" : "s"}` }));
-      setStatus(`${item.name} is connected. ${result.folders.length} folder${result.folders.length === 1 ? "" : "s"} found.`);
+      setResults((value) => ({ ...value, [item.id]: m.connectedResult(result.folders!.length) }));
+      setStatus(m.connectedStatus(item.name, result.folders.length));
     } else {
-      setResults((value) => ({ ...value, [item.id]: result.error ?? "Could not connect" }));
-      setError(`${item.name}: ${result.error ?? "Could not connect"}`);
+      setResults((value) => ({ ...value, [item.id]: result.error ?? m.couldNotConnect }));
+      setError(`${item.name}: ${result.error ?? m.couldNotConnect}`);
     }
   }
 
@@ -187,7 +196,7 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
     void run(async () => {
       const { url } = await request<{ url: string }>(`/api/mail/oauth/${provider}/start`, { method: "POST" });
       window.location.assign(url);
-    }, "Could not start sign-in");
+    }, m.startSignInError);
   }
 
   function editAccount(item: Account) {
@@ -205,11 +214,11 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
       const body = JSON.stringify({ ...rule, correspondent_id: rule.correspondent_id || null, document_type_id: rule.document_type_id || null });
       if (editingRule) await request(`/api/mail/rules/${editingRule}`, { method: "PATCH", body });
       else await request("/api/mail/rules", { method: "POST", body });
-      setStatus(`Rule “${rule.name}” saved. New matching mail is checked every few minutes.`);
+      setStatus(m.ruleSaved(rule.name));
       setRule(emptyRule);
       setEditingRule(null);
       await load();
-    }, "Could not save the rule");
+    }, m.saveRuleError);
   }
 
   function editRule(item: Rule) {
@@ -225,55 +234,55 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
     void run(async () => {
       await request(`/api/mail/${kind}/${id}`, { method: "DELETE" });
       setConfirming(null);
-      setStatus(kind === "accounts" ? "Mailbox removed. Imported documents stay in your archive." : "Rule removed.");
+      setStatus(kind === "accounts" ? m.mailboxRemoved : m.ruleRemoved);
       headingRef.current?.focus();
       if (editingRule === id) { setEditingRule(null); setRule(emptyRule); }
       if (editingAccount === id) { setEditingAccount(null); setAccount(emptyAccount); }
       await load();
-    }, "Could not remove it");
+    }, m.removeError);
   }
 
   function check(item: Account) {
     void run(async () => {
       await request(`/api/mail/accounts/${item.id}/check`, { method: "POST" });
       setWaiting((value) => ({ ...value, [item.id]: item.last_checked_at }));
-      setStatus(`Checking ${item.name}…`);
+      setStatus(m.checking(item.name));
       await load();
-    }, "Could not start the check");
+    }, m.checkError);
   }
 
   function toggleAccount(item: Account) {
     void run(async () => {
       await request(`/api/mail/accounts/${item.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !item.enabled }) });
-      setStatus(item.enabled ? `${item.name} paused. Its rules will not run.` : `${item.name} resumed.`);
+      setStatus(item.enabled ? m.accountPaused(item.name) : m.accountResumed(item.name));
       await load();
-    }, "Could not update the mailbox");
+    }, m.updateMailboxError);
   }
 
   function toggleRule(item: Rule) {
     void run(async () => {
       await request(`/api/mail/rules/${item.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !item.enabled }) });
       await load();
-    }, "Could not update the rule");
+    }, m.updateRuleError);
   }
 
   const accounts = data?.accounts ?? [];
-  const accountName = (id: string) => accounts.find((item) => item.id === id)?.name ?? "Mailbox";
+  const accountName = (id: string) => accounts.find((item) => item.id === id)?.name ?? m.mailboxFallback;
   const ruleFolders = folders[rule.account_id] ?? [];
 
   return (
     <>
       <div className="page-heading">
         <div>
-          <div className="eyebrow"><span className="eyebrow-line" /> INTEGRATIONS</div>
-          <h1 ref={headingRef} tabIndex={-1}>Email<span className="heading-period">.</span></h1>
-          <p>Bring attachments from your mailboxes into the archive automatically.</p>
+          <div className="eyebrow"><span className="eyebrow-line" /> {m.eyebrow}</div>
+          <h1 ref={headingRef} tabIndex={-1}>{m.heading}<span className="heading-period">.</span></h1>
+          <p>{m.intro}</p>
         </div>
       </div>
       {error && (
         <div className="inline-error" role="alert">
           {error}
-          <button onClick={() => setError("")} aria-label="Dismiss error"><X size={16} /></button>
+          <button onClick={() => setError("")} aria-label={m.dismissError}><X size={16} /></button>
         </div>
       )}
       {status && <p className="bulk-notice" role="status">{status}</p>}
@@ -281,8 +290,8 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
         <section className="agent-main">
           <div className="section-heading">
             <div>
-              <h2>Mailboxes</h2>
-              <p>Ripiano reads matching mail and never deletes it.</p>
+              <h2>{m.mailboxes}</h2>
+              <p>{m.mailboxesIntro}</p>
             </div>
           </div>
           {accounts.length ? (
@@ -291,28 +300,28 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
                 <article className="agent-card mail-card" key={item.id}>
                   <span className="agent-avatar"><Mail size={21} aria-hidden="true" /></span>
                   <div className="agent-card-body">
-                    <strong>{item.name}{!item.enabled && " · Paused"}</strong>
-                    <span>{item.username} · {item.auth === "oauth" ? `Signed in with ${item.oauth_provider === "gmail" ? "Google" : "Microsoft"}` : `${item.host}:${item.port}`}</span>
+                    <strong>{item.name}{!item.enabled && m.paused}</strong>
+                    <span>{item.username} · {item.auth === "oauth" ? m.signedInWith(item.oauth_provider === "gmail" ? "Google" : "Microsoft") : `${item.host}:${item.port}`}</span>
                     <span className={item.last_error ? "mail-error" : undefined}>
-                      {item.checking || item.id in waiting ? "Checking now…" : item.last_error ? item.last_error
-                        : item.last_checked_at ? `Checked ${new Date(item.last_checked_at).toLocaleString()} · ${item.last_imported} new` : "Not checked yet"}
+                      {item.checking || item.id in waiting ? m.checkingNow : item.last_error ? item.last_error
+                        : item.last_checked_at ? m.checked(new Date(item.last_checked_at).toLocaleString(), item.last_imported) : m.notChecked}
                     </span>
                     {results[item.id] && <span>{results[item.id]}</span>}
                   </div>
                   <div className="mail-actions">
                     {confirming === item.id ? (
                       <>
-                        <span>Remove this mailbox and its rules?</span>
-                        <Button variant="danger" disabled={busy} onClick={() => remove("accounts", item.id)}>Remove</Button>
-                        <Button variant="secondary" autoFocus onClick={() => setConfirming(null)}>Keep</Button>
+                        <span>{m.confirmRemoveMailbox}</span>
+                        <Button variant="danger" disabled={busy} onClick={() => remove("accounts", item.id)}>{m.remove}</Button>
+                        <Button variant="secondary" autoFocus onClick={() => setConfirming(null)}>{m.keep}</Button>
                       </>
                     ) : (
                       <>
-                        <Button variant="secondary" disabled={busy} onClick={() => void run(() => test(item), "Could not test the mailbox")}>Test</Button>
-                        <Button variant="secondary" disabled={busy || item.checking || item.id in waiting || !item.enabled} onClick={() => check(item)}><RefreshCw size={15} aria-hidden="true" /> Check now</Button>
-                        <Button variant="secondary" disabled={busy} onClick={() => toggleAccount(item)}>{item.enabled ? "Pause" : "Resume"}</Button>
-                        {item.auth === "password" && <Button variant="secondary" onClick={() => editAccount(item)}>Edit</Button>}
-                        <Button variant="secondary" aria-label={`Remove mailbox ${item.name}`} onClick={() => setConfirming(item.id)}>Remove</Button>
+                        <Button variant="secondary" disabled={busy} onClick={() => void run(() => test(item), m.testError)}>{m.test}</Button>
+                        <Button variant="secondary" disabled={busy || item.checking || item.id in waiting || !item.enabled} onClick={() => check(item)}><RefreshCw size={15} aria-hidden="true" /> {m.checkNow}</Button>
+                        <Button variant="secondary" disabled={busy} onClick={() => toggleAccount(item)}>{item.enabled ? m.pause : m.resume}</Button>
+                        {item.auth === "password" && <Button variant="secondary" onClick={() => editAccount(item)}>{m.edit}</Button>}
+                        <Button variant="secondary" aria-label={m.removeMailboxLabel(item.name)} onClick={() => setConfirming(item.id)}>{m.remove}</Button>
                       </>
                     )}
                   </div>
@@ -322,15 +331,15 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
           ) : (
             <div className="tag-empty">
               <Mail size={27} aria-hidden="true" />
-              <strong>No mailbox connected</strong>
-              <p>Optional. Connect one if bills or receipts arrive by email.</p>
+              <strong>{m.noMailbox}</strong>
+              <p>{m.noMailboxText}</p>
             </div>
           )}
 
           <div className="section-heading agent-activity-heading">
             <div>
-              <h2>Rules</h2>
-              <p>Rules run in order. Each message is handled once per rule; editing a rule’s filters looks again at mail it skipped.</p>
+              <h2>{m.rules}</h2>
+              <p>{m.rulesIntro}</p>
             </div>
           </div>
           {data?.rules.length ? (
@@ -339,39 +348,40 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
                 <article className="agent-card mail-card" key={item.id}>
                   <span className="agent-avatar"><Filter size={21} aria-hidden="true" /></span>
                   <div className="agent-card-body">
-                    <strong>{item.name}{!item.enabled && " · Paused"}</strong>
-                    <span>{accountName(item.account_id)} · {item.folder} · last {item.max_age_days} days</span>
+                    <strong>{item.name}{!item.enabled && m.paused}</strong>
+                    <span>{m.ruleScope(accountName(item.account_id), item.folder, item.max_age_days)}</span>
                     <span>
-                      {[item.filter_from && `from “${item.filter_from}”`, item.filter_subject && `subject “${item.filter_subject}”`,
-                        item.filter_body && `text “${item.filter_body}”`, item.filter_attachment && `files “${item.filter_attachment}”`]
-                        .filter(Boolean).join(" · ") || "All messages with attachments"}
+                      {[item.filter_from && m.filterFrom(item.filter_from), item.filter_subject && m.filterSubject(item.filter_subject),
+                        item.filter_body && m.filterText(item.filter_body), item.filter_attachment && m.filterFiles(item.filter_attachment)]
+                        .filter(Boolean).join(" · ") || m.allWithAttachments}
                     </span>
-                    <span>Imports {item.consume === "attachments" ? "attachments" : item.consume === "message" ? "the email itself" : "the email and attachments"} · then: {afterLabels[item.after].toLowerCase()}{item.after === "move" ? ` “${item.move_to}”` : ""}</span>
+                    <span>{m.importsThen(item.consume === "attachments" ? m.importsAttachments : item.consume === "message" ? m.importsMessage : m.importsBoth,
+                      `${afterLabels[item.after].toLowerCase()}${item.after === "move" ? ` “${item.move_to}”` : ""}`)}</span>
                   </div>
                   <div className="mail-actions">
                     {confirming === item.id ? (
                       <>
-                        <span>Remove this rule?</span>
-                        <Button variant="danger" disabled={busy} onClick={() => remove("rules", item.id)}>Remove</Button>
-                        <Button variant="secondary" autoFocus onClick={() => setConfirming(null)}>Keep</Button>
+                        <span>{m.confirmRemoveRule}</span>
+                        <Button variant="danger" disabled={busy} onClick={() => remove("rules", item.id)}>{m.remove}</Button>
+                        <Button variant="secondary" autoFocus onClick={() => setConfirming(null)}>{m.keep}</Button>
                       </>
                     ) : (
                       <>
-                        <Button variant="secondary" disabled={busy} onClick={() => toggleRule(item)}>{item.enabled ? "Pause" : "Resume"}</Button>
-                        <Button variant="secondary" onClick={() => editRule(item)}>Edit</Button>
-                        <Button variant="secondary" aria-label={`Remove rule ${item.name}`} onClick={() => setConfirming(item.id)}>Remove</Button>
+                        <Button variant="secondary" disabled={busy} onClick={() => toggleRule(item)}>{item.enabled ? m.pause : m.resume}</Button>
+                        <Button variant="secondary" onClick={() => editRule(item)}>{m.edit}</Button>
+                        <Button variant="secondary" aria-label={m.removeRuleLabel(item.name)} onClick={() => setConfirming(item.id)}>{m.remove}</Button>
                       </>
                     )}
                   </div>
                 </article>
               ))}
             </div>
-          ) : <p className="agent-empty-activity">{accounts.length ? "Add a rule to start importing." : "Connect a mailbox first."}</p>}
+          ) : <p className="agent-empty-activity">{accounts.length ? m.addRuleToStart : m.connectFirst}</p>}
 
           <div className="section-heading agent-activity-heading">
             <div>
-              <h2>Recent mail</h2>
-              <p>What each rule did with the last messages it read.</p>
+              <h2>{m.recentMail}</h2>
+              <p>{m.recentMailIntro}</p>
             </div>
           </div>
           {data?.recent.length ? (
@@ -379,129 +389,129 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
               {data.recent.map((item) => (
                 <div key={item.id}>
                   <span>{item.rule} · {item.sender || item.account}</span>
-                  <strong>{item.subject || "(no subject)"}</strong>
+                  <strong>{item.subject || m.noSubject}</strong>
                   <small>
-                    {item.status === "imported" ? `${item.documents} document${item.documents === 1 ? "" : "s"} added`
-                      : item.status === "no_match" ? item.detail || "Nothing to import" : item.detail || "Skipped"}
+                    {item.status === "imported" ? m.documentsAdded(item.documents)
+                      : item.status === "no_match" ? item.detail || m.nothingToImport : item.detail || m.skipped}
                     {" · "}{new Date(item.processed_at).toLocaleString()}
                   </small>
                 </div>
               ))}
             </div>
-          ) : <p className="agent-empty-activity">No mail handled yet.</p>}
+          ) : <p className="agent-empty-activity">{m.noMail}</p>}
         </section>
 
         <div className="mail-side">
           <section className="tag-create-card agent-create-card">
             <div className="tag-create-icon"><Inbox size={21} aria-hidden="true" /></div>
-            <h2>{editingAccount ? "Edit mailbox" : "Connect a mailbox"}</h2>
+            <h2>{editingAccount ? m.editMailbox : m.connectMailbox}</h2>
             {!editingAccount && data?.oauth_providers.length ? (
               <div className="mail-oauth">
                 {data.oauth_providers.map((provider) => (
                   <Button key={provider.id} variant="secondary" disabled={busy} onClick={() => startOAuth(provider.id)}>
-                    Sign in with {provider.id === "gmail" ? "Google" : "Microsoft"}
+                    {m.signInWith(provider.id === "gmail" ? "Google" : "Microsoft")}
                   </Button>
                 ))}
-                <small>Or use an IMAP app password:</small>
+                <small>{m.orAppPassword}</small>
               </div>
-            ) : <p>Use your provider’s IMAP settings. An app password is safer than your main password.</p>}
-            <form ref={accountFormRef} onSubmit={saveAccount} aria-label="Mailbox settings">
-              <label>Name<input value={account.name} onChange={(event) => setAccount({ ...account, name: event.target.value })} placeholder="e.g. Home mail" maxLength={100} required /></label>
-              <label>IMAP server<input value={account.host} onChange={(event) => setAccount({ ...account, host: event.target.value })} placeholder="imap.example.com" maxLength={255} required autoCapitalize="none" spellCheck={false} /></label>
+            ) : <p>{m.imapHint}</p>}
+            <form ref={accountFormRef} onSubmit={saveAccount} aria-label={m.mailboxSettings}>
+              <label>{m.name}<input value={account.name} onChange={(event) => setAccount({ ...account, name: event.target.value })} placeholder={m.namePlaceholder} maxLength={100} required /></label>
+              <label>{m.imapServer}<input value={account.host} onChange={(event) => setAccount({ ...account, host: event.target.value })} placeholder="imap.example.com" maxLength={255} required autoCapitalize="none" spellCheck={false} /></label>
               <div className="mail-row">
-                <label>Security
+                <label>{m.security}
                   <select value={account.security} onChange={(event) => {
                     const security = event.target.value as Account["security"];
                     setAccount({ ...account, security, port: security === "ssl" ? 993 : 143 });
                   }}>
                     <option value="ssl">SSL/TLS</option>
                     <option value="starttls">STARTTLS</option>
-                    <option value="none">None (local only)</option>
+                    <option value="none">{m.securityNone}</option>
                   </select>
                 </label>
-                <label>Port<input type="number" min={1} max={65535} value={account.port} onChange={(event) => setAccount({ ...account, port: Number(event.target.value) })} required /></label>
+                <label>{m.port}<input type="number" min={1} max={65535} value={account.port} onChange={(event) => setAccount({ ...account, port: Number(event.target.value) })} required /></label>
               </div>
               {account.security === "none" && (
-                <p className="mail-warning" role="note">Without security, the password travels unencrypted. Use this only for a mail server on your own network.</p>
+                <p className="mail-warning" role="note">{m.noSecurityWarning}</p>
               )}
-              <label>Username<input value={account.username} onChange={(event) => setAccount({ ...account, username: event.target.value })} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={255} required /></label>
-              <label>Password {editingAccount && <small>Leave empty to keep the saved one</small>}
+              <label>{m.username}<input value={account.username} onChange={(event) => setAccount({ ...account, username: event.target.value })} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={255} required /></label>
+              <label>{m.password} {editingAccount && <small>{m.keepPassword}</small>}
                 <input type="password" value={account.password} onChange={(event) => setAccount({ ...account, password: event.target.value })} autoComplete="new-password" maxLength={500} required={!editingAccount} />
               </label>
-              <Button disabled={busy}><CheckCircle2 size={17} aria-hidden="true" /> {editingAccount ? "Save and test" : "Connect and test"}</Button>
-              {editingAccount && <Button type="button" variant="secondary" onClick={() => { setEditingAccount(null); setAccount(emptyAccount); }}>Cancel</Button>}
+              <Button disabled={busy}><CheckCircle2 size={17} aria-hidden="true" /> {editingAccount ? m.saveAndTest : m.connectAndTest}</Button>
+              {editingAccount && <Button type="button" variant="secondary" onClick={() => { setEditingAccount(null); setAccount(emptyAccount); }}>{m.cancel}</Button>}
             </form>
-            <div className="tag-tip">Passwords are encrypted on your NAS and are never shown again.</div>
+            <div className="tag-tip">{m.passwordsTip}</div>
           </section>
 
           {accounts.length > 0 && (
             <section className="tag-create-card agent-create-card">
               <div className="tag-create-icon"><Filter size={21} aria-hidden="true" /></div>
-              <h2>{editingRule ? "Edit rule" : "Add a rule"}</h2>
-              <p>Import matching attachments, the email itself, or both.</p>
-              <form ref={ruleFormRef} onSubmit={saveRule} aria-label="Mail rule">
-                <label>Rule name<input value={rule.name} onChange={(event) => setRule({ ...rule, name: event.target.value })} placeholder="e.g. Utility bills" maxLength={100} required /></label>
-                <label>Mailbox
+              <h2>{editingRule ? m.editRule : m.addARule}</h2>
+              <p>{m.ruleIntro}</p>
+              <form ref={ruleFormRef} onSubmit={saveRule} aria-label={m.mailRule}>
+                <label>{m.ruleName}<input value={rule.name} onChange={(event) => setRule({ ...rule, name: event.target.value })} placeholder={m.ruleNamePlaceholder} maxLength={100} required /></label>
+                <label>{m.mailbox}
                   <select value={rule.account_id} onChange={(event) => setRule({ ...rule, account_id: event.target.value })} required>
-                    <option value="">Choose a mailbox</option>
+                    <option value="">{m.chooseMailbox}</option>
                     {accounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
-                <label>Folder {ruleFolders.length === 0 && <small>Press Test on the mailbox to list folders</small>}
+                <label>{m.folder} {ruleFolders.length === 0 && <small>{m.folderHint}</small>}
                   <input list="mail-folders" value={rule.folder} onChange={(event) => setRule({ ...rule, folder: event.target.value })} maxLength={200} required autoCapitalize="none" />
                 </label>
                 <datalist id="mail-folders">{ruleFolders.map((folder) => <option key={folder} value={folder} />)}</datalist>
-                <label>What to import
+                <label>{m.whatToImport}
                   <select value={rule.consume} onChange={(event) => setRule({ ...rule, consume: event.target.value as Rule["consume"] })}>
-                    <option value="attachments">Attachments</option>
-                    <option value="message">The email itself</option>
-                    <option value="both">The email and its attachments</option>
+                    <option value="attachments">{m.optAttachments}</option>
+                    <option value="message">{m.optMessage}</option>
+                    <option value="both">{m.optBoth}</option>
                   </select>
                 </label>
                 <fieldset>
-                  <legend>Only messages where <small>All optional</small></legend>
-                  <label>Sender contains<input value={rule.filter_from} onChange={(event) => setRule({ ...rule, filter_from: event.target.value })} placeholder="e.g. @acme-energy.it" maxLength={200} /></label>
-                  <label>Subject contains<input value={rule.filter_subject} onChange={(event) => setRule({ ...rule, filter_subject: event.target.value })} placeholder="e.g. invoice" maxLength={200} /></label>
-                  <label>Text contains<input value={rule.filter_body} onChange={(event) => setRule({ ...rule, filter_body: event.target.value })} maxLength={200} /></label>
-                  <label>File name matches<input value={rule.filter_attachment} onChange={(event) => setRule({ ...rule, filter_attachment: event.target.value })} placeholder="e.g. *.pdf or fattura*" maxLength={200} /></label>
+                  <legend>{m.onlyMessages} <small>{m.allOptional}</small></legend>
+                  <label>{m.senderContains}<input value={rule.filter_from} onChange={(event) => setRule({ ...rule, filter_from: event.target.value })} placeholder={m.senderPlaceholder} maxLength={200} /></label>
+                  <label>{m.subjectContains}<input value={rule.filter_subject} onChange={(event) => setRule({ ...rule, filter_subject: event.target.value })} placeholder={m.subjectPlaceholder} maxLength={200} /></label>
+                  <label>{m.textContains}<input value={rule.filter_body} onChange={(event) => setRule({ ...rule, filter_body: event.target.value })} maxLength={200} /></label>
+                  <label>{m.fileNameMatches}<input value={rule.filter_attachment} onChange={(event) => setRule({ ...rule, filter_attachment: event.target.value })} placeholder={m.fileNamePlaceholder} maxLength={200} /></label>
                   <label className="agent-scope-choice">
                     <input type="checkbox" checked={rule.include_inline} onChange={(event) => setRule({ ...rule, include_inline: event.target.checked })} />
-                    Also import pictures shown inside the email
+                    {m.includeInline}
                   </label>
-                  <label>Received in the last <small>Days</small><input type="number" min={1} max={3650} value={rule.max_age_days} onChange={(event) => setRule({ ...rule, max_age_days: Number(event.target.value) })} required /></label>
+                  <label>{m.receivedInLast} <small>{m.days}</small><input type="number" min={1} max={3650} value={rule.max_age_days} onChange={(event) => setRule({ ...rule, max_age_days: Number(event.target.value) })} required /></label>
                 </fieldset>
-                <label>Order <small>Lower numbers run first</small>
+                <label>{m.order} <small>{m.orderHint}</small>
                   <input type="number" min={0} max={10000} value={rule.order} onChange={(event) => setRule({ ...rule, order: Number(event.target.value) })} required />
                 </label>
-                <label>After importing
+                <label>{m.afterImporting}
                   <select value={rule.after} onChange={(event) => setRule({ ...rule, after: event.target.value as Rule["after"] })}>
                     {Object.entries(afterLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </label>
                 {rule.after === "move" && (
-                  <label>Move to folder<input list="mail-folders" value={rule.move_to} onChange={(event) => setRule({ ...rule, move_to: event.target.value })} maxLength={200} required /></label>
+                  <label>{m.moveToFolder}<input list="mail-folders" value={rule.move_to} onChange={(event) => setRule({ ...rule, move_to: event.target.value })} maxLength={200} required /></label>
                 )}
-                <label>Document title
+                <label>{m.documentTitle}
                   <select value={rule.title_from} onChange={(event) => setRule({ ...rule, title_from: event.target.value as Rule["title_from"] })}>
-                    <option value="subject">Email subject</option>
-                    <option value="filename">Attachment name</option>
+                    <option value="subject">{m.emailSubject}</option>
+                    <option value="filename">{m.attachmentName}</option>
                   </select>
                 </label>
-                <label>Sender
+                <label>{m.sender}
                   <select value={rule.correspondent_id} onChange={(event) => setRule({ ...rule, correspondent_id: event.target.value })}>
-                    <option value="">Don’t set</option>
+                    <option value="">{m.dontSet}</option>
                     {senders.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
-                <label>Document type
+                <label>{m.documentType}
                   <select value={rule.document_type_id} onChange={(event) => setRule({ ...rule, document_type_id: event.target.value })}>
-                    <option value="">Don’t set</option>
+                    <option value="">{m.dontSet}</option>
                     {types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
                 {tags.length > 0 && (
                   <fieldset className="mail-tags">
-                    <legend>Add tags</legend>
+                    <legend>{m.addTags}</legend>
                     {tags.map((tag) => (
                       <label className="agent-scope-choice" key={tag.id}>
                         <input type="checkbox" checked={rule.tag_ids.includes(tag.id)} onChange={() => setRule({
@@ -512,8 +522,8 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
                     ))}
                   </fieldset>
                 )}
-                <Button disabled={busy}><Plus size={17} aria-hidden="true" /> {editingRule ? "Save rule" : "Add rule"}</Button>
-                {editingRule && <Button type="button" variant="secondary" onClick={() => { setEditingRule(null); setRule(emptyRule); }}>Cancel</Button>}
+                <Button disabled={busy}><Plus size={17} aria-hidden="true" /> {editingRule ? m.saveRule : m.addRule}</Button>
+                {editingRule && <Button type="button" variant="secondary" onClick={() => { setEditingRule(null); setRule(emptyRule); }}>{m.cancel}</Button>}
               </form>
             </section>
           )}

@@ -74,10 +74,11 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
     {loading ? <p>{m.loading}</p> : error && !documents.length ? null : documents.length === 0 ? (
       <div className="empty-state">
         <div className="empty-icon"><ClipboardList size={32} strokeWidth={1.5} /></div>
-        <h3>{m.emptyTitle}</h3>
+        <h2>{m.emptyTitle}</h2>
         <p>{m.emptyText}</p>
       </div>
     ) : <>
+    <h2 className="visually-hidden">{m.listHeading}</h2>
     <div className="document-list">
       {documents.map((document) => <article className="document-row action-row" key={document.id}>
         <div className="document-icon"><FileText size={21} /></div>

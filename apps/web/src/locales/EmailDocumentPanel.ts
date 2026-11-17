@@ -1,0 +1,43 @@
+import { defineMessages } from "../i18n";
+
+type SendStatus = "queued" | "sent" | "failed";
+
+export default defineMessages({
+  loadError: "Could not load email history",
+  sendingNow: "Sending now. The result appears below.",
+  sendError: "Could not send the email",
+  heading: "Email this document",
+  write: "Write an email",
+  notConfigured: "Emailing documents is not turned on for this server. The administrator can enable it with RIPIANO_DOCUMENT_EMAIL=1 and the RIPIANO_SMTP settings. You can share a link instead.",
+  formLabel: "Email this document",
+  to: "To",
+  toHint: "Up to 10 addresses, separated by commas",
+  message: "Message",
+  optional: "Optional",
+  attach: "Attach",
+  original: "The original file",
+  searchable: "The searchable PDF",
+  notReadyYet: " (not ready yet)",
+  hint: "The subject is the document title, and the message says it comes from you through Ripiano. Replies go to your account’s email address, if it has one.",
+  send: "Send email",
+  sendStatus: (status: SendStatus, recipients: string) => `${status === "sent" ? "Sent" : status === "failed" ? "Not sent" : "Sending"} to ${recipients}`,
+}, {
+  loadError: "Impossibile caricare la cronologia delle email",
+  sendingNow: "Invio in corso. Il risultato compare qui sotto.",
+  sendError: "Impossibile inviare l'email",
+  heading: "Invia questo documento via email",
+  write: "Scrivi un'email",
+  notConfigured: "L'invio di documenti via email non è attivo su questo server. L'amministratore può attivarlo con RIPIANO_DOCUMENT_EMAIL=1 e le impostazioni RIPIANO_SMTP. In alternativa puoi condividere un link.",
+  formLabel: "Invia questo documento via email",
+  to: "A",
+  toHint: "Fino a 10 indirizzi, separati da virgole",
+  message: "Messaggio",
+  optional: "Facoltativo",
+  attach: "Allega",
+  original: "Il file originale",
+  searchable: "Il PDF ricercabile",
+  notReadyYet: " (non ancora pronto)",
+  hint: "L'oggetto è il titolo del documento e il messaggio indica che arriva da te tramite Ripiano. Le risposte vanno all'indirizzo email del tuo account, se ne ha uno.",
+  send: "Invia email",
+  sendStatus: (status: SendStatus, recipients: string) => `${status === "sent" ? "Inviata" : status === "failed" ? "Non inviata" : "Invio in corso"} a ${recipients}`,
+});

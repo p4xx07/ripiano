@@ -27,6 +27,8 @@ import DocumentAccessPanel from "./DocumentAccessPanel";
 import PagesPanel from "./PagesPanel";
 import SimilarPanel from "./SimilarPanel";
 import EmailDocumentPanel from "./EmailDocumentPanel";
+import { useMessages } from "./i18n";
+import messages from "./locales/DocumentPanel";
 
 export default function DocumentPanel({
   initial,
@@ -45,6 +47,7 @@ export default function DocumentPanel({
   onOpenDuplicate: (id: string) => void;
   onTrashed: () => void;
 }) {
+  const m = useMessages(messages);
   const [current, setCurrent] = useState(initial);
   const [title, setTitle] = useState(initial.title);
   const [date, setDate] = useState(initial.document_date ?? "");
@@ -120,7 +123,7 @@ export default function DocumentPanel({
     ]).then(([senders, types]) => {
       setCorrespondents(senders.correspondents);
       setDocumentTypes(types.document_types);
-    }).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load filing details"));
+    }).catch((cause) => setError(cause instanceof Error ? cause.message : m.loadFilingError));
   }, []);
   useEffect(() => {
     void loadNotes(0);
@@ -134,7 +137,7 @@ export default function DocumentPanel({
         setCurrent(updated);
         if (updated.status === "ready" || updated.status === "failed") {
           onSaved(updated);
-          setReprocessNotice(updated.status === "ready" ? "Searchable PDF is ready." : "OCR failed. You can retry it here.");
+          setReprocessNotice(updated.status === "ready" ? m.searchableReady : m.ocrFailedRetry);
         }
       }).catch(() => {});
     }, 2500);
@@ -149,7 +152,7 @@ export default function DocumentPanel({
       setNextNoteOffset(result.next_offset);
       setNoteError("");
     } catch (cause) {
-      setNoteError(cause instanceof Error ? cause.message : "Could not load notes");
+      setNoteError(cause instanceof Error ? cause.message : m.loadNotesError);
     } finally {
       setNotesLoading(false);
     }
@@ -166,9 +169,9 @@ export default function DocumentPanel({
       setNoteDraft("");
       await loadNotes(0);
       onSaved(current);
-      setNoteNotice("Note added.");
+      setNoteNotice(m.noteAdded);
     } catch (cause) {
-      setNoteError(cause instanceof Error ? cause.message : "Could not add note");
+      setNoteError(cause instanceof Error ? cause.message : m.addNoteError);
     } finally {
       setNotesBusy(false);
     }
@@ -183,9 +186,9 @@ export default function DocumentPanel({
       setDeleteNoteId(null);
       await loadNotes(0);
       onSaved(current);
-      setNoteNotice("Note deleted.");
+      setNoteNotice(m.noteDeleted);
     } catch (cause) {
-      setNoteError(cause instanceof Error ? cause.message : "Could not delete note");
+      setNoteError(cause instanceof Error ? cause.message : m.deleteNoteError);
     } finally {
       setNotesBusy(false);
     }
@@ -199,9 +202,9 @@ export default function DocumentPanel({
       const updated = await request<Document>(`/api/documents/${current.id}/reprocess`, { method: "POST" });
       setCurrent(updated);
       onSaved(updated);
-      setReprocessNotice("OCR queued from the preserved original.");
+      setReprocessNotice(m.ocrQueued);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not queue OCR");
+      setError(cause instanceof Error ? cause.message : m.queueOcrError);
     } finally {
       setBusy(false);
     }
@@ -214,7 +217,7 @@ export default function DocumentPanel({
       onTrashed();
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not move document to Trash");
+      setError(cause instanceof Error ? cause.message : m.trashError);
     } finally {
       setBusy(false);
     }
@@ -243,7 +246,7 @@ export default function DocumentPanel({
         changes.tags = selected;
       }
       const asnText = asn.trim();
-      if (asnText && !/^\d{1,9}$/.test(asnText)) throw new Error("Archive number must be a whole number, or empty");
+      if (asnText && !/^\d{1,9}$/.test(asnText)) throw new Error(m.asnInvalid);
       if (asnText !== (current.asn ? String(current.asn) : "")) changes.asn = asnText ? Number(asnText) : null;
       if (correspondentId !== (current.correspondent?.id ?? "")) changes.correspondent_id = correspondentId || null;
       if (documentTypeId !== (current.document_type?.id ?? "")) changes.document_type_id = documentTypeId || null;
@@ -257,7 +260,7 @@ export default function DocumentPanel({
       onClose();
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not save document",
+        cause instanceof Error ? cause.message : m.saveError,
       );
     } finally {
       setBusy(false);
@@ -284,7 +287,7 @@ export default function DocumentPanel({
         setCreatingDocumentType(false);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create filing detail");
+      setError(cause instanceof Error ? cause.message : m.createFilingError);
     } finally {
       setBusy(false);
     }
@@ -310,7 +313,7 @@ export default function DocumentPanel({
       setNewLocation("");
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not create sticker",
+        cause instanceof Error ? cause.message : m.createStickerError,
       );
     } finally {
       setBusy(false);
@@ -328,7 +331,7 @@ export default function DocumentPanel({
       await refreshCopies();
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not move paper copy",
+        cause instanceof Error ? cause.message : m.moveCopyError,
       );
     } finally {
       setBusy(false);
@@ -346,9 +349,9 @@ export default function DocumentPanel({
       });
       await refreshCopies();
       await showHistory(copy);
-      setCopyNotice(missing ? `Paper copy ${copy.sticker_code} marked missing. Its last known location is saved.` : `Paper copy ${copy.sticker_code} marked found. Check its location below.`);
+      setCopyNotice(missing ? m.copyMarkedMissing(copy.sticker_code) : m.copyMarkedFound(copy.sticker_code));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not update paper-copy status");
+      setError(cause instanceof Error ? cause.message : m.copyStatusError);
     } finally {
       setBusy(false);
     }
@@ -364,7 +367,7 @@ export default function DocumentPanel({
       setError(
         cause instanceof Error
           ? cause.message
-          : "Could not load movement history",
+          : m.historyError,
       );
     }
   }
@@ -391,10 +394,10 @@ export default function DocumentPanel({
       setDocumentTypeId((draft) => kind === "type" || draft === (current.document_type?.id ?? "") ? updated.document_type?.id ?? "" : draft);
       setCurrent(updated);
       onSaved(updated);
-      setSuggestionStatus(`${kind === "tag" ? "Tag" : kind === "sender" ? "Sender" : "Type"} ${item.name} saved. Other edits still need Save changes.`);
+      setSuggestionStatus(m.suggestionSaved(kind, item.name));
       requestAnimationFrame(() => document.getElementById(fieldId)?.focus());
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not save suggestion");
+      setError(cause instanceof Error ? cause.message : m.saveSuggestionError);
     } finally {
       setBusy(false);
     }
@@ -403,39 +406,37 @@ export default function DocumentPanel({
 
   return (
     <Modal titleId="detail-heading" panelClassName="detail-panel" backdropClassName="detail-backdrop" onClose={onClose}>
-        <button className="modal-close" onClick={onClose} aria-label="Close">
+        <button className="modal-close" onClick={onClose} aria-label={m.close}>
           <X size={20} />
         </button>
         <div className="eyebrow">
-          <span className="eyebrow-line" /> DOCUMENT
+          <span className="eyebrow-line" /> {m.eyebrow}
         </div>
-        <h2 id="detail-heading">Keep it in place.</h2>
+        <h2 id="detail-heading">{m.heading}</h2>
         <p className="detail-intro">
-          The original is safe. Add details only when they help you find it
-          later.
+          {m.intro}
         </p>
         {current.duplicate_of && (
           <button
             className="duplicate-note"
             onClick={() => onOpenDuplicate(current.duplicate_of!.id)}
           >
-            <Copy size={16} /> Exact copy of “{current.duplicate_of.title}” ·
-            Open earlier copy
+            <Copy size={16} /> {m.exactCopy(current.duplicate_of.title)}
           </button>
         )}
         {current.split_parent && (
           <button type="button" className="split-note" onClick={() => onOpenDuplicate(current.split_parent!.id)}>
-            <Layers size={16} aria-hidden="true" /> Part of a scan split by barcodes · Open full scan
+            <Layers size={16} aria-hidden="true" /> {m.splitPart}
           </button>
         )}
         {current.is_split_source && (
-          <p className="email-origin"><Layers size={16} aria-hidden="true" /> This full scan was split by barcodes into separate documents. It is kept unchanged and is not listed in the Library.</p>
+          <p className="email-origin"><Layers size={16} aria-hidden="true" /> {m.splitSource}</p>
         )}
         {current.email && (
           <p className="email-origin">
             <Mail size={16} aria-hidden="true" />
             <span>
-              From email{current.email.sender ? ` · ${current.email.sender}` : ""}
+              {m.fromEmail}{current.email.sender ? ` · ${current.email.sender}` : ""}
               {current.email.subject && <> · “{current.email.subject}”</>}
               <small>{current.email.account}{current.email.received_at ? ` · ${new Date(current.email.received_at).toLocaleString()}` : ""}</small>
             </span>
@@ -447,7 +448,7 @@ export default function DocumentPanel({
           </div>
         )}
         <form onSubmit={save}>
-          <Field label="Title" className="detail-label">
+          <Field label={m.title} className="detail-label">
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
@@ -455,10 +456,10 @@ export default function DocumentPanel({
               required
             />
           </Field>
-          <Field label="Archive number (ASN)" hint="Optional · your own running number; ASN barcodes fill it in" className="detail-label">
+          <Field label={m.asn} hint={m.asnHint} className="detail-label">
             <input inputMode="numeric" pattern="[0-9]*" maxLength={9} value={asn} onChange={(event) => setAsn(event.target.value)} />
           </Field>
-          <Field label="Document date" hint="Optional" className="detail-label">
+          <Field label={m.documentDate} hint={m.optional} className="detail-label">
             <input
               type="date"
               value={date}
@@ -467,80 +468,80 @@ export default function DocumentPanel({
           </Field>
           {visibleSuggestions && (
             <section className="filing-suggestions" aria-labelledby="filing-suggestions-heading">
-              <h3 id="filing-suggestions-heading">Suggested from your documents</h3>
-              <p>Based on documents you filed yourself. Tap a suggestion to save it; other edits still need Save changes.</p>
+              <h3 id="filing-suggestions-heading">{m.suggestionsHeading}</h3>
+              <p>{m.suggestionsIntro}</p>
               {suggestedTags.map((item) => (
-                <button type="button" disabled={busy} key={`tag-${item.id}`} aria-label={`Add tag: ${item.name}`} aria-describedby={`suggestion-tag-${item.id}`} onClick={() => void acceptSuggestion("tag", item)}>
-                  <span className="suggestion-action"><TagIcon size={16} aria-hidden="true" /><span>Add tag: {item.name}</span></span>
+                <button type="button" disabled={busy} key={`tag-${item.id}`} aria-label={m.addTag(item.name)} aria-describedby={`suggestion-tag-${item.id}`} onClick={() => void acceptSuggestion("tag", item)}>
+                  <span className="suggestion-action"><TagIcon size={16} aria-hidden="true" /><span>{m.addTag(item.name)}</span></span>
                   <small id={`suggestion-tag-${item.id}`}>{suggestionBasis(item)}</small>
                 </button>
               ))}
               {suggestedSenders.map((item) => (
-                <button type="button" disabled={busy} key={`sender-${item.id}`} aria-label={`Set sender: ${item.name}`} aria-describedby={`suggestion-sender-${item.id}`} onClick={() => void acceptSuggestion("sender", item)}>
-                  <span className="suggestion-action"><Building2 size={16} aria-hidden="true" /><span>Set sender: {item.name}</span></span>
+                <button type="button" disabled={busy} key={`sender-${item.id}`} aria-label={m.setSender(item.name)} aria-describedby={`suggestion-sender-${item.id}`} onClick={() => void acceptSuggestion("sender", item)}>
+                  <span className="suggestion-action"><Building2 size={16} aria-hidden="true" /><span>{m.setSender(item.name)}</span></span>
                   <small id={`suggestion-sender-${item.id}`}>{suggestionBasis(item)}</small>
                 </button>
               ))}
               {suggestedTypes.map((item) => (
-                <button type="button" disabled={busy} key={`type-${item.id}`} aria-label={`Set type: ${item.name}`} aria-describedby={`suggestion-type-${item.id}`} onClick={() => void acceptSuggestion("type", item)}>
-                  <span className="suggestion-action"><FileText size={16} aria-hidden="true" /><span>Set type: {item.name}</span></span>
+                <button type="button" disabled={busy} key={`type-${item.id}`} aria-label={m.setType(item.name)} aria-describedby={`suggestion-type-${item.id}`} onClick={() => void acceptSuggestion("type", item)}>
+                  <span className="suggestion-action"><FileText size={16} aria-hidden="true" /><span>{m.setType(item.name)}</span></span>
                   <small id={`suggestion-type-${item.id}`}>{suggestionBasis(item)}</small>
                 </button>
               ))}
             </section>
           )}
           {suggestionStatus && <p className="visually-hidden" role="status">{suggestionStatus}</p>}
-          <Field label="From" hint={current.correspondent_origin === "rule" ? "Added by matching phrase · change it if needed" : current.correspondent_origin === "source" ? "Added by input or workflow rule · change it if needed" : current.correspondent_origin === "model" ? "Set by an agent · change it if needed" : current.correspondent_origin === "learned" ? "Filed by your local model · change it if needed" : "Optional sender or organization"} className="detail-label">
+          <Field label={m.from} hint={current.correspondent_origin === "rule" ? m.originRule : current.correspondent_origin === "source" ? m.originSource : current.correspondent_origin === "model" ? m.originModel : current.correspondent_origin === "learned" ? m.originLearned : m.senderHint} className="detail-label">
             <select id="detail-correspondent" value={correspondentId} onChange={(event) => setCorrespondentId(event.target.value)}>
-              <option value="">No sender</option>
+              <option value="">{m.noSender}</option>
               {correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </Field>
           {creatingCorrespondent ? (
             <div className="filing-create">
-              <input aria-label="New sender name" value={newCorrespondent} onChange={(event) => setNewCorrespondent(event.target.value)} maxLength={100} placeholder="e.g. City of Milan" />
-              <Button type="button" variant="secondary" disabled={busy || !newCorrespondent.trim()} onClick={() => void createFilingItem("correspondent")}>Add sender</Button>
-              <button type="button" aria-label="Cancel new sender" onClick={() => setCreatingCorrespondent(false)}><X size={16} /></button>
+              <input aria-label={m.newSenderName} value={newCorrespondent} onChange={(event) => setNewCorrespondent(event.target.value)} maxLength={100} placeholder={m.senderPlaceholder} />
+              <Button type="button" variant="secondary" disabled={busy || !newCorrespondent.trim()} onClick={() => void createFilingItem("correspondent")}>{m.addSender}</Button>
+              <button type="button" aria-label={m.cancelNewSender} onClick={() => setCreatingCorrespondent(false)}><X size={16} /></button>
             </div>
-          ) : <button type="button" className="text-action" onClick={() => setCreatingCorrespondent(true)}><Plus size={15} /> Add a sender</button>}
-          <Field label="Document type" hint={current.document_type_origin === "rule" ? "Added by matching phrase · change it if needed" : current.document_type_origin === "source" ? "Added by input or workflow rule · change it if needed" : current.document_type_origin === "model" ? "Set by an agent · change it if needed" : current.document_type_origin === "learned" ? "Filed by your local model · change it if needed" : "Optional"} className="detail-label">
+          ) : <button type="button" className="text-action" onClick={() => setCreatingCorrespondent(true)}><Plus size={15} /> {m.addASender}</button>}
+          <Field label={m.documentType} hint={current.document_type_origin === "rule" ? m.originRule : current.document_type_origin === "source" ? m.originSource : current.document_type_origin === "model" ? m.originModel : current.document_type_origin === "learned" ? m.originLearned : m.optional} className="detail-label">
             <select id="detail-document-type" value={documentTypeId} onChange={(event) => setDocumentTypeId(event.target.value)}>
-              <option value="">No type</option>
+              <option value="">{m.noType}</option>
               {documentTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </Field>
           {creatingDocumentType ? (
             <div className="filing-create">
-              <input aria-label="New document type name" value={newDocumentType} onChange={(event) => setNewDocumentType(event.target.value)} maxLength={100} placeholder="e.g. Insurance policy" />
-              <Button type="button" variant="secondary" disabled={busy || !newDocumentType.trim()} onClick={() => void createFilingItem("document_type")}>Add type</Button>
-              <button type="button" aria-label="Cancel new type" onClick={() => setCreatingDocumentType(false)}><X size={16} /></button>
+              <input aria-label={m.newTypeName} value={newDocumentType} onChange={(event) => setNewDocumentType(event.target.value)} maxLength={100} placeholder={m.typePlaceholder} />
+              <Button type="button" variant="secondary" disabled={busy || !newDocumentType.trim()} onClick={() => void createFilingItem("document_type")}>{m.addType}</Button>
+              <button type="button" aria-label={m.cancelNewType} onClick={() => setCreatingDocumentType(false)}><X size={16} /></button>
             </div>
-          ) : <button type="button" className="text-action" onClick={() => setCreatingDocumentType(true)}><Plus size={15} /> Add a type</button>}
+          ) : <button type="button" className="text-action" onClick={() => setCreatingDocumentType(true)}><Plus size={15} /> {m.addAType}</button>}
           {storagePaths.length > 0 && (
-            <Field label="Storage path" hint="Folder in the readable NAS copy" className="detail-label">
+            <Field label={m.storagePath} hint={m.storagePathHint} className="detail-label">
               <select value={storagePathId} onChange={(event) => setStoragePathId(event.target.value)}>
-                <option value="">By year (default)</option>
+                <option value="">{m.byYear}</option>
                 {storagePaths.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </Field>
           )}
-          <Field label="Follow-up" hint="Optional" className="detail-label">
+          <Field label={m.followUp} hint={m.optional} className="detail-label">
             <select value={actionStatus} onChange={(event) => setActionStatus(event.target.value as Document["action_status"])}>
-              <option value="none">Nothing to do</option>
-              <option value="open">Needs action</option>
-              <option value="done">Completed</option>
+              <option value="none">{m.nothingToDo}</option>
+              <option value="open">{m.needsAction}</option>
+              <option value="done">{m.completed}</option>
             </select>
           </Field>
           {actionStatus === "open" && <>
-            <Field label="Due date" hint="Optional" className="detail-label">
+            <Field label={m.dueDate} hint={m.optional} className="detail-label">
               <input type="date" value={actionDueDate} onChange={(event) => setActionDueDate(event.target.value)} />
             </Field>
-            <Field label="What needs doing?" hint="Optional" className="detail-label">
-              <input value={actionNote} onChange={(event) => setActionNote(event.target.value)} maxLength={500} placeholder="For example, pay by Friday" />
+            <Field label={m.whatNeedsDoing} hint={m.optional} className="detail-label">
+              <input value={actionNote} onChange={(event) => setActionNote(event.target.value)} maxLength={500} placeholder={m.actionPlaceholder} />
             </Field>
           </>}
           <div className="detail-label">
-            Tags <small>{current.tags.some((tag) => tag.origin === "learned") ? "Some tags were added by your local model · uncheck to remove" : "Choose only what helps"}</small>
+            {m.tags} <small>{current.tags.some((tag) => tag.origin === "learned") ? m.tagsLearned : m.tagsHint}</small>
           </div>
           {available.length ? (
             <div className="tag-choices">
@@ -558,11 +559,11 @@ export default function DocumentPanel({
                   />
                   {tagPathLabel(tag, availableById)}
                   {current.tags.find((item) => item.id === tag.id)?.origin ===
-                    "rule" && <small>Rule</small>}
+                    "rule" && <small>{m.originRuleBadge}</small>}
                   {current.tags.find((item) => item.id === tag.id)?.origin ===
-                    "model" && <small>Agent</small>}
+                    "model" && <small>{m.originAgentBadge}</small>}
                   {current.tags.find((item) => item.id === tag.id)?.origin ===
-                    "source" && <small>Email</small>}
+                    "source" && <small>{m.originEmailBadge}</small>}
                 </label>
               ))}
             </div>
@@ -572,51 +573,51 @@ export default function DocumentPanel({
               className="detail-create-tag"
               onClick={onOpenTags}
             >
-              <TagIcon size={17} /> Create your first tag
+              <TagIcon size={17} /> {m.createFirstTag}
             </button>
           )}
           <Button className="detail-save" disabled={busy}>
-            <Save size={17} /> {busy ? "Saving…" : "Save changes"}
+            <Save size={17} /> {busy ? m.saving : m.saveChanges}
           </Button>
         </form>
         <CustomFieldsPanel documentId={current.id} onChanged={() => onSaved(current)} />
         <section className="detail-notes" aria-labelledby="document-notes-heading">
-          <h3 id="document-notes-heading"><MessageSquare size={17} /> Notes</h3>
-          <p>Keep context here without creating a follow-up.</p>
+          <h3 id="document-notes-heading"><MessageSquare size={17} /> {m.notes}</h3>
+          <p>{m.notesIntro}</p>
           {noteError && <div className="inline-error" role="alert">{noteError}</div>}
           {noteNotice && <p className="bulk-notice" role="status">{noteNotice}</p>}
           <form className="note-form" onSubmit={(event) => void addNote(event)}>
-            <Field label="New note">
-              <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} maxLength={2000} rows={3} placeholder="For example, original received in person" />
+            <Field label={m.newNote}>
+              <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} maxLength={2000} rows={3} placeholder={m.notePlaceholder} />
             </Field>
-            <Button disabled={notesBusy || !noteDraft.trim()}><Plus size={16} /> Add note</Button>
+            <Button disabled={notesBusy || !noteDraft.trim()}><Plus size={16} /> {m.addNote}</Button>
           </form>
-          {notesLoading && <p>Loading notes…</p>}
-          {!notesLoading && !notes.length && <p>No notes yet.</p>}
+          {notesLoading && <p>{m.loadingNotes}</p>}
+          {!notesLoading && !notes.length && <p>{m.noNotes}</p>}
           {notes.length > 0 && <ol className="note-list">
             {notes.map((note) => <li key={note.id}>
               <p>{note.body}</p>
               <div className="note-meta"><span>{note.author} · <time dateTime={note.created_at}>{new Date(note.created_at).toLocaleString()}</time></span>
                 {deleteNoteId === note.id ? <span className="note-actions">
-                  <button type="button" disabled={notesBusy} onClick={() => void deleteNote(note.id)}>Confirm delete</button>
-                  <button type="button" disabled={notesBusy} onClick={() => setDeleteNoteId(null)}>Cancel</button>
-                </span> : <button type="button" disabled={notesBusy} aria-label={`Delete note ${note.id}`} onClick={() => setDeleteNoteId(note.id)}>Delete</button>}
+                  <button type="button" disabled={notesBusy} onClick={() => void deleteNote(note.id)}>{m.confirmDelete}</button>
+                  <button type="button" disabled={notesBusy} onClick={() => setDeleteNoteId(null)}>{m.cancel}</button>
+                </span> : <button type="button" disabled={notesBusy} aria-label={m.deleteNoteLabel(note.id)} onClick={() => setDeleteNoteId(note.id)}>{m.delete}</button>}
               </div>
             </li>)}
           </ol>}
-          {nextNoteOffset !== null && <button type="button" className="text-action" disabled={notesLoading} onClick={() => void loadNotes(nextNoteOffset)}>Show older notes</button>}
+          {nextNoteOffset !== null && <button type="button" className="text-action" disabled={notesLoading} onClick={() => void loadNotes(nextNoteOffset)}>{m.showOlderNotes}</button>}
         </section>
         <DocumentLinks documentId={current.id} onOpenDocument={onOpenDuplicate} />
         <div className="detail-files">
           <h3>
-            <FileText size={17} /> Files
+            <FileText size={17} /> {m.files}
           </h3>
           {reprocessNotice && <p className="bulk-notice" role="status">{reprocessNotice}</p>}
           <a href={`/api/documents/${current.id}/original`}>
-            <ArrowDownToLine size={17} /> Download original
+            <ArrowDownToLine size={17} /> {m.downloadOriginal}
           </a>
           <a href={`/api/documents/${current.id}/export`}>
-            <ArrowDownToLine size={17} /> Export document ZIP
+            <ArrowDownToLine size={17} /> {m.exportZip}
           </a>
           {current.archive_available && (
             <a
@@ -624,15 +625,15 @@ export default function DocumentPanel({
               target="_blank"
               rel="noreferrer"
             >
-              <Eye size={17} /> Open searchable PDF
+              <Eye size={17} /> {m.openSearchable}
             </a>
           )}
           {(current.status === "ready" || current.status === "failed") && (
             <Button type="button" variant="secondary" disabled={busy} onClick={() => void reprocess()}>
-              <RotateCw size={16} /> {current.status === "failed" ? "Retry OCR" : "Run OCR again"}
+              <RotateCw size={16} /> {current.status === "failed" ? m.retryOcr : m.runOcrAgain}
             </Button>
           )}
-          {(current.status === "pending" || current.status === "processing") && <p className="detail-processing">OCR is being prepared. The original is available above.</p>}
+          {(current.status === "pending" || current.status === "processing") && <p className="detail-processing">{m.ocrPreparing}</p>}
           {current.status === "failed" && current.error && <p className="inline-error">{current.error}</p>}
         </div>
         {!current.is_split_source && (
@@ -652,32 +653,32 @@ export default function DocumentPanel({
         <EmailDocumentPanel documentId={current.id} searchableReady={current.archive_available} />
         <div className="detail-files physical-copies">
           <h3>
-            <MapPin size={17} /> Paper copies
+            <MapPin size={17} /> {m.paperCopies}
           </h3>
           {copyNotice && <p className="bulk-notice" role="status">{copyNotice}</p>}
           {!copies.length && (
-            <p>Digital only. You can add a sticker if you keep a paper copy.</p>
+            <p>{m.digitalOnly}</p>
           )}
           {copies.map((copy) => (
             <div className={`copy-card ${copy.missing_at ? "copy-card-missing" : ""}`} key={copy.id}>
               <strong>{copy.sticker_code}</strong>
               <span>
-                {copy.missing_at ? "Last known: " : ""}{copy.location_path.join(" / ") || "Location not assigned"}
+                {copy.missing_at ? m.lastKnown : ""}{copy.location_path.join(" / ") || m.locationNotAssigned}
               </span>
-              {copy.missing_at && <span className="copy-missing-label">Reported missing</span>}
+              {copy.missing_at && <span className="copy-missing-label">{m.reportedMissing}</span>}
               <div className="copy-actions">
                 <a
                   href={`/api/copies/${copy.id}/label`}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <Printer size={16} /> Print sticker
+                  <Printer size={16} /> {m.printSticker}
                 </a>
                 <button onClick={() => void showHistory(copy)}>
-                  <History size={16} /> History
+                  <History size={16} /> {m.history}
                 </button>
                 <button type="button" disabled={busy} onClick={() => void setCopyMissing(copy, !copy.missing_at)}>
-                  {copy.missing_at ? "Mark found" : "Mark missing"}
+                  {copy.missing_at ? m.markFound : m.markMissing}
                 </button>
               </div>
               <div className="copy-move">
@@ -691,7 +692,7 @@ export default function DocumentPanel({
                     }))
                   }
                 >
-                  <option value="">No location</option>
+                  <option value="">{m.noLocation}</option>
                   {locations.map((location) => (
                     <option key={location.id} value={location.id}>
                       {location.path.join(" / ")}
@@ -703,16 +704,16 @@ export default function DocumentPanel({
                   disabled={busy || Boolean(copy.missing_at)}
                   onClick={() => void moveCopy(copy)}
                 >
-                  Move
+                  {m.move}
                 </Button>
               </div>
-              {copy.missing_at && <p className="copy-missing-hint">Mark it found before changing its location.</p>}
+              {copy.missing_at && <p className="copy-missing-hint">{m.markFoundFirst}</p>}
               {histories[copy.id] && (
                 <div className="copy-history">
                   {histories[copy.id].map((move, index) => (
                     <div key={index}>
                       {new Date(move.at).toLocaleDateString()} ·{" "}
-                      {move.to.join(" / ") || "No location"}
+                      {move.to.join(" / ") || m.noLocation}
                       {move.note && ` · ${move.note}`}
                     </div>
                   ))}
@@ -722,10 +723,11 @@ export default function DocumentPanel({
           ))}
           <div className="new-copy">
             <select
+              aria-label={m.newCopyLocation}
               value={newLocation}
               onChange={(event) => setNewLocation(event.target.value)}
             >
-              <option value="">No location yet</option>
+              <option value="">{m.noLocationYet}</option>
               {locations.map((location) => (
                 <option key={location.id} value={location.id}>
                   {location.path.join(" / ")}
@@ -737,24 +739,24 @@ export default function DocumentPanel({
               disabled={busy}
               onClick={() => void createCopy()}
             >
-              <Plus size={16} /> Create sticker
+              <Plus size={16} /> {m.createSticker}
             </Button>
           </div>
           {!locations.length && (
             <button className="text-action" onClick={onOpenLocations}>
-              Create a location first <Plus size={15} />
+              {m.createLocationFirst} <Plus size={15} />
             </button>
           )}
         </div>
         <div className="detail-files trash-action">
-          <h3><Trash2 size={17} /> Move to Trash</h3>
-          <p>The original, notes, and sticker history stay available for restore. This document will disappear from search and agent access.</p>
+          <h3><Trash2 size={17} /> {m.moveToTrash}</h3>
+          <p>{m.trashIntro}</p>
           {confirmTrash ? <div className="trash-confirm">
-            <strong>Move “{current.title}” to Trash?</strong>
-            {copies.length > 0 && <p>{copies.length} paper {copies.length === 1 ? "copy has" : "copies have"} a sticker. Its QR code will show a restore notice until this document is restored.</p>}
-            <Button type="button" disabled={busy} onClick={() => void moveToTrash()}><Trash2 size={16} /> Confirm move</Button>
-            <Button type="button" variant="secondary" disabled={busy} onClick={() => setConfirmTrash(false)}>Cancel</Button>
-          </div> : <Button type="button" variant="secondary" disabled={busy} onClick={() => setConfirmTrash(true)}><Trash2 size={16} /> Move to Trash</Button>}
+            <strong>{m.trashConfirm(current.title)}</strong>
+            {copies.length > 0 && <p>{m.trashStickers(copies.length)}</p>}
+            <Button type="button" disabled={busy} onClick={() => void moveToTrash()}><Trash2 size={16} /> {m.confirmMove}</Button>
+            <Button type="button" variant="secondary" disabled={busy} onClick={() => setConfirmTrash(false)}>{m.cancel}</Button>
+          </div> : <Button type="button" variant="secondary" disabled={busy} onClick={() => setConfirmTrash(true)}><Trash2 size={16} /> {m.moveToTrash}</Button>}
         </div>
     </Modal>
   );

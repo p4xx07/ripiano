@@ -6,8 +6,11 @@ import LearningPanel from "./LearningPanel";
 import FilingVocabularyPanel from "./FilingVocabularyPanel";
 import StoragePathsPanel from "./StoragePathsPanel";
 import { ShareButton, SharePanel, useShareToggle } from "./ShareObject";
+import { useMessages } from "./i18n";
+import messages from "./locales/TagPanel";
 
 export default function TagPanel() {
+  const m = useMessages(messages);
   const [tags, setTags] = useState<Tag[]>([]);
   const sharing = useShareToggle();
   const [rules, setRules] = useState<Rule[]>([]);
@@ -55,7 +58,7 @@ export default function TagPanel() {
       setTags(tagResult.tags);
       setRules(ruleResult.rules);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load tags");
+      setError(cause instanceof Error ? cause.message : m.loadError);
     }
   }, []);
 
@@ -89,7 +92,7 @@ export default function TagPanel() {
       setKeywords("");
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create tag");
+      setError(cause instanceof Error ? cause.message : m.createError);
     } finally {
       setBusy(false);
     }
@@ -115,7 +118,7 @@ export default function TagPanel() {
       setNewRuleMatch("phrase");
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not add phrase");
+      setError(cause instanceof Error ? cause.message : m.addPhraseError);
     } finally {
       setBusy(false);
     }
@@ -128,7 +131,7 @@ export default function TagPanel() {
       await load();
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not remove phrase",
+        cause instanceof Error ? cause.message : m.removePhraseError,
       );
     }
   }
@@ -136,7 +139,7 @@ export default function TagPanel() {
   async function removeTag(tag: Tag) {
     if (
       !window.confirm(
-        `Delete “${tag.name}”? It will be removed from all documents.`,
+        m.confirmDelete(tag.name),
       )
     )
       return;
@@ -145,7 +148,7 @@ export default function TagPanel() {
       await request(`/api/tags/${tag.id}`, { method: "DELETE" });
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not delete tag");
+      setError(cause instanceof Error ? cause.message : m.deleteError);
     }
   }
 
@@ -160,7 +163,7 @@ export default function TagPanel() {
       await load();
       setMovingTagId(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not move tag");
+      setError(cause instanceof Error ? cause.message : m.moveError);
     } finally {
       setBusy(false);
     }
@@ -178,7 +181,7 @@ export default function TagPanel() {
       setEditingBarcodeTagId(null);
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not update tag barcode");
+      setError(cause instanceof Error ? cause.message : m.barcodeError);
     } finally {
       setBusy(false);
     }
@@ -189,21 +192,20 @@ export default function TagPanel() {
       <div className="page-heading">
         <div>
           <div className="eyebrow">
-            <span className="eyebrow-line" /> ORGANIZE ONCE
+            <span className="eyebrow-line" /> {m.eyebrow}
           </div>
           <h1>
-            Tags that do the work<span className="heading-period">.</span>
+            {m.title}<span className="heading-period">.</span>
           </h1>
           <p>
-            Tell Ripiano which phrases matter. Matching documents are tagged
-            after OCR.
+            {m.intro}
           </p>
         </div>
       </div>
       {error && (
         <div className="inline-error" role="alert">
           {error}
-          <button onClick={() => setError("")} aria-label="Dismiss error">
+          <button onClick={() => setError("")} aria-label={m.dismissError}>
             <X size={16} />
           </button>
         </div>
@@ -212,8 +214,8 @@ export default function TagPanel() {
         <section className="tag-list-section">
           <div className="section-heading">
             <div>
-              <h2>Your tags</h2>
-              <p>Group related tags here. Filtering by a parent includes its nested tags.</p>
+              <h2>{m.yourTags}</h2>
+              <p>{m.yourTagsIntro}</p>
             </div>
           </div>
           {tags.length ? (
@@ -234,8 +236,8 @@ export default function TagPanel() {
                     <button
                       className="tag-icon-button"
                       onClick={() => void removeTag(tag)}
-                      aria-label={`Delete ${tag.name}`}
-                      title="Delete tag"
+                      aria-label={m.deleteNamed(tag.name)}
+                      title={m.deleteTag}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -244,49 +246,49 @@ export default function TagPanel() {
                   {movingTagId === tag.id ? (
                     <div className="tag-parent-editor">
                       <label className="tag-parent-control">
-                        Under
+                        {m.under}
                         <select
-                          aria-label={`Parent for ${tag.name}`}
+                          aria-label={m.parentFor(tag.name)}
                           value={tag.parent_id ?? ""}
                           disabled={busy}
                           onChange={(event) => void moveTag(tag, event.target.value)}
                         >
-                          <option value="">Top level</option>
+                          <option value="">{m.topLevel}</option>
                           {sortedTags.filter((candidate) => !isInBranch(candidate, tag.id)).map((candidate) => (
                             <option key={candidate.id} value={candidate.id}>{tagPath(candidate)}</option>
                           ))}
                         </select>
                       </label>
-                      <button type="button" className="tag-icon-button" aria-label="Cancel move" onClick={() => setMovingTagId(null)}>
+                      <button type="button" className="tag-icon-button" aria-label={m.cancelMove} onClick={() => setMovingTagId(null)}>
                         <X size={16} />
                       </button>
                     </div>
                   ) : (
-                    <button type="button" className="tag-move-button" aria-label={`Move ${tag.name}`} onClick={() => setMovingTagId(tag.id)}>
-                      {tag.parent_id ? "Change group" : "Put under another tag"}
+                    <button type="button" className="tag-move-button" aria-label={m.moveNamed(tag.name)} onClick={() => setMovingTagId(tag.id)}>
+                      {tag.parent_id ? m.changeGroup : m.putUnder}
                     </button>
                   )}
                   {editingBarcodeTagId === tag.id ? <form className="tag-barcode-editor" onSubmit={(event) => void saveBarcode(event, tag)}>
-                    <label className="detail-label">Barcode for {tag.name}
-                      <input autoFocus value={barcodeDraft} onChange={(event) => setBarcodeDraft(event.target.value)} maxLength={100} placeholder="Code printed on your label" />
+                    <label className="detail-label">{m.barcodeFor(tag.name)}
+                      <input autoFocus value={barcodeDraft} onChange={(event) => setBarcodeDraft(event.target.value)} maxLength={100} placeholder={m.barcodePlaceholder} />
                     </label>
-                    <Button disabled={busy}>Save code</Button>
-                    <button type="button" className="tag-icon-button" aria-label={`Cancel barcode edit for ${tag.name}`} onClick={() => setEditingBarcodeTagId(null)}><X size={16} /></button>
+                    <Button disabled={busy}>{m.saveCode}</Button>
+                    <button type="button" className="tag-icon-button" aria-label={m.cancelBarcode(tag.name)} onClick={() => setEditingBarcodeTagId(null)}><X size={16} /></button>
                   </form> : <div className="tag-barcode-row">
-                    <span>{tag.barcode_value ? `Barcode: ${tag.barcode_value}` : "No barcode mapped"}</span>
-                    {tag.barcode_value && <a className="text-action" href={`/api/tags/${tag.id}/label`} target="_blank" rel="noreferrer"><Printer size={15} /> Print label</a>}
-                    <button type="button" className="text-action" onClick={() => { setEditingBarcodeTagId(tag.id); setBarcodeDraft(tag.barcode_value); }}>{tag.barcode_value ? "Change code" : "Set barcode"}</button>
+                    <span>{tag.barcode_value ? m.barcode(tag.barcode_value) : m.noBarcode}</span>
+                    {tag.barcode_value && <a className="text-action" href={`/api/tags/${tag.id}/label`} target="_blank" rel="noreferrer"><Printer size={15} /> {m.printLabel}</a>}
+                    <button type="button" className="text-action" onClick={() => { setEditingBarcodeTagId(tag.id); setBarcodeDraft(tag.barcode_value); }}>{tag.barcode_value ? m.changeCode : m.setBarcode}</button>
                   </div>}
                   <div className="rule-list">
                     {rules
                       .filter((rule) => rule.tag_id === tag.id)
                       .map((rule) => (
                         <span className="rule-chip" key={rule.id}>
-                          {rule.match && rule.match !== "phrase" ? <small className="rule-mode">{matchModes[rule.match]}:</small> : null}
+                          {rule.match && rule.match !== "phrase" ? <small className="rule-mode">{m.matchMode(rule.match)}:</small> : null}
                           {rule.pattern}
                           <button
                             onClick={() => void removeRule(rule.id)}
-                            aria-label={`Remove phrase ${rule.pattern}`}
+                            aria-label={m.removePhrase(rule.pattern)}
                           >
                             <X size={13} />
                           </button>
@@ -300,24 +302,24 @@ export default function TagPanel() {
                           onChange={(event) =>
                             setNewRuleText(event.target.value)
                           }
-                          placeholder="Phrase to match"
-                          aria-label="Phrase to match"
+                          placeholder={m.phraseToMatch}
+                          aria-label={m.phraseToMatch}
                           maxLength={200}
                           required
                         />
-                        <select aria-label="How it matches" value={newRuleMatch} onChange={(event) => setNewRuleMatch(event.target.value as MatchMode)}>
-                          {Object.entries(matchModes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        <select aria-label={m.howMatches} value={newRuleMatch} onChange={(event) => setNewRuleMatch(event.target.value as MatchMode)}>
+                          {Object.keys(matchModes).map((value) => <option key={value} value={value}>{m.matchMode(value as MatchMode)}</option>)}
                         </select>
                         <Button
                           disabled={busy}
                         >
-                          Add
+                          {m.add}
                         </Button>
                         <button
                           className="tag-icon-button"
                           type="button"
                           onClick={() => setNewRuleTag(null)}
-                          aria-label="Cancel"
+                          aria-label={m.cancel}
                         >
                           <X size={16} />
                         </button>
@@ -330,7 +332,7 @@ export default function TagPanel() {
                           setNewRuleText("");
                         }}
                       >
-                        <Plus size={14} /> Add matching phrase
+                        <Plus size={14} /> {m.addPhrase}
                       </button>
                     )}
                   </div>
@@ -340,10 +342,9 @@ export default function TagPanel() {
           ) : (
             <div className="tag-empty">
               <TagIcon size={24} />
-              <strong>No tags yet</strong>
+              <strong>{m.noTags}</strong>
               <p>
-                Create one with a few phrases and future documents can file
-                themselves.
+                {m.noTagsIntro}
               </p>
             </div>
           )}
@@ -352,52 +353,52 @@ export default function TagPanel() {
           <div className="tag-create-icon">
             <TagIcon size={21} />
           </div>
-          <h2>Create a tag</h2>
-          <p>Start with the name you want to see in your archive.</p>
+          <h2>{m.createHeading}</h2>
+          <p>{m.createIntro}</p>
           <form onSubmit={createTag}>
             <label>
-              Name
+              {m.name}
               <input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 maxLength={100}
-                placeholder="e.g. Bills"
+                placeholder={m.namePlaceholder}
                 required
               />
             </label>
             <label>
-              Under <small>Optional</small>
-              <select aria-label="Parent tag" value={parentId} onChange={(event) => setParentId(event.target.value)}>
-                <option value="">Top level</option>
+              {m.under} <small>{m.optional}</small>
+              <select aria-label={m.parentTag} value={parentId} onChange={(event) => setParentId(event.target.value)}>
+                <option value="">{m.topLevel}</option>
                 {sortedTags.map((tag) => (
                   <option key={tag.id} value={tag.id}>{tagPath(tag)}</option>
                 ))}
               </select>
             </label>
             <label>
-              Matching phrases <small>Optional · separate with commas</small>
+              {m.matchingPhrases} <small>{m.matchingPhrasesHint}</small>
               <input
                 value={keywords}
                 onChange={(event) => setKeywords(event.target.value)}
-                placeholder="invoice, electricity, fattura"
+                placeholder={m.keywordsPlaceholder}
               />
             </label>
             <label>
-              Barcode value <small>Optional · a code on your existing label</small>
-              <input value={barcodeValue} onChange={(event) => setBarcodeValue(event.target.value)} maxLength={100} placeholder="e.g. ARCHIVE-BILLS" />
+              {m.barcodeValue} <small>{m.barcodeValueHint}</small>
+              <input value={barcodeValue} onChange={(event) => setBarcodeValue(event.target.value)} maxLength={100} placeholder={m.barcodeValuePlaceholder} />
             </label>
             <label>
-              Description <small>Optional</small>
+              {m.description} <small>{m.optional}</small>
               <textarea
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 maxLength={500}
                 rows={3}
-                placeholder="What belongs here?"
+                placeholder={m.descriptionPlaceholder}
               />
             </label>
             <label className="color-label">
-              Color
+              {m.color}
               <input
                 type="color"
                 value={color}
@@ -405,13 +406,12 @@ export default function TagPanel() {
               />
             </label>
             <Button disabled={busy}>
-              {busy ? "Creating…" : "Create tag"}
+              {busy ? m.creating : m.createTag}
               <ArrowRight size={17} />
             </Button>
           </form>
           <div className="tag-tip">
-            Phrases are matched locally. Removing an automatic tag from a
-            document is remembered as a correction.
+            {m.tip}
           </div>
         </section>
       </div>

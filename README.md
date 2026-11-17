@@ -334,6 +334,12 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 - **Ending access:** removing a grant, removing someone from the group, turning the account off, or moving the document to Trash all end access immediately.
 - **Passwords:** a password reset ends that person's other sessions and API tokens. API tokens cannot manage people or groups.
 
+
+**Sharing tags, senders, types, and saved views:** each has a **Share** button (the people icon) that opens the same people-with-access panel as documents, for a person or a group:
+- **Can view and use:** the object appears for them under Shared with me (as a filter), and they can use it to file your documents they have *edit* access to: add or remove your shared tags, and set your shared sender or type. Your other tags on the document are never touched, and archive details (storage path, ASN, duplicates) stay with you.
+- **Can also edit:** they can additionally rename it (and change a tag's colour and description, or a saved view's search and dates). Deleting stays with you; deleting an object ends every grant on it.
+- A shared **saved view** narrows Shared with me to the documents you shared with them that match it.
+
 ### Learned suggestions
 
 Ripiano learns from the senders, document types, and tags you set by hand, on your own server. It learns again every night, or when you press **Tags & filing → Learned suggestions → Learn now**.

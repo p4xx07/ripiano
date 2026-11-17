@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bookmark, Pencil, Plus, Trash2, X } from "lucide-react";
 import { LibraryFilters, request, SavedView } from "./api";
 import { Button } from "./ui";
+import { ShareButton, SharePanel, useShareToggle } from "./ShareObject";
 import { useMessages } from "./i18n";
 import messages from "./locales/SavedSearchBar";
 
@@ -45,6 +46,7 @@ function viewFilters(view: SavedView): LibraryFilters {
 export default function SavedSearchBar({ query, filters, onApply }: Props) {
   const m = useMessages(messages);
   const [views, setViews] = useState<SavedView[]>([]);
+  const sharing = useShareToggle();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [form, setForm] = useState<{ kind: "create" } | { kind: "rename"; id: string } | null>(null);
   const [name, setName] = useState("");
@@ -157,9 +159,11 @@ export default function SavedSearchBar({ query, filters, onApply }: Props) {
           onApply(view.query, viewFilters(view));
         }}>{view.name}</button>
         <button ref={(node) => { if (node) renameButtons.current.set(view.id, node); else renameButtons.current.delete(view.id); }} type="button" aria-label={m.rename(view.name)} disabled={busy} onClick={() => { setForm({ kind: "rename", id: view.id }); setName(view.name); }}><Pencil size={14} /></button>
+        <ShareButton kind="saved_view" id={view.id} name={view.name} open={sharing.openId === view.id} onToggle={() => sharing.toggle(view.id)} />
         <button type="button" aria-label={m.remove(view.name)} disabled={busy} onClick={() => void remove(view)}><Trash2 size={14} /></button>
       </span>)}
     </div>
+    {sharing.openId && views.some((view) => view.id === sharing.openId) && <SharePanel kind="saved_view" id={sharing.openId} />}
     <div className="saved-search-actions">
       <button ref={saveButton} type="button" className="text-action" disabled={busy} onClick={() => { setForm({ kind: "create" }); setName(""); }}><Plus size={15} /> {m.saveThis}</button>
       {active && changed && <button type="button" className="text-action" disabled={busy} onClick={() => void update(active)}>{m.update(active.name)}</button>}

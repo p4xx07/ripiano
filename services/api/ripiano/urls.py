@@ -9,7 +9,7 @@ admin.site.login = never_cache(lambda request, extra_context=None: redirect("/")
 admin.site.has_permission = admin_has_permission
 from django.urls import path
 
-from archive import source_views, semantic_views, agent_views, learning_views, people_views, storage_path_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
+from archive import object_access_views, source_views, semantic_views, agent_views, learning_views, people_views, storage_path_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
 
 urlpatterns = [
     path("healthz", views.health),
@@ -116,6 +116,10 @@ urlpatterns = [
     path("api/document-types/<uuid:type_id>", metadata_views.document_type_detail),
     path("api/saved-views", metadata_views.saved_views),
     path("api/saved-views/<uuid:view_id>", metadata_views.saved_view_detail),
+    path("api/object-access/<str:kind>/<uuid:object_id>", object_access_views.object_access),
+    path("api/object-access/<str:kind>/<uuid:object_id>/<uuid:grant_id>", object_access_views.object_access_detail),
+    path("api/shared-filing", object_access_views.shared_filing),
+    path("api/shared-filing/<str:kind>/<uuid:object_id>", object_access_views.shared_filing_edit),
     path("api/storage-paths", storage_path_views.storage_paths),
     path("api/storage-paths/<uuid:path_id>", storage_path_views.storage_path_detail),
     path("api/filing-model", learning_views.filing_model),

@@ -130,7 +130,9 @@ def test_sharing_a_document_with_a_person_or_group(tmp_path):
         assert changed.status_code == 200 and changed.json()["title"] == "Lease 2026"
         sender = Correspondent.objects.create(owner=owner, name="Landlord")
         assert send(editor_client, "patch", url, {"correspondent_id": str(sender.id)}).status_code == 403
-        assert send(editor_client, "patch", url, {"tags": []}).status_code == 403
+        # An editor changes only tags shared with them; the owner's other tags stay.
+        kept = send(editor_client, "patch", url, {"tags": []})
+        assert kept.status_code == 200 and [tag["name"] for tag in kept.json()["tags"]] == ["House"]
         note = send(editor_client, "post", f"{url}/notes", {"body": "Paid the deposit"})
         assert note.status_code == 201
         owner_note = DocumentNote.objects.create(document=document, author=owner, body="Owner note")

@@ -47,7 +47,7 @@ EXACT = {
     "This document changed since you opened it. Reload the pages and try again.": "Il documento è cambiato da quando lo hai aperto. Ricarica le pagine e riprova.",
     "Page not found": "Pagina non trovata",
     "Nothing changed.": "Non è cambiato nulla.",
-    "Only the owner can change filing, tags, and archive details": "Solo il proprietario può modificare archiviazione, etichette e dettagli.",
+    "Only the owner can change archive details such as storage, ASN, and duplicates": "Solo il proprietario può modificare i dettagli d’archivio come percorso, ASN e duplicati.",
     "Owner access required": "Serve l'accesso come proprietario",
     "Only an admin can manage people and groups": "Solo un amministratore può gestire persone e gruppi",
     "You can view this document but not change it": "Puoi vedere questo documento, ma non modificarlo",

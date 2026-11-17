@@ -146,6 +146,7 @@ export type Document = {
   storage_path: { id: string; name: string } | null;
   access: "owner" | "edit" | "view";
   shared_by: string | null;
+  shared_by_id?: number;
 };
 
 export type Person = {

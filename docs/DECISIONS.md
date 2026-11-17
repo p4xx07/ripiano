@@ -113,7 +113,7 @@ The owner wants external storage to work like Synology Hyper Backup destinations
 In the owner's suggested order:
 
 1. ~~Task controls (cancel/requeue) for background jobs other than backups and NAS browse copies.~~ Done 2026-11-17 (`1aa3872`): Background jobs section on Overview; see README "Overview".
-2. Permissions on tags, senders, types, and saved views.
+2. ~~Permissions on tags, senders, types, and saved views.~~ Done 2026-11-17: `ObjectAccess` (view/edit per person or group), Share buttons, Shared with me filters, filing with shared objects; see README "People and sharing".
 3. API request/response body schemas in `/api/schema.json` and a versioned compatibility test suite.
 4. Italian translation of the remaining screens and API messages.
 5. Keyboard shortcuts and an accessibility pass.

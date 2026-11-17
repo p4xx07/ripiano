@@ -4196,3 +4196,77 @@ button:disabled {
   display: grid;
   gap: var(--space-2);
 }
+
+/* Sharing tags, senders, types, and saved views */
+.share-object-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 32px;
+  min-height: 32px;
+  border: 0;
+  border-radius: var(--radius-soft);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.share-object-button:hover,
+.share-object-button[aria-pressed="true"] {
+  color: var(--color-primary);
+  background: var(--color-background);
+}
+.share-object-panel {
+  margin-top: var(--space-2);
+}
+
+.shared-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+.shared-chip {
+  font: inherit;
+  font-size: var(--type-small);
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-heading);
+  cursor: pointer;
+}
+.shared-chip.active {
+  border-color: var(--color-primary);
+  background: var(--color-background);
+}
+.shared-chip small {
+  color: var(--color-muted);
+  margin-right: 4px;
+}
+.shared-filing {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  border: 0;
+}
+.shared-filing legend {
+  margin-bottom: var(--space-2);
+  color: var(--color-heading);
+  font-size: var(--type-small);
+  font-weight: 700;
+}
+.shared-filing legend small {
+  display: block;
+  color: var(--color-muted);
+  font-weight: 400;
+}
+.shared-filing label.agent-scope-choice {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--type-small);
+}
+.shared-filing label.agent-scope-choice input {
+  width: auto;
+  margin: 0;
+}

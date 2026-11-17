@@ -938,3 +938,40 @@ class CloudApp(models.Model):
     client_id = models.CharField(max_length=300)
     client_secret = models.TextField(blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class ObjectAccess(models.Model):
+    """The owner shares a tag, sender, document type, or saved view with a person or a group.
+
+    View: the recipient sees it and may use it to file the owner's documents they can edit (and, for a saved
+    view, apply it to what the owner shared with them). Edit: they may also rename or adjust it. Deleting
+    stays with the owner.
+    """
+
+    class Kind(models.TextChoices):
+        TAG = "tag", "Tag"
+        CORRESPONDENT = "correspondent", "Sender"
+        DOCUMENT_TYPE = "document_type", "Document type"
+        SAVED_VIEW = "saved_view", "Saved view"
+
+    class Level(models.TextChoices):
+        VIEW = "view", "Can view and use"
+        EDIT = "edit", "Can also edit"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    object_id = models.UUIDField()
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="shared_objects")
+    group = models.ForeignKey("auth.Group", null=True, blank=True, on_delete=models.CASCADE, related_name="shared_objects")
+    level = models.CharField(max_length=10, choices=Level.choices, default=Level.VIEW)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["kind", "object_id"])]
+        constraints = [
+            models.CheckConstraint(condition=Q(user__isnull=False, group__isnull=True) | Q(user__isnull=True, group__isnull=False), name="object_access_one_target"),
+            models.UniqueConstraint(fields=["kind", "object_id", "user"], condition=Q(user__isnull=False), name="unique_object_access_user"),
+            models.UniqueConstraint(fields=["kind", "object_id", "group"], condition=Q(group__isnull=False), name="unique_object_access_group"),
+        ]

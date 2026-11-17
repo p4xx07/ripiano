@@ -5,9 +5,11 @@ import { Button } from "./ui";
 import LearningPanel from "./LearningPanel";
 import FilingVocabularyPanel from "./FilingVocabularyPanel";
 import StoragePathsPanel from "./StoragePathsPanel";
+import { ShareButton, SharePanel, useShareToggle } from "./ShareObject";
 
 export default function TagPanel() {
   const [tags, setTags] = useState<Tag[]>([]);
+  const sharing = useShareToggle();
   const [rules, setRules] = useState<Rule[]>([]);
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState("");
@@ -228,6 +230,7 @@ export default function TagPanel() {
                       {tag.parent_id && <p className="tag-path">{tagPath(tag)}</p>}
                       {tag.description && <p>{tag.description}</p>}
                     </div>
+                    <ShareButton kind="tag" id={tag.id} name={tag.name} open={sharing.openId === tag.id} onToggle={() => sharing.toggle(tag.id)} />
                     <button
                       className="tag-icon-button"
                       onClick={() => void removeTag(tag)}
@@ -237,6 +240,7 @@ export default function TagPanel() {
                       <Trash2 size={16} />
                     </button>
                   </div>
+                  {sharing.openId === tag.id && <SharePanel kind="tag" id={tag.id} />}
                   {movingTagId === tag.id ? (
                     <div className="tag-parent-editor">
                       <label className="tag-parent-control">

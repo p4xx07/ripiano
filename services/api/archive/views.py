@@ -38,7 +38,9 @@ logger = logging.getLogger(__name__)
 CURSOR_SALT = "ripiano-document-page-v2"
 SEARCH_FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date", "field", "asn", "is"}
 # What someone with an "edit" share may change; filing, tags, ASN, and paths stay with the owner.
-SHARED_EDIT_FIELDS = {"title", "document_date", "action_status", "action_due_date", "action_note"}
+SHARED_EDIT_FIELDS = {"title", "document_date", "action_status", "action_due_date", "action_note",
+                      # Filing with the owner's tags, senders, and types that were shared with the recipient.
+                      "correspondent_id", "document_type_id", "add_tag_id", "tags"}
 LIBRARY_SORTS = {"relevance", "newest", "oldest", "document_newest", "document_oldest", "title_asc", "title_desc"}
 
 
@@ -215,7 +217,7 @@ def _document_json(document, query="", access="owner"):
     if access != "owner":
         # Someone the owner shared one document with sees the document, not the owner's wider archive.
         payload.update(
-            shared_by=document.owner.get_username(), duplicate_of=None, split_parent=None, physical_copies=[],
+            shared_by=document.owner.get_username(), shared_by_id=document.owner_id, duplicate_of=None, split_parent=None, physical_copies=[],
             storage_path=None, asn=None, error="",
             snippet=snippet if snippet_source in ("document", "note") else "",
             snippet_source=snippet_source if snippet_source in ("document", "note") else None, email={**payload["email"], "account": ""} if payload["email"] else None,
@@ -345,8 +347,19 @@ def documents(request):
             filters["copy_status"] = copy_status
         if filters.get("date_from") and filters.get("date_to") and filters["date_from"] > filters["date_to"]:
             return JsonResponse({"error": "Start date must be before end date"}, status=400)
-        if shared and (set(filters) - {"date_from", "date_to"} or any(field in {"field", "sticker", "asn", "is"} for field, _ in clauses)):
-            return JsonResponse({"error": "Shared documents can be searched by text and date"}, status=400)
+        if shared and (set(filters) - {"date_from", "date_to", "tag_id", "correspondent_id", "document_type_id"}
+                       or any(field in {"field", "sticker", "asn", "is"} for field, _ in clauses)):
+            return JsonResponse({"error": "Shared documents can be searched by text, date, and shared tags, senders, or types"}, status=400)
+        filter_owner = request.user
+        if shared:
+            from .object_access import shared_objects
+
+            for key, kind in (("tag_id", "tag"), ("correspondent_id", "correspondent"), ("document_type_id", "document_type")):
+                if key in filters:
+                    match = next((item for item in shared_objects(request.user, kind) if str(item.pk) == filters[key]), None)
+                    if match is None:
+                        return JsonResponse({"error": "That filter was not shared with you"}, status=400)
+                    filter_owner = match.owner
         custom_value = request.GET.get("custom_value", "").strip()
         custom_min = request.GET.get("custom_min", "").strip()
         custom_max = request.GET.get("custom_max", "").strip()
@@ -386,7 +399,7 @@ def documents(request):
                         matches = matches.filter(value__lte=custom_max)
             queryset = queryset.filter(Exists(matches))
         if "tag_id" in filters:
-            tag_ids = _tag_subtree_ids(request.user, filters["tag_id"])
+            tag_ids = _tag_subtree_ids(filter_owner, filters["tag_id"])
             queryset = queryset.filter(Exists(
                 DocumentTag.objects.filter(document_id=OuterRef("pk"), tag_id__in=tag_ids)
             ))
@@ -835,7 +848,12 @@ def document_detail(request, document_id):
         if level == document_access.VIEW:
             return JsonResponse({"error": "You can view this document but not change it"}, status=403)
         if level == document_access.EDIT and set(body) - SHARED_EDIT_FIELDS:
-            return JsonResponse({"error": "Only the owner can change filing, tags, and archive details"}, status=403)
+            return JsonResponse({"error": "Only the owner can change archive details such as storage, ASN, and duplicates"}, status=403)
+        from . import object_access
+
+        def usable(kind):
+            """IDs of the document owner's objects this person may use for filing."""
+            return object_access.usable_ids(request.user, kind, document.owner)
         changes = []
         if "title" in body:
             if not isinstance(body["title"], str) or not body["title"].strip() or len(body["title"].strip()) > 300:
@@ -860,7 +878,10 @@ def document_detail(request, document_id):
                     item_id = UUID(raw) if isinstance(raw, str) else None
                 except ValueError:
                     item_id = None
-                item = model.objects.filter(pk=item_id, owner=request.user).first() if item_id else None
+                kind = "correspondent" if model is Correspondent else "document_type"
+                item = model.objects.filter(pk=item_id, owner=document.owner).first() if item_id else None
+                if item is not None and item.pk not in usable(kind):
+                    return JsonResponse({"error": f"This {'sender' if kind == 'correspondent' else 'document type'} was not shared with you"}, status=403)
                 if item is None:
                     return JsonResponse({"error": f"{field.replace('_', ' ').title()} not found"}, status=400)
             setattr(document, field, item)
@@ -920,7 +941,9 @@ def document_detail(request, document_id):
                 added_tag_id = UUID(body["add_tag_id"]) if isinstance(body["add_tag_id"], str) else None
             except ValueError:
                 added_tag_id = None
-            added_tag = Tag.objects.filter(owner=request.user, pk=added_tag_id).first() if added_tag_id else None
+            added_tag = Tag.objects.filter(owner=document.owner, pk=added_tag_id).first() if added_tag_id else None
+            if added_tag is not None and added_tag.pk not in usable("tag"):
+                return JsonResponse({"error": "This tag was not shared with you"}, status=403)
             if added_tag is None:
                 return JsonResponse({"error": "Tag not found"}, status=400)
             if not DocumentTag.objects.filter(document=document, tag=added_tag).exists() and DocumentTag.objects.filter(document=document).count() >= 100:
@@ -932,7 +955,9 @@ def document_detail(request, document_id):
                 chosen_ids = {UUID(str(value)) for value in body["tags"]}
             except ValueError:
                 return JsonResponse({"error": "Invalid tag ID"}, status=400)
-            chosen = list(Tag.objects.filter(owner=request.user, pk__in=chosen_ids))
+            chosen = list(Tag.objects.filter(owner=document.owner, pk__in=chosen_ids))
+            if any(tag.pk not in usable("tag") for tag in chosen):
+                return JsonResponse({"error": "A chosen tag was not shared with you"}, status=403)
             if len(chosen) != len(chosen_ids):
                 return JsonResponse({"error": "Tag not found"}, status=400)
         if "asn" in changes:
@@ -946,7 +971,8 @@ def document_detail(request, document_id):
                 document.save(update_fields=changes)
             if chosen is not None:
                 selected = {tag.id for tag in chosen}
-                existing = set(DocumentTag.objects.filter(document=document).values_list("tag_id", flat=True))
+                # Someone the owner shared with only changes the tags shared with them; other tags stay.
+                existing = set(DocumentTag.objects.filter(document=document).values_list("tag_id", flat=True)) & usable("tag")
                 for tag_id in existing - selected:
                     DocumentTag.objects.filter(document=document, tag_id=tag_id).delete()
                     TagOverride.objects.get_or_create(document=document, tag_id=tag_id)

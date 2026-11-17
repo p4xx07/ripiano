@@ -4,6 +4,8 @@ import { Document, DocumentNote, formatDate, request } from "./api";
 import { Button, Field, Modal } from "./ui";
 
 /** A document someone else owns and shared with the signed-in person. */
+type SharedItem = { id: string; name: string; level: "view" | "edit"; owner: { id: number; name: string } };
+
 export default function SharedDocumentPanel({ initial, username, onClose, onSaved }: {
   initial: Document;
   username: string | null;
@@ -12,6 +14,24 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
 }) {
   const [current, setCurrent] = useState(initial);
   const canEdit = current.access === "edit";
+  // The owner's tags, senders, and types shared with me, for filing this document.
+  const [filing, setFiling] = useState<{ tags: SharedItem[]; correspondents: SharedItem[]; document_types: SharedItem[] }>({ tags: [], correspondents: [], document_types: [] });
+  const [sharedTagIds, setSharedTagIds] = useState<string[]>([]);
+  const [senderId, setSenderId] = useState("");
+  const [typeId, setTypeId] = useState("");
+  useEffect(() => {
+    if (!canEdit) return;
+    request<{ tags: SharedItem[]; correspondents: SharedItem[]; document_types: SharedItem[] }>("/api/shared-filing").then((all) => {
+      const mine = (items: SharedItem[]) => items.filter((item) => item.owner.id === current.shared_by_id);
+      setFiling({ tags: mine(all.tags), correspondents: mine(all.correspondents), document_types: mine(all.document_types) });
+    }).catch(() => undefined);
+  }, [canEdit, current.shared_by_id]);
+  useEffect(() => {
+    setSharedTagIds(current.tags.map((tag) => tag.id));
+    setSenderId(current.correspondent?.id ?? "");
+    setTypeId(current.document_type?.id ?? "");
+  }, [current]);
+  const filingShared = filing.tags.length + filing.correspondents.length + filing.document_types.length > 0;
   const [title, setTitle] = useState(initial.title);
   const [date, setDate] = useState(initial.document_date ?? "");
   const [actionStatus, setActionStatus] = useState(initial.action_status);
@@ -56,6 +76,9 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
           title, document_date: date || null, action_status: actionStatus,
           action_due_date: actionStatus === "open" && actionDueDate ? actionDueDate : null,
           action_note: actionStatus === "open" ? actionNote : "",
+          ...(filing.tags.length ? { tags: sharedTagIds.filter((id) => filing.tags.some((tag) => tag.id === id)) } : {}),
+          ...(senderId && senderId !== (current.correspondent?.id ?? "") ? { correspondent_id: senderId } : {}),
+          ...(typeId && typeId !== (current.document_type?.id ?? "") ? { document_type_id: typeId } : {}),
         }),
       });
       setCurrent(updated);
@@ -123,6 +146,26 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
               <input value={actionNote} onChange={(event) => setActionNote(event.target.value)} maxLength={500} />
             </Field>
           </>}
+          {filingShared && <fieldset className="shared-filing">
+            <legend>Filing <small>With the tags, senders, and types {current.shared_by} shared with you</small></legend>
+            {filing.tags.length > 0 && <div className="workflow-choices mail-tags" role="group" aria-label="Shared tags">
+              {filing.tags.map((tag) => <label className="agent-scope-choice" key={tag.id}>
+                <input type="checkbox" checked={sharedTagIds.includes(tag.id)} onChange={() => setSharedTagIds((ids) => ids.includes(tag.id) ? ids.filter((id) => id !== tag.id) : [...ids, tag.id])} />{tag.name}
+              </label>)}
+            </div>}
+            {filing.correspondents.length > 0 && <Field label="Sender" className="detail-label">
+              <select value={senderId} onChange={(event) => setSenderId(event.target.value)}>
+                <option value="">{current.correspondent && !filing.correspondents.some((item) => item.id === current.correspondent?.id) ? current.correspondent.name : "Not set"}</option>
+                {filing.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </Field>}
+            {filing.document_types.length > 0 && <Field label="Type" className="detail-label">
+              <select value={typeId} onChange={(event) => setTypeId(event.target.value)}>
+                <option value="">{current.document_type && !filing.document_types.some((item) => item.id === current.document_type?.id) ? current.document_type.name : "Not set"}</option>
+                {filing.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </Field>}
+          </fieldset>}
           <Button className="detail-save" disabled={busy}><Save size={17} /> {busy ? "Saving…" : "Save changes"}</Button>
         </form>
       ) : (

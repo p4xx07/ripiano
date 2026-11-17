@@ -25,7 +25,7 @@ const empty: Draft = {
   set_correspondent_id: "", set_document_type_id: "", set_needs_action: false, action_note: "", add_note: "", webhook_url: "", email_to: "", email_attach: false,
   pdf_password_count: 0, pdf_passwords_text: "", clear_pdf_passwords: false,
 };
-const sources: Record<string, string> = { web: "Web upload", android: "Android scanner", telegram: "Telegram", folder: "Watched folder", email: "Email" };
+const sources: Record<string, string> = { web: "Web upload", android: "Android scanner", telegram: "Telegram", folder: "Watched folder", email: "Email", s3: "S3 bucket" };
 const triggers: Record<Trigger, string> = { added: "When a document is added", updated: "When I change a document", scheduled: "Some days after a date" };
 const dateFields: Record<DateField, string> = { created: "the date it was added", document_date: "the document date", action_due_date: "the follow-up due date" };
 const recipes: { label: string; icon: typeof TagIcon; draft: Partial<Draft> }[] = [

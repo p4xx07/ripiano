@@ -19,6 +19,7 @@ class Document(models.Model):
         ANDROID = "android", "Android scanner"
         FOLDER = "folder", "Watched folder"
         EMAIL = "email", "Email"
+        S3 = "s3", "S3 bucket"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"

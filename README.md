@@ -403,4 +403,18 @@ Gmail and Outlook can use OAuth instead. Register a web OAuth client with the re
 
 Mount a NAS folder at `RIPIANO_WATCH_PATH`, set `RIPIANO_WATCH_OWNER_USERNAME` to an existing account, and start `docker compose --profile watch up -d`. The mount is read-only to Ripiano. Stable PDF, PNG, and JPEG files are copied into the archive and left in the incoming folder. The same path and bytes import once across restarts; changing a file creates a new document. Files above the configured 25 MB limit are skipped. Set `RIPIANO_WATCH_POLL_SECONDS` to adjust the default five-second poll.
 
+### Optional S3 bucket
+
+Ripiano can import files dropped into an S3-compatible bucket (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others). Fill in the `RIPIANO_S3_*` values and start `docker compose --profile s3 up -d`.
+
+- **What happens:** every minute (`RIPIANO_S3_POLL_SECONDS`), new PDF, image, Office, and email files under `RIPIANO_S3_PREFIX` (default `inbox/`) are imported for `RIPIANO_S3_OWNER_USERNAME`. Only after the original is safely stored in Ripiano is the object moved to `<RIPIANO_S3_PROCESSED_PREFIX><date>/<name>` (default `processed/2026-11-17/…`), keeping any subfolders.
+- **Grace period:** processed objects are deleted after `RIPIANO_S3_PROCESSED_RETENTION_DAYS` (default 30) days, counted from the move. `0` keeps them forever. Nothing outside the two prefixes is ever read, moved, or deleted.
+- **Left in place:** unsupported file types and files above the 25 MB upload limit stay in the inbox and are reported in the service log.
+- **No duplicates:** each object version imports once, even if the service restarts between importing and moving it.
+- **Addressing:** MinIO, SeaweedFS, and most self-hosted servers use `RIPIANO_S3_ADDRESSING=path` (default). For AWS S3, use `virtual` with an endpoint like `https://s3.eu-south-1.amazonaws.com` and the matching `RIPIANO_S3_REGION`.
+- **Least privilege:** give Ripiano its own key that can only list the bucket, read and delete under the inbox prefix, and write, read, and delete under the processed prefix. With AWS IAM that is `s3:ListBucket` on the bucket (limited to both prefixes) plus `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on `inbox/*` and `processed/*`.
+- **Weight:** the service reuses the API image and adds no Python packages (Ripiano signs S3 requests itself), so it costs one small idle process on the NAS.
+
+Ripiano does not create the bucket or change its settings. The S3 secret is read from the environment like the other service secrets.
+
 The planning documents remain the implementation baseline. No Paperless source code is included in this repository.

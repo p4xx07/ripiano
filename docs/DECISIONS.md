@@ -59,12 +59,13 @@ Local test: the gateway ran with `traefik:v3.5.3` and `authelia/authelia:4.39.4`
 
 **Ripiano Android change — Done (uncommitted):** the server screen has an optional **Sign-in address**. That origin may load inside the WebView (`Origin.allowedInApp`), so the Authelia cookie stays in the app; all other origins still open externally, and the scanner bridge and downloads stay bound to the Ripiano origin. Unit tests in `OriginTest`; debug APK builds. Needs a real-phone check behind the gateway.
 
-## D4 — S3 import (2026-11-17) — Agreed
+## D4 — S3 import (2026-11-17) — Done (uncommitted)
 
 - An optional input adapter using the shared ingestion contract in [ARCHITECTURE.md](ARCHITECTURE.md) (same path as the watched folder and Telegram).
 - Any S3-compatible service; develop and test against MinIO.
 - Least-privilege key limited to one bucket prefix; secret encrypted at rest like mailbox passwords; stable source reference (object key + version/ETag) so restarts never import twice.
 - After a successful import the object moves to a `processed/` prefix. Processed objects are deleted after a grace period, **configurable, default 30 days**.
+- Implementation: `services/api/archive/s3_input.py` (own SigV4 signer over httpx, no boto3) and `manage.py s3_input`, Compose profile `s3`. Processed objects land in `processed/<UTC date>/<original subpath>`; the grace period counts from the move (S3 LastModified). MinIO no longer publishes public Docker images (Docker Hub repository gone, quay.io needs a login), so the live test used SeaweedFS (`chrislusf/seaweedfs`), which validates signatures: a wrong secret is refused, unicode/space keys import, unsupported files stay, expiry deletes only after the grace period. Unit tests include the AWS documentation signing example.
 
 ## D5 — Google Drive import (2026-11-17) — Agreed in principle
 

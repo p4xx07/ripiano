@@ -160,6 +160,28 @@ services:
     depends_on:
       api:
         condition: service_healthy
+  s3_input:
+    <<: *api-base
+    profiles: ["s3"]
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+    command: [".venv/bin/python", "manage.py", "s3_input"]
+    environment:
+      <<: *api-env
+      RIPIANO_S3_ENDPOINT: ${RIPIANO_S3_ENDPOINT:-}
+      RIPIANO_S3_REGION: ${RIPIANO_S3_REGION:-us-east-1}
+      RIPIANO_S3_ADDRESSING: ${RIPIANO_S3_ADDRESSING:-path}
+      RIPIANO_S3_BUCKET: ${RIPIANO_S3_BUCKET:-}
+      RIPIANO_S3_ACCESS_KEY: ${RIPIANO_S3_ACCESS_KEY:-}
+      RIPIANO_S3_SECRET_KEY: ${RIPIANO_S3_SECRET_KEY:-}
+      RIPIANO_S3_PREFIX: ${RIPIANO_S3_PREFIX:-inbox/}
+      RIPIANO_S3_PROCESSED_PREFIX: ${RIPIANO_S3_PROCESSED_PREFIX:-processed/}
+      RIPIANO_S3_PROCESSED_RETENTION_DAYS: ${RIPIANO_S3_PROCESSED_RETENTION_DAYS:-30}
+      RIPIANO_S3_POLL_SECONDS: ${RIPIANO_S3_POLL_SECONDS:-60}
+      RIPIANO_S3_OWNER_USERNAME: ${RIPIANO_S3_OWNER_USERNAME:-}
+    depends_on:
+      api:
+        condition: service_healthy
   web:
     image: ${RIPIANO_WEB_IMAGE:?Set a published ghcr.io/p4xx07/ripiano-web image or digest}
     ports:

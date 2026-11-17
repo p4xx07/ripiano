@@ -17,7 +17,7 @@ type Overview = {
   };
 };
 
-const sources: Record<string, string> = { web: "Web", android: "Android", telegram: "Telegram", folder: "Watched folder", email: "Email" };
+const sources: Record<string, string> = { web: "Web", android: "Android", telegram: "Telegram", folder: "Watched folder", email: "Email", s3: "S3 bucket" };
 
 function size(bytes: number) {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;

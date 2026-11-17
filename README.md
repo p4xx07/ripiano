@@ -275,7 +275,14 @@ Existing documents are rechecked in the background when you add a rule.
 - what needs a look (unreadable documents, overdue follow-ups, exact copies, mailbox problems, failed workflow runs), each linking to the right screen;
 - documents added per month over the last year;
 - the most common types, tags, and sources;
-- the last backup (for the archive owner).
+- the last backup (for the archive owner);
+- **Background jobs**: your documents waiting for or undergoing text recognition, documents that could not be read, permanent deletions that are waiting or failed, the learning job for filing suggestions, and workflow runs that failed this week.
+
+**Background job controls:**
+- **Cancel** takes a *queued* document out of the processing queue. It stays in your archive, marked as not processed, and **Retry OCR** queues it again. A document already being processed cannot be stopped midway.
+- **Retry OCR**, **Retry** (permanent deletion), and **Retry** (learning) restart failed work.
+- Failed workflow runs are listed for information; workflows never retry a run by themselves.
+- Backups and NAS browse copies keep their own cancel and retry controls under **Backups**.
 
 ### API tokens
 

@@ -123,3 +123,70 @@ def test_reconcile_requeues_only_old_pending_backups():
     enqueue.assert_called_once_with(str(old.id))
     stale.refresh_from_db()
     assert stale.status == BackupRun.Status.FAILED and stale.completed_at is not None
+
+
+def _doc(owner, title, status, **values):
+    from archive.models import Document
+    return Document.objects.create(owner=owner, title=title, original_name=f"{title}.pdf", original_path=f"originals/aa/{title}.pdf",
+                                   original_mime="application/pdf", original_sha256="0" * 64, original_size=10, status=status, **values)
+
+
+@pytest.mark.django_db
+def test_queued_document_can_be_cancelled_and_the_worker_then_skips_it():
+    from archive.job_views import CANCELLED_PROCESSING
+    from archive.models import Document
+    from archive.tasks import process_document
+
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    stranger = get_user_model().objects.create_user("stranger", password="secure-password-2")
+    queued = _doc(owner, "queued", Document.Status.PENDING)
+    running = _doc(owner, "running", Document.Status.PROCESSING)
+    client = Client()
+    client.force_login(stranger)
+    assert client.post(f"/api/documents/{queued.id}/cancel-processing").status_code == 404
+    client.force_login(owner)
+    response = client.post(f"/api/documents/{queued.id}/cancel-processing")
+    assert response.status_code == 200 and response.json()["error"] == CANCELLED_PROCESSING
+    queued.refresh_from_db()
+    assert queued.status == Document.Status.FAILED
+    with patch("archive.tasks.subprocess.run") as ocr:
+        process_document(str(queued.id))  # a task already in the queue finds nothing to do
+    ocr.assert_not_called()
+    assert client.post(f"/api/documents/{queued.id}/cancel-processing").status_code == 409
+    refused = client.post(f"/api/documents/{running.id}/cancel-processing")
+    assert refused.status_code == 409 and "midway" in refused.json()["error"]
+    with patch("archive.tasks.process_document.delay"):
+        assert client.post(f"/api/documents/{queued.id}/retry").status_code == 202  # retry works as for any failure
+
+
+@pytest.mark.django_db
+def test_jobs_overview_lists_only_my_waiting_and_failed_work():
+    from archive.models import Document, FilingModel, PurgeJob, Workflow, WorkflowRun
+
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    stranger = get_user_model().objects.create_user("stranger", password="secure-password-2")
+    _doc(owner, "waiting", Document.Status.PENDING)
+    _doc(owner, "busy", Document.Status.PROCESSING, processing_started_at=timezone.now())
+    failed = _doc(owner, "broken", Document.Status.FAILED, error="OCR failed")
+    _doc(owner, "fine", Document.Status.READY)
+    _doc(owner, "binned", Document.Status.FAILED, trashed_at=timezone.now())
+    _doc(stranger, "theirs", Document.Status.FAILED)
+    PurgeJob.objects.create(owner=owner, document_id="00000000-0000-0000-0000-000000000001", status=PurgeJob.Status.FAILED, error="disk")
+    PurgeJob.objects.create(owner=owner, document_id="00000000-0000-0000-0000-000000000002", status=PurgeJob.Status.COMPLETE)
+    FilingModel.objects.create(owner=owner, status=FilingModel.Status.FAILED, error="worker down")
+    flow = Workflow.objects.create(owner=owner, name="Notify", trigger=Workflow.Trigger.ADDED)
+    WorkflowRun.objects.create(workflow=flow, document=failed, trigger="added", status=WorkflowRun.Status.FAILED, detail="webhook refused (500)")
+
+    client = Client()
+    assert client.get("/api/jobs").status_code == 401
+    client.force_login(owner)
+    body = client.get("/api/jobs").json()
+    assert body["documents_waiting"]["total"] == 2
+    assert [(item["title"], item["can_cancel"]) for item in body["documents_waiting"]["items"]] == [("waiting", True), ("busy", False)]
+    assert body["documents_failed"]["total"] == 1 and body["documents_failed"]["items"][0]["error"] == "OCR failed"
+    assert [(job["status"], job["can_retry"]) for job in body["purges"]] == [("failed", True)]
+    assert body["training"] == {**body["training"], "status": "failed", "can_retry": True}
+    assert body["workflow_failures"][0]["detail"] == "webhook refused (500)"
+    client.force_login(stranger)
+    other = client.get("/api/jobs").json()
+    assert other["documents_failed"]["total"] == 1 and other["purges"] == [] and other["training"] is None

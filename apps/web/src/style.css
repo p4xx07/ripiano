@@ -3619,6 +3619,63 @@ button:disabled {
 .overview-attention.calm h2 svg {
   color: var(--color-primary);
 }
+.jobs-card h2 svg {
+  color: var(--color-primary);
+}
+.jobs-group + .jobs-group {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+.jobs-group h3 {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  margin: 0 0 var(--space-2);
+  color: var(--color-heading);
+  font-size: var(--type-small);
+}
+.jobs-group h3 small,
+.jobs-group li small,
+.jobs-more {
+  color: var(--color-muted);
+  font-size: var(--type-small);
+}
+.jobs-group ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.jobs-group li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+.jobs-group li > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.jobs-group li > div > * {
+  overflow-wrap: anywhere;
+}
+.jobs-group li .text-action,
+.jobs-group li > div > span {
+  text-align: left;
+  font-size: var(--type-small);
+}
+.jobs-group li > div > span {
+  color: var(--color-heading);
+}
+.jobs-card > .bulk-notice {
+  margin: 0 0 var(--space-3);
+}
+.jobs-more {
+  margin: var(--space-2) 0 0;
+}
 .overview-health {
   margin: 0;
   color: var(--color-muted);

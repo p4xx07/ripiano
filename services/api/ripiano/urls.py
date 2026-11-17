@@ -73,6 +73,8 @@ urlpatterns = [
     path("api/share-bundles/<str:token>", bundle_views.shared_bundle),
     path("api/documents/<uuid:document_id>/email", bundle_views.document_email),
     path("api/documents/<uuid:document_id>/retry", views.retry_document),
+    path("api/documents/<uuid:document_id>/cancel-processing", job_views.cancel_document_processing),
+    path("api/jobs", job_views.jobs),
     path("api/documents/<uuid:document_id>/reprocess", views.reprocess_document),
     path("api/documents/<uuid:document_id>/trash", views.trash_document),
     path("api/documents/<uuid:document_id>/restore", views.restore_document),

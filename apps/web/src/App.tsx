@@ -1179,7 +1179,9 @@ function App() {
           ) : view === "agents" ? (
             <AgentPanel />
           ) : view === "overview" ? (
-            <OverviewPanel onNavigate={(target) => setView(target)} onOpenUntagged={() => {
+            <OverviewPanel onNavigate={(target) => setView(target)}
+              onOpenDocument={(id) => void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch((cause) => setError(cause.message))}
+              onOpenUntagged={() => {
               setQuery("is:untagged");
               setFilters({ ...emptyLibraryFilters });
               setNextCursor(null);

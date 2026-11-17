@@ -86,3 +86,81 @@ def browse_run_action(request, run_id, action):
         BrowseExportRun.objects.filter(pk=retry.id, status=BrowseExportRun.Status.PENDING).update(status=BrowseExportRun.Status.FAILED, error="Browse export queue unavailable", completed_at=timezone.now())
         return JsonResponse({"error": "Browse export queue unavailable", "id": str(retry.id)}, status=503)
     return JsonResponse({"id": str(retry.id), "status": retry.status, "retry_of": str(run.id)}, status=202)
+
+
+CANCELLED_PROCESSING = "Processing was cancelled. Choose Retry OCR to process it again."
+JOB_LIST_LIMIT = 25
+
+
+def _when(value):
+    return value.isoformat() if value else None
+
+
+@require_http_methods(["GET"])
+def jobs(request):
+    """One place for a person's background work that is waiting or needs attention.
+
+    Lists only the signed-in person's own jobs. Backups and NAS browse copies keep their own screen.
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Sign in required"}, status=401)
+    from datetime import timedelta
+
+    from .models import Document, FilingModel, PurgeJob, WorkflowRun
+
+    owner = request.user
+    documents = Document.objects.filter(owner=owner, trashed_at__isnull=True)
+    waiting = documents.filter(status__in=[Document.Status.PENDING, Document.Status.PROCESSING]).order_by("created_at", "id")
+    failed = documents.filter(status=Document.Status.FAILED).order_by("-created_at", "-id")
+    purges = PurgeJob.objects.filter(owner=owner, status__in=[PurgeJob.Status.PENDING, PurgeJob.Status.RUNNING, PurgeJob.Status.FAILED])
+    model = FilingModel.objects.filter(owner=owner).first()
+    runs = (WorkflowRun.objects.filter(workflow__owner=owner, status=WorkflowRun.Status.FAILED, created_at__gte=timezone.now() - timedelta(days=7))
+            .select_related("workflow", "document")[:10])
+    return JsonResponse({
+        "documents_waiting": {
+            "total": waiting.count(),
+            "items": [{
+                "id": str(item.id), "title": item.title, "status": item.status,
+                "since": _when(item.processing_started_at or item.created_at),
+                "can_cancel": item.status == Document.Status.PENDING,
+            } for item in waiting[:JOB_LIST_LIMIT]],
+        },
+        "documents_failed": {
+            "total": failed.count(),
+            "items": [{"id": str(item.id), "title": item.title, "error": item.error, "at": _when(item.created_at)} for item in failed[:JOB_LIST_LIMIT]],
+        },
+        "purges": [{
+            "id": str(job.id), "status": job.status, "error": job.error, "at": _when(job.started_at or job.created_at),
+            "can_retry": job.status == PurgeJob.Status.FAILED,
+        } for job in purges[:JOB_LIST_LIMIT]],
+        "training": {
+            "status": model.status, "error": model.error, "at": _when(model.started_at or model.requested_at),
+            "can_retry": model.status == FilingModel.Status.FAILED,
+        } if model and model.status in {FilingModel.Status.QUEUED, FilingModel.Status.TRAINING, FilingModel.Status.FAILED} else None,
+        "workflow_failures": [{
+            "id": str(run.id), "workflow": run.workflow.name, "document": {"id": str(run.document_id), "title": run.document.title},
+            "detail": run.detail, "at": _when(run.created_at),
+        } for run in runs],
+    })
+
+
+@require_http_methods(["POST"])
+def cancel_document_processing(request, document_id):
+    """Take a queued document out of the processing queue. It stays in the archive, marked as not processed."""
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Sign in required"}, status=401)
+    from .models import Document
+
+    with transaction.atomic():
+        # The worker claims a document under the same row lock and only if it is still pending.
+        document = Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
+        if document is None:
+            return JsonResponse({"error": "Document not found"}, status=404)
+        if document.status != Document.Status.PENDING:
+            message = ("This document is already being processed and cannot be stopped midway"
+                       if document.status == Document.Status.PROCESSING else "Only a queued document can be cancelled")
+            return JsonResponse({"error": message}, status=409)
+        document.status = Document.Status.FAILED
+        document.error = CANCELLED_PROCESSING
+        document.save(update_fields=["status", "error"])
+    return JsonResponse({"id": str(document.id), "status": document.status, "error": document.error})

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, X } from "lucide-react";
 import { request } from "./api";
+import JobsPanel from "./JobsPanel";
 
 type Overview = {
   documents: { total: number; ready: number; waiting: number; failed: number; needs_action: number; overdue: number; untagged: number; duplicates: number; bytes: number };
@@ -49,17 +50,19 @@ function Ranked({ title, rows }: { title: string; rows: { name: string; count: n
   );
 }
 
-export default function OverviewPanel({ onNavigate, onOpenUntagged }: {
+export default function OverviewPanel({ onNavigate, onOpenUntagged, onOpenDocument }: {
   onNavigate: (view: "inbox" | "actions" | "documents" | "backups" | "integrations" | "workflows") => void;
   onOpenUntagged: () => void;
+  onOpenDocument: (id: string) => void;
 }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [active, setActive] = useState<number | null>(null);
 
-  useEffect(() => {
+  const loadOverview = () => {
     request<Overview>("/api/overview").then(setData).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load the overview"));
-  }, []);
+  };
+  useEffect(loadOverview, []);
 
   const docs = data?.documents;
   const max = Math.max(1, ...(data?.monthly ?? []).map((row) => row.count));
@@ -106,6 +109,8 @@ export default function OverviewPanel({ onNavigate, onOpenUntagged }: {
               {data.health.queues && <>{" · "}Background queues: {data.health.queues.celery.toLocaleString()} OCR, {data.health.queues.maintenance.toLocaleString()} maintenance waiting</>}
             </p>
           </section>
+
+          <JobsPanel onOpenDocument={onOpenDocument} onChanged={loadOverview} />
 
           <section className="overview-card" aria-labelledby="overview-monthly">
             <h2 id="overview-monthly">Documents added per month</h2>

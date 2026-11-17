@@ -57,6 +57,7 @@ import SharedPanel from "./SharedPanel";
 import SharedDocumentPanel from "./SharedDocumentPanel";
 import BundlePanel from "./BundlePanel";
 import OverviewPanel from "./OverviewPanel";
+import SemanticPanel, { MeaningResults } from "./SemanticPanel";
 import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
 import SavedSearchBar from "./SavedSearchBar";
@@ -1177,7 +1178,10 @@ function App() {
           ) : view === "trash" ? (
             <TrashPanel refreshKey={trashRefresh} onRestored={() => { void loadDocuments(query); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }} />
           ) : view === "agents" ? (
-            <AgentPanel />
+            <>
+              <AgentPanel />
+              <div className="semantic-settings"><SemanticPanel /></div>
+            </>
           ) : view === "overview" ? (
             <OverviewPanel onNavigate={(target) => setView(target)}
               onOpenDocument={(id) => void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch((cause) => setError(cause.message))}
@@ -1463,6 +1467,8 @@ function App() {
                 {bulkError && <p className="inline-error" role="alert">{bulkError}</p>}
                 {bulkNotice && <p className="bulk-notice" role="status">{bulkNotice}</p>}
               </div>}
+
+              <MeaningResults query={query} onOpenDocument={(id) => void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch((cause) => setError(cause.message))} />
 
               {listError ? null : isEmpty ? (
                 <div className="empty-state">

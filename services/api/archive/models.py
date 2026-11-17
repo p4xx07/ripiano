@@ -811,3 +811,34 @@ class AutoFilingPolicy(models.Model):
     owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="auto_filing_policy")
     enabled = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class SemanticSettings(models.Model):
+    """Instance-wide switch for optional semantic search (one row). Off by default; nothing loads until enabled."""
+
+    class Mode(models.TextChoices):
+        OFF = "off", "Off"
+        OLLAMA = "ollama", "Ollama on another computer"
+        NAS = "nas", "On the NAS (embedder service)"
+
+    mode = models.CharField(max_length=10, choices=Mode.choices, default=Mode.OFF)
+    ollama_url = models.URLField(max_length=300, blank=True)
+    model_name = models.CharField(max_length=200, blank=True)
+    # False: unload the model after 10 idle minutes. True: keep it in memory (faster, uses RAM all the time).
+    keep_loaded = models.BooleanField(default=False)
+    last_error = models.CharField(max_length=300, blank=True)
+    last_error_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def current(cls):
+        return cls.objects.get_or_create(pk=1)[0]
+
+
+class SemanticDocument(models.Model):
+    """Which text version and model a document's passages were built from."""
+
+    document = models.OneToOneField(Document, on_delete=models.CASCADE, primary_key=True, related_name="semantic_index")
+    model_name = models.CharField(max_length=200)
+    passages = models.PositiveIntegerField(default=0)
+    indexed_at = models.DateTimeField()

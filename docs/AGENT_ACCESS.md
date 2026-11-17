@@ -7,7 +7,7 @@ Permissions are checked on every call:
 | Permission | Tools | Data exposed |
 | --- | --- | --- |
 | Find document titles and tags | `search_documents` | Titles, dates, status, tags, senders, and document types. Search matches titles only unless OCR-text permission is also granted. |
-| Read OCR text | `get_document_text` | Text of a selected document in 20,000-character pages. Also enables full-text search in `search_documents` when that tool is granted. |
+| Read OCR text | `get_document_text`, `semantic_search` | Text of a selected document in 20,000-character pages. Also enables full-text search in `search_documents` when that tool is granted. `semantic_search` (only while the optional semantic search is on) returns the passages most related in meaning to a question, best passage per document, within the grant's document filter. |
 | Add or remove tags | `list_tags`, `change_document_tags` | Tag names and explicit changes to selected documents. Other tags stay in place. |
 | Set sender and document type | `list_filing_options`, `set_document_filing` | Existing sender/type names and one-field changes to selected documents. Human and input-rule choices cannot be replaced. |
 

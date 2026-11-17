@@ -11,6 +11,11 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
 app.conf.beat_schedule = {
+    # Does nothing while semantic search is off; catches up after the embedding service was unreachable.
+    "semantic-index": {
+        "task": "archive.tasks.semantic_index",
+        "schedule": 900.0,
+    },
     "reconcile-pending-documents": {
         "task": "archive.tasks.reconcile_pending_documents",
         "schedule": 60.0,

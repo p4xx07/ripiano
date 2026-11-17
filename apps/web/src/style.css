@@ -4039,3 +4039,80 @@ button:disabled {
   .learning-row { grid-template-columns: 1fr; gap: var(--space-1); }
   .learning-row dt { font-weight: 700; }
 }
+
+/* Optional semantic search */
+.semantic-settings {
+  max-width: 720px;
+  margin-top: var(--space-5);
+}
+.semantic-card fieldset {
+  display: grid;
+  gap: var(--space-2);
+}
+.semantic-card label.agent-scope-choice {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-2);
+  text-align: left;
+  font-weight: 400;
+}
+.semantic-card label.agent-scope-choice input,
+.semantic-card label.agent-scope-choice input[type="radio"] {
+  flex: none;
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  margin: 3px 0 0;
+}
+.semantic-mode span {
+  display: grid;
+  gap: 2px;
+}
+.semantic-mode small {
+  color: var(--color-muted);
+  font-size: var(--type-small);
+}
+.semantic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.meaning-results {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+}
+.meaning-results h2 {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: 0 0 var(--space-2);
+  color: var(--color-heading);
+  font-size: var(--type-small);
+}
+.meaning-results h2 svg {
+  color: var(--color-primary);
+}
+.meaning-results ol {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.meaning-results li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.meaning-results li .text-action {
+  text-align: left;
+}
+.meaning-results li small {
+  color: var(--color-muted);
+  font-size: var(--type-small);
+  overflow-wrap: anywhere;
+}

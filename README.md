@@ -403,6 +403,23 @@ Gmail and Outlook can use OAuth instead. Register a web OAuth client with the re
 
 Mount a NAS folder at `RIPIANO_WATCH_PATH`, set `RIPIANO_WATCH_OWNER_USERNAME` to an existing account, and start `docker compose --profile watch up -d`. The mount is read-only to Ripiano. Stable PDF, PNG, and JPEG files are copied into the archive and left in the incoming folder. The same path and bytes import once across restarts; changing a file creates a new document. Files above the configured 25 MB limit are skipped. Set `RIPIANO_WATCH_POLL_SECONDS` to adjust the default five-second poll.
 
+### Optional semantic search
+
+**Off by default; Ripiano works fully without it.** When on, the Library shows **Related by meaning** above the normal results for plain-language searches, and MCP agents with OCR-text permission get a `semantic_search` tool that returns the passages most related to a question, so the agent's own model can answer. Ripiano never generates answers and never calls a paid AI provider.
+
+Turn it on as the archive owner under **Agents → Search by meaning**, choosing where the model runs:
+
+| Choice | Cost on the NAS | Notes |
+| --- | --- | --- |
+| **Off** | nothing | Keyword search only |
+| **Ollama on another computer** | nothing | Enter its address, e.g. `http://192.168.1.30:11434`, and run `ollama pull bge-m3` there (or name another embedding model). Meaning search pauses while that computer is off and catches up later. Set `OLLAMA_HOST=0.0.0.0` on the Mac so the NAS can reach it. |
+| **On the NAS** | about 800 MB RAM while the model is loaded; about 150 MB of packages and 240 MB of model files in the `ripiano_models` volume | Start the `semantic` Compose profile (the `embedder` service). On first start it installs hash-pinned packages from `services/api/semantic-requirements.txt` into its volume, so the normal Ripiano image does not grow. It runs at low CPU priority with one thread (`RIPIANO_EMBEDDER_THREADS`), capped by `RIPIANO_EMBEDDER_MEMORY` and `RIPIANO_EMBEDDER_CPUS`. |
+
+- **Keep the model loaded:** off by default, so the model unloads after 10 idle minutes and the next search waits while it loads (about 15–20 s on first use). Tick it for faster searches at the cost of permanent RAM. The same setting is passed to Ollama.
+- **Database:** passages are stored with the pgvector extension. Set `RIPIANO_DB_IMAGE=pgvector/pgvector:pg17` (same PostgreSQL 17 data directory) and redeploy before turning the feature on; Ripiano says so if the extension is missing. Without it nothing else changes.
+- **Indexing** runs in the background on the maintenance queue, 20 documents at a time, after each new document and every 15 minutes. Changed text and a changed model are indexed again. **Test connection** checks the settings before you rely on them; the last problem is shown in the card.
+- **Quality:** the small NAS model (`paraphrase-multilingual-MiniLM-L12-v2`, Italian and English) is good but not perfect; in a four-document test it found the right document first for three of four questions. Larger models through Ollama (such as `bge-m3`) are better.
+
 ### Optional S3 bucket
 
 Ripiano can import files dropped into an S3-compatible bucket (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others). Fill in the `RIPIANO_S3_*` values and start `docker compose --profile s3 up -d`.

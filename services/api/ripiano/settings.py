@@ -123,6 +123,7 @@ CELERY_TASK_ROUTES = {
     "archive.tasks.expire_share_bundles": {"queue": "maintenance"},
     "archive.tasks.run_scheduled_workflows": {"queue": "maintenance"},
     "archive.tasks.poll_mail_account": {"queue": "maintenance"},
+    "archive.tasks.semantic_index": {"queue": "maintenance"},
 }
 
 RIPIANO_BACKUP_ROOT = Path(os.environ.get("RIPIANO_BACKUP_ROOT", "/backup"))
@@ -159,6 +160,8 @@ EMAIL_TIMEOUT = 20
 DEFAULT_FROM_EMAIL = os.environ.get("RIPIANO_SMTP_FROM", "ripiano@localhost")
 # Webhooks to LAN services (e.g. home automation) must be allowed explicitly.
 RIPIANO_WEBHOOK_ALLOW_PRIVATE = os.environ.get("RIPIANO_WEBHOOK_ALLOW_PRIVATE", "0") == "1"
+# Optional NAS embedder service for semantic search (Compose profile "semantic"); unused while the feature is off.
+RIPIANO_EMBEDDER_URL = os.environ.get("RIPIANO_EMBEDDER_URL", "http://embedder:8002")
 # Emailing documents from the app is off unless the operator turns it on (SMTP alone is not enough).
 RIPIANO_DOCUMENT_EMAIL = os.environ.get("RIPIANO_DOCUMENT_EMAIL", "0") == "1"
 RIPIANO_EMAIL_ATTACH_MAX_BYTES = int(os.environ.get("RIPIANO_EMAIL_ATTACH_MAX_BYTES", str(10 * 1024 * 1024)))

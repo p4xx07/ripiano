@@ -131,6 +131,13 @@ def process_document(document_id):
             run_for_document(document, "added")
         except Exception:
             logger.exception("Workflows failed for document %s", document.id)
+    try:
+        from .semantic import enabled
+
+        if enabled():
+            semantic_index.delay()
+    except Exception:
+        logger.warning("Could not queue semantic indexing for document %s", document.id, exc_info=True)
     if first_run and unlocked_by is not None:
         try:
             from .workflows import record_unlock
@@ -573,3 +580,14 @@ def train_filing_models():
     for owner_id in get_user_model().objects.filter(is_active=True).values_list("pk", flat=True):
         if has_manual_filing(owner_id).exists():
             train_filing_model.delay(owner_id)
+
+
+@shared_task(name="archive.tasks.semantic_index", soft_time_limit=600, time_limit=660)
+def semantic_index():
+    """Index a small batch of documents for semantic search, then queue the next batch. No-op while the feature is off."""
+    from .semantic import index_batch
+
+    indexed, remaining = index_batch(limit=20)
+    if indexed and remaining:
+        semantic_index.apply_async(countdown=5)
+    return indexed

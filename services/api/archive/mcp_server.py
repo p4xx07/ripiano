@@ -39,6 +39,18 @@ TOOLS = {
             }, "required": ["document_id"], "additionalProperties": False,
         }),
     ),
+    "semantic_search": (
+        "documents:text",
+        Tool(name="semantic_search", description=(
+            "Find the passages most related in meaning to a question (optional feature; it reports when it is off). "
+            "Returns the best passage per document with its document id, so you can answer from them or read more with get_document_text."),
+            inputSchema={
+                "type": "object", "properties": {
+                    "query": {"type": "string", "minLength": 1, "maxLength": 500},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                }, "required": ["query"], "additionalProperties": False,
+            }),
+    ),
     "list_tags": (
         "documents:tag",
         Tool(name="list_tags", description="List tags available for document filing.", inputSchema={"type": "object", "properties": {}, "additionalProperties": False}),
@@ -156,6 +168,17 @@ def _execute(grant, name, args):
             "correspondent": {"id": str(doc.correspondent_id), "name": doc.correspondent.name} if doc.correspondent_id else None,
             "document_type": {"id": str(doc.document_type_id), "name": doc.document_type.name} if doc.document_type_id else None,
         } for doc in page], "next_offset": offset + 20 if len(page) == 20 else None}
+
+    if name == "semantic_search":
+        from .semantic import SemanticError, search
+
+        query, limit = args.get("query"), args.get("limit", 8)
+        if not isinstance(query, str) or not 0 < len(query.strip()) <= 500 or not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 20:
+            return None, {"error": "Invalid query or limit"}
+        try:
+            return None, {"results": search(grant.owner, query.strip(), allowed=_documents(grant), limit=limit)}
+        except SemanticError as exc:
+            return None, {"error": str(exc)}
 
     if name == "list_tags":
         return None, {"tags": [{"id": str(tag.id), "name": tag.name, "description": tag.description} for tag in Tag.objects.filter(owner=grant.owner)[:200]]}

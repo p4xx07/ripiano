@@ -17,7 +17,7 @@ Status keys: **Agreed** (decided, not started), **In progress**, **Done** (link 
 - A local Ollama endpoint on the owner's Mac (OpenAI-compatible API) must be supported as an option, never required.
 - paperless-ai and paperless-gpt are **not** used: they are extra always-on containers that need an LLM provider.
 
-## D2 — Semantic search / RAG (2026-11-17) — Agreed
+## D2 — Semantic search / RAG (2026-11-17) — Done (owner decision 2026-11-17: every mode optional, chosen in settings)
 
 Ripiano finds passages; the MCP client's own model writes answers. Ripiano does not generate text.
 
@@ -30,7 +30,16 @@ Ripiano finds passages; the MCP client's own model writes answers. Ripiano does 
 5. MCP tool `semantic_search` returning passages with document IDs, enforcing each agent grant's scopes and document filters.
 6. No LangChain/LlamaIndex: pgvector + simple chunking is enough for one personal archive.
 
-**Measured 2026-11-17 — waiting for the owner's decision before building:**
+**Built 2026-11-17 after the owner chose "all optional, toggleable in settings":**
+
+- Settings card under **Agents → Search by meaning** (archive owner): Off (default) / Ollama on another computer / On the NAS, optional model name, and "keep the model loaded" (off = unload after 10 idle minutes).
+- One code path: Ripiano calls an Ollama-compatible `POST /api/embed` endpoint. The NAS option is the `embedder` Compose service (`manage.py semantic_embedder`), which installs the hash-pinned `semantic-requirements.txt` into its own volume on first start, so the Ripiano image does not grow. The API process never loads a model.
+- pgvector is created only when the feature is switched on; the Postgres image is `RIPIANO_DB_IMAGE` (default unchanged). On a database without pgvector, enabling is refused with instructions and everything else keeps working (full suite verified on plain postgres:17.6).
+- Library "Related by meaning" (top 5, similarity ≥ 0.3) and MCP `semantic_search` (scope `documents:text`, grant filter applied).
+- Verified end to end with the real model on pgvector: 3 of 4 bilingual test questions ranked the right document first; first model load 17.5 s.
+- Not done: merging meaning results into the main Library ranking (hybrid ranking); measuring on the DS923+ itself.
+
+**Measured 2026-11-17 (before building):**
 
 | Item | Measurement (Apple Silicon, one thread; the DS923+ CPU is slower) |
 | --- | --- |

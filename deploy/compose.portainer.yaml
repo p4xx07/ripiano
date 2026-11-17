@@ -50,7 +50,8 @@ x-api-base: &api-base
 
 services:
   db:
-    image: postgres:17.6-bookworm
+    # Set RIPIANO_DB_IMAGE=pgvector/pgvector:pg17 (same PostgreSQL 17 data) only to use optional semantic search.
+    image: ${RIPIANO_DB_IMAGE:-postgres:17.6-bookworm}
     environment:
       POSTGRES_DB: ripiano
       POSTGRES_USER: ripiano
@@ -160,6 +161,22 @@ services:
     depends_on:
       api:
         condition: service_healthy
+  # Optional NAS model for semantic search (turn it on in Integrations -> Search by meaning).
+  # Installs its pinned packages into the models volume on first start; no published port.
+  embedder:
+    <<: *api-base
+    profiles: ["semantic"]
+    volumes:
+      - ripiano_models:/models
+    command: [".venv/bin/python", "manage.py", "semantic_embedder"]
+    environment:
+      <<: *api-env
+      RIPIANO_EMBEDDER_DIR: /models
+      RIPIANO_EMBEDDER_THREADS: ${RIPIANO_EMBEDDER_THREADS:-1}
+      UV_CACHE_DIR: /models/uv-cache
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    mem_limit: ${RIPIANO_EMBEDDER_MEMORY:-1500m}
+    cpus: ${RIPIANO_EMBEDDER_CPUS:-1.0}
   s3_input:
     <<: *api-base
     profiles: ["s3"]
@@ -195,6 +212,7 @@ services:
 
 volumes:
   broker_data:
+  ripiano_models:
   ripiano_media:
   ripiano_postgres:
   ripiano_backup:

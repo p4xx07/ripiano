@@ -852,6 +852,7 @@ class StorageSource(models.Model):
 
     class Kind(models.TextChoices):
         S3 = "s3", "S3-compatible storage"
+        TELEGRAM = "telegram", "Telegram bot"
 
     class After(models.TextChoices):
         KEEP = "keep", "Leave the file and remember it"
@@ -868,12 +869,16 @@ class StorageSource(models.Model):
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.S3)
     enabled = models.BooleanField(default=True)
     # Connection
-    endpoint = models.CharField(max_length=300)
+    endpoint = models.CharField(max_length=300, blank=True)
     region = models.CharField(max_length=50, blank=True, default="us-east-1")
     bucket = models.CharField(max_length=100, blank=True)
     addressing = models.CharField(max_length=10, choices=Addressing.choices, default=Addressing.PATH)
     username = models.CharField(max_length=200, blank=True)  # S3 access key ID
-    secret = models.TextField(blank=True)  # encrypted S3 secret key
+    secret = models.TextField(blank=True)  # encrypted S3 secret key or Telegram bot token
+    # Telegram: private chats allowed to send files ([{"id", "name"}]), chats waiting for approval, and the update offset.
+    allowed_chats = models.JSONField(default=list, blank=True)
+    pending_chats = models.JSONField(default=list, blank=True)
+    cursor = models.BigIntegerField(default=0)
     # What to import
     path = models.CharField(max_length=500, blank=True)
     recursive = models.BooleanField(default=True)

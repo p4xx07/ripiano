@@ -4,18 +4,19 @@ import { FilingItem, request, Tag } from "./api";
 import { Button } from "./ui";
 
 type After = "keep" | "move" | "delete";
+type Chat = { id: number; name: string };
 type Source = {
-  id: string; name: string; kind: "s3"; enabled: boolean;
+  id: string; name: string; kind: "s3" | "telegram"; enabled: boolean; allowed_chats: Chat[]; pending_chats: Chat[];
   endpoint: string; region: string; bucket: string; addressing: "path" | "virtual"; username: string; has_secret: boolean;
   path: string; recursive: boolean; include_patterns: string; exclude_patterns: string; file_types: string[];
   max_size_mb: number; modified_after: string | null; after: After; processed_path: string; retention_days: number;
   tag_ids: string[]; correspondent_id: string | null; document_type_id: string | null; poll_minutes: number;
   status: { running: boolean; last_checked_at: string | null; last_error: string; last_imported: number; total_imported: number };
 };
-type Draft = Omit<Source, "id" | "has_secret" | "status" | "modified_after" | "correspondent_id" | "document_type_id"> & {
+type Draft = Omit<Source, "id" | "has_secret" | "status" | "modified_after" | "correspondent_id" | "document_type_id" | "allowed_chats" | "pending_chats"> & {
   secret: string; modified_after: string; correspondent_id: string; document_type_id: string;
 };
-type Preview = { ok: boolean; matching: { path: string; size: number; modified: string }[]; skipped: Record<string, number>; already_imported: number; error?: string };
+type Preview = { ok: boolean; matching: { path: string; size: number; modified: string }[]; skipped: Record<string, number>; already_imported: number; bot?: string; error?: string };
 
 const empty: Draft = {
   name: "", kind: "s3", enabled: true, endpoint: "", region: "us-east-1", bucket: "", addressing: "path", username: "", secret: "",
@@ -30,6 +31,10 @@ const afterLabels: Record<After, string> = {
 };
 
 function describe(source: Source) {
+  if (source.kind === "telegram") {
+    const chats = source.allowed_chats.length;
+    return `Telegram bot · ${chats ? `${chats} allowed chat${chats === 1 ? "" : "s"}` : "no chat allowed yet: send /start to the bot"} · checked every minute.`;
+  }
   const where = `${source.bucket}/${source.path || ""}`;
   const what = [source.recursive ? "including subfolders" : "this folder only", source.include_patterns && `names like ${source.include_patterns}`]
     .filter(Boolean).join(", ");
@@ -99,6 +104,7 @@ export default function SourcesPanel() {
     setPreview(null);
     setDraft({
       ...source, secret: "", modified_after: source.modified_after ?? "",
+      max_size_mb: source.kind === "telegram" ? Math.min(source.max_size_mb, 20) : source.max_size_mb,
       correspondent_id: source.correspondent_id ?? "", document_type_id: source.document_type_id ?? "",
     });
     focusForm();
@@ -136,6 +142,14 @@ export default function SourcesPanel() {
       setStatus(`Checking “${source.name}” now. New documents appear in the Library as they arrive.`);
       window.setTimeout(() => void load(), 4000);
     }, "Could not start the check");
+  }
+
+  function changeChat(source: Source, body: { allow: number } | { remove: number }, done: string) {
+    void run(async () => {
+      await request(`/api/sources/${source.id}/chats`, { method: "POST", body: JSON.stringify(body) });
+      setStatus(done);
+      await load();
+    }, "Could not update the chat");
   }
 
   function toggle(source: Source) {
@@ -187,9 +201,26 @@ export default function SourcesPanel() {
                         : source.status.last_checked_at ? `Last checked ${new Date(source.status.last_checked_at).toLocaleString()} · ${source.status.last_imported} new · ${source.status.total_imported} imported in total`
                         : "Not checked yet"}
                     </small>
+                    {source.kind === "telegram" && (source.pending_chats.length > 0 || source.allowed_chats.length > 0) && (
+                      <ul className="source-chats" aria-label={`Chats for ${source.name}`}>
+                        {source.pending_chats.map((chat) => (
+                          <li key={`p${chat.id}`}>
+                            <span>{chat.name} <small>waiting</small></span>
+                            <Button variant="secondary" disabled={busy} onClick={() => changeChat(source, { allow: chat.id }, `${chat.name} can now send documents.`)}>Allow</Button>
+                            <Button variant="secondary" disabled={busy} aria-label={`Ignore ${chat.name}`} onClick={() => changeChat(source, { remove: chat.id }, `${chat.name} was ignored.`)}>Ignore</Button>
+                          </li>
+                        ))}
+                        {source.allowed_chats.map((chat) => (
+                          <li key={`a${chat.id}`}>
+                            <span>{chat.name} <small>allowed</small></span>
+                            <Button variant="secondary" disabled={busy} aria-label={`Remove ${chat.name}`} onClick={() => changeChat(source, { remove: chat.id }, `${chat.name} can no longer send documents.`)}>Remove</Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {preview?.id === source.id && (
                       <div className="source-preview" role="region" aria-label={`Preview of ${source.name}`}>
-                        {preview.result.matching.length ? (
+                        {preview.result.bot !== undefined ? <strong>Connected to @{preview.result.bot}.</strong> : preview.result.matching.length ? (
                           <>
                             <strong>The next check would import:</strong>
                             <ul>{preview.result.matching.map((item) => <li key={item.path}>{item.path} <small>{size(item.size)}</small></li>)}</ul>
@@ -212,7 +243,7 @@ export default function SourcesPanel() {
                       </>
                     ) : (
                       <>
-                        <Button variant="secondary" disabled={busy} onClick={() => showPreview(source)}><Eye size={16} aria-hidden="true" /> Preview</Button>
+                        <Button variant="secondary" disabled={busy} onClick={() => showPreview(source)}><Eye size={16} aria-hidden="true" /> {source.kind === "telegram" ? "Test" : "Preview"}</Button>
                         <Button variant="secondary" disabled={busy || !source.enabled} onClick={() => checkNow(source)}><RefreshCw size={16} aria-hidden="true" /> Check now</Button>
                         <Button variant="secondary" disabled={busy} onClick={() => toggle(source)}>{source.enabled ? "Pause" : "Resume"}</Button>
                         <Button variant="secondary" onClick={() => edit(source)}>Edit</Button>
@@ -227,7 +258,7 @@ export default function SourcesPanel() {
             <div className="tag-empty">
               <Cloud size={27} aria-hidden="true" />
               <strong>No sources yet</strong>
-              <p>Optional. Connect an S3-compatible storage (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, …) on the right.</p>
+              <p>Optional. Connect an S3-compatible storage (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, …) or a Telegram bot on the right.</p>
             </div>
           )}
         </section>
@@ -241,10 +272,17 @@ export default function SourcesPanel() {
               <fieldset>
                 <legend>Connection</legend>
                 <label>Storage
-                  <select value={draft.kind} onChange={(event) => set("kind", event.target.value as Draft["kind"])}>
+                  <select value={draft.kind} onChange={(event) => { const kind = event.target.value as Draft["kind"]; setDraft((current) => ({ ...current, kind, max_size_mb: kind === "telegram" ? Math.min(current.max_size_mb, 20) : current.max_size_mb, after: kind === "telegram" ? "keep" : current.after === "keep" ? "move" : current.after })); }}>
                     <option value="s3">S3-compatible storage</option>
+                    <option value="telegram">Telegram bot</option>
                   </select>
                 </label>
+                {draft.kind === "telegram" ? (
+                  <label>Bot token <small>{editing?.has_secret ? "Saved and never shown. Paste a new one to replace it." : "From BotFather; stored encrypted. Then send /start to the bot and allow your chat here."}</small>
+                    <input type="password" value={draft.secret} onChange={(event) => set("secret", event.target.value)} required={!editing?.has_secret} maxLength={100} autoComplete="new-password" placeholder="123456789:AA…" />
+                  </label>
+                ) : (
+                <>
                 <label>Address<input value={draft.endpoint} onChange={(event) => set("endpoint", event.target.value)} required maxLength={300}
                   placeholder="https://s3.eu-south-1.amazonaws.com" autoCapitalize="none" spellCheck={false} /></label>
                 <div className="mail-row">
@@ -261,11 +299,17 @@ export default function SourcesPanel() {
                 <label>Secret key <small>{editing?.has_secret ? "Saved and never shown. Type a new one to replace it." : "Stored encrypted."}</small>
                   <input type="password" value={draft.secret} onChange={(event) => set("secret", event.target.value)} required={!editing?.has_secret} maxLength={500} autoComplete="new-password" />
                 </label>
+                </>
+                )}
               </fieldset>
               <fieldset>
                 <legend>What to import</legend>
-                <label>Folder <small>Leave empty for the whole bucket</small><input value={draft.path} onChange={(event) => set("path", event.target.value)} maxLength={500} placeholder="inbox/" autoCapitalize="none" spellCheck={false} /></label>
-                <label className="agent-scope-choice"><input type="checkbox" checked={draft.recursive} onChange={(event) => set("recursive", event.target.checked)} />Include subfolders</label>
+                {draft.kind !== "telegram" && (
+                  <>
+                    <label>Folder <small>Leave empty for the whole bucket</small><input value={draft.path} onChange={(event) => set("path", event.target.value)} maxLength={500} placeholder="inbox/" autoCapitalize="none" spellCheck={false} /></label>
+                    <label className="agent-scope-choice"><input type="checkbox" checked={draft.recursive} onChange={(event) => set("recursive", event.target.checked)} />Include subfolders</label>
+                  </>
+                )}
                 <label>Only names like <small>Comma-separated, e.g. fattura*, *.pdf</small><input value={draft.include_patterns} onChange={(event) => set("include_patterns", event.target.value)} maxLength={500} autoCapitalize="none" spellCheck={false} /></label>
                 <label>Skip names or paths like <small>e.g. drafts/*, *-copy.pdf</small><input value={draft.exclude_patterns} onChange={(event) => set("exclude_patterns", event.target.value)} maxLength={500} autoCapitalize="none" spellCheck={false} /></label>
                 <div className="workflow-choices" role="group" aria-label="File types">
@@ -274,9 +318,10 @@ export default function SourcesPanel() {
                     <label className="agent-scope-choice" key={value}><input type="checkbox" checked={draft.file_types.includes(value)} onChange={() => toggleIn("file_types", value)} />{typeLabels[value] ?? value}</label>
                   ))}
                 </div>
-                <label>Largest file (MB)<input type="number" min={1} max={25} value={draft.max_size_mb} onChange={(event) => set("max_size_mb", Number(event.target.value))} /></label>
+                <label>Largest file (MB) {draft.kind === "telegram" && <small>Telegram allows bots up to 20 MB</small>}<input type="number" min={1} max={draft.kind === "telegram" ? 20 : 25} value={draft.max_size_mb} onChange={(event) => set("max_size_mb", Number(event.target.value))} /></label>
                 <label>Only files changed after <small>Optional</small><input type="date" value={draft.modified_after} onChange={(event) => set("modified_after", event.target.value)} /></label>
               </fieldset>
+              {draft.kind !== "telegram" && (
               <fieldset>
                 <legend>After import</legend>
                 {(Object.keys(afterLabels) as After[]).map((value) => (
@@ -289,6 +334,7 @@ export default function SourcesPanel() {
                   </div>
                 )}
               </fieldset>
+              )}
               <fieldset>
                 <legend>File imported documents <small>Optional</small></legend>
                 {tags.length > 0 && (
@@ -307,7 +353,7 @@ export default function SourcesPanel() {
                   </select>
                 </label>
               </fieldset>
-              <label>Check every (minutes)<input type="number" min={5} max={1440} value={draft.poll_minutes} onChange={(event) => set("poll_minutes", Number(event.target.value))} /></label>
+              {draft.kind !== "telegram" && <label>Check every (minutes)<input type="number" min={5} max={1440} value={draft.poll_minutes} onChange={(event) => set("poll_minutes", Number(event.target.value))} /></label>}
               <Button disabled={busy}><Plus size={17} aria-hidden="true" /> {editing ? "Save source" : "Add source"}</Button>
               {editing && <Button type="button" variant="secondary" onClick={() => { setEditing(null); setDraft(empty); setPreview(null); }}>New source instead</Button>}
             </form>

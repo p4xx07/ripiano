@@ -134,18 +134,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-  telegram:
-    <<: *api-base
-    profiles: ["telegram"]
-    command: [".venv/bin/python", "manage.py", "telegram_input"]
-    environment:
-      <<: *api-env
-      RIPIANO_TELEGRAM_BOT_TOKEN: ${RIPIANO_TELEGRAM_BOT_TOKEN:-}
-      RIPIANO_TELEGRAM_OWNER_USERNAME: ${RIPIANO_TELEGRAM_OWNER_USERNAME:-}
-      RIPIANO_TELEGRAM_ALLOWED_CHAT_IDS: ${RIPIANO_TELEGRAM_ALLOWED_CHAT_IDS:-}
-    depends_on:
-      api:
-        condition: service_healthy
   watched_folder:
     <<: *api-base
     profiles: ["watch"]

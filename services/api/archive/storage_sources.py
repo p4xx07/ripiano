@@ -208,6 +208,14 @@ def _file(document, source):
 
 def preview(source, backend=None):
     """Dry run: what the next pass would import, without downloading or changing anything."""
+    if source.kind == StorageSource.Kind.TELEGRAM:
+        from .telegram import TelegramError, bot_name
+
+        try:
+            name = bot_name(source, backend)
+        except TelegramError as exc:
+            raise SourceError(str(exc)) from exc
+        return {"matching": [], "skipped": {}, "already_imported": 0, "bot": name}
     backend = backend or backend_for(source)
     folder = processed_folder(source)
     seen = set(StorageSourceSeen.objects.filter(source=source).values_list("ref", flat=True))
@@ -230,6 +238,13 @@ def preview(source, backend=None):
 
 def run(source, backend=None, now=None):
     """Import new matching files, apply the after-import action, and expire old processed files. Returns how many were imported."""
+    if source.kind == StorageSource.Kind.TELEGRAM:
+        from .telegram import TelegramError, run_telegram
+
+        try:
+            return run_telegram(source, backend)
+        except TelegramError as exc:
+            raise SourceError(str(exc)) from exc
     now = now or datetime.now(dt_timezone.utc)
     backend = backend or backend_for(source)
     folder = processed_folder(source)
@@ -314,6 +329,8 @@ def run_claimed(source):
 
 def due_sources(now=None):
     now = now or timezone.now()
-    for source in StorageSource.objects.filter(enabled=True).only("id", "last_checked_at", "poll_minutes"):
-        if source.last_checked_at is None or now - source.last_checked_at >= timedelta(minutes=max(5, source.poll_minutes)):
+    for source in StorageSource.objects.filter(enabled=True).only("id", "kind", "last_checked_at", "poll_minutes"):
+        # Telegram is checked every minute: a quick request, and senders expect a prompt answer.
+        minutes = 1 if source.kind == StorageSource.Kind.TELEGRAM else max(5, source.poll_minutes)
+        if source.last_checked_at is None or now - source.last_checked_at >= timedelta(minutes=minutes) - timedelta(seconds=5):
             yield source.id

@@ -1,6 +1,7 @@
 """Owner-scoped management of external storage sources."""
 
 import json
+import re
 from datetime import date
 
 from django.core.exceptions import ValidationError
@@ -31,6 +32,7 @@ def _json(source):
         "correspondent_id": str(source.correspondent_id) if source.correspondent_id else None,
         "document_type_id": str(source.document_type_id) if source.document_type_id else None,
         "poll_minutes": source.poll_minutes,
+        "allowed_chats": source.allowed_chats, "pending_chats": source.pending_chats,
         "status": {
             "running": source.running_since is not None,
             "last_checked_at": source.last_checked_at.isoformat() if source.last_checked_at else None,
@@ -81,24 +83,28 @@ def _apply(source, body, owner):
         if not isinstance(value, bool):
             raise ValueError(f"{key.capitalize()} must be true or false")
         setattr(source, key, value)
-    source.endpoint = _text(body, "endpoint", 300, source.endpoint, required=True, label="address").rstrip("/")
+    s3 = source.kind == StorageSource.Kind.S3
+    source.endpoint = _text(body, "endpoint", 300, source.endpoint, required=s3, label="address").rstrip("/")
     source.region = _text(body, "region", 50, source.region) or "us-east-1"
-    source.bucket = _text(body, "bucket", 100, source.bucket, required=source.kind == StorageSource.Kind.S3, label="bucket")
+    source.bucket = _text(body, "bucket", 100, source.bucket, required=s3, label="bucket")
     addressing = body.get("addressing", source.addressing)
     if addressing not in StorageSource.Addressing.values:
         raise ValueError("Choose path or virtual-hosted addressing")
     source.addressing = addressing
-    source.username = _text(body, "username", 200, source.username, required=True, label="access key")
+    source.username = _text(body, "username", 200, source.username, required=s3, label="access key")
     if "secret" in body:
         secret = body["secret"]
         if not isinstance(secret, str) or not 0 < len(secret) <= 500:
-            raise ValueError("Enter the secret")
+            raise ValueError("Enter the bot token" if not s3 else "Enter the secret")
+        secret = secret.strip()
+        if not s3 and not re.fullmatch(r"\d{5,15}:[A-Za-z0-9_-]{30,60}", secret):
+            raise ValueError("That does not look like a Telegram bot token (it looks like 123456789:AA…)")
         try:
             source.secret = encrypt_secret(secret)
         except MailError as exc:
             raise ValueError(str(exc)) from exc
     if not source.secret:
-        raise ValueError("Enter the secret")
+        raise ValueError("Enter the secret" if s3 else "Enter the bot token")
     source.path = _text(body, "path", 500, source.path).lstrip("/")
     source.include_patterns = _text(body, "include_patterns", 500, source.include_patterns)
     source.exclude_patterns = _text(body, "exclude_patterns", 500, source.exclude_patterns)
@@ -120,6 +126,9 @@ def _apply(source, body, owner):
         raise ValueError("Choose what happens after import")
     source.after = after
     source.processed_path = _text(body, "processed_path", 500, source.processed_path).lstrip("/")
+    if not s3:
+        source.after, source.recursive = StorageSource.After.KEEP, False  # nothing to move or traverse in a chat
+        source.max_size_mb = min(source.max_size_mb, 20)  # Telegram bots cannot download larger files
     if source.after == StorageSource.After.MOVE:
         if not source.processed_path:
             raise ValueError("Enter the processed folder")
@@ -225,6 +234,33 @@ def source_preview(request, source_id):
         return JsonResponse({"ok": True, **preview(source)})
     except SourceError as exc:
         return JsonResponse({"ok": False, "error": str(exc)}, status=502)
+
+
+@require_http_methods(["POST"])
+def source_chats(request, source_id):
+    """Allow a waiting Telegram chat, or remove an allowed one: {"allow": id} or {"remove": id}."""
+    denied = _signed_in(request)
+    if denied:
+        return denied
+    body = _body(request) or {}
+    with transaction.atomic():
+        source = StorageSource.objects.select_for_update().filter(pk=source_id, owner=request.user, kind=StorageSource.Kind.TELEGRAM).first()
+        if source is None:
+            return JsonResponse({"error": "Telegram source not found"}, status=404)
+        chat_id = body.get("allow", body.get("remove"))
+        if not isinstance(chat_id, int) or isinstance(chat_id, bool):
+            return JsonResponse({"error": "Choose a chat"}, status=400)
+        if "allow" in body:
+            waiting = next((item for item in source.pending_chats if item["id"] == chat_id), None)
+            if waiting is None:
+                return JsonResponse({"error": "That chat is not waiting for approval"}, status=404)
+            source.pending_chats = [item for item in source.pending_chats if item["id"] != chat_id]
+            source.allowed_chats = [item for item in source.allowed_chats if item["id"] != chat_id] + [waiting]
+        else:
+            source.allowed_chats = [item for item in source.allowed_chats if item["id"] != chat_id]
+            source.pending_chats = [item for item in source.pending_chats if item["id"] != chat_id]
+        source.save(update_fields=["allowed_chats", "pending_chats"])
+    return JsonResponse(_json(source))
 
 
 @require_http_methods(["POST"])

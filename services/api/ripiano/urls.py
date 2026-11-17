@@ -79,6 +79,7 @@ urlpatterns = [
     path("api/sources/<uuid:source_id>", source_views.source_detail),
     path("api/sources/<uuid:source_id>/preview", source_views.source_preview),
     path("api/sources/<uuid:source_id>/run", source_views.source_run),
+    path("api/sources/<uuid:source_id>/chats", source_views.source_chats),
     path("api/semantic-settings", semantic_views.semantic_settings),
     path("api/semantic-settings/test", semantic_views.semantic_test),
     path("api/semantic-search", semantic_views.semantic_search),

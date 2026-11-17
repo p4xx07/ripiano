@@ -240,11 +240,11 @@ If a paper copy is missing, mark its sticker **Missing** from the document panel
 
 Each shelf or box also has a stable `L-` code and a printable QR label. Scan it to see the paper copies stored there, including copies in nested locations, or type the code in **Your paper archive**. Large locations load their contents in pages of 50. Missing copies remain listed at their last known location with a warning.
 
-### Optional Telegram input
+### Telegram
 
-Create a bot with BotFather. Set `RIPIANO_TELEGRAM_BOT_TOKEN` and `RIPIANO_TELEGRAM_OWNER_USERNAME` in `.env`, then run `docker compose --profile telegram up -d`. Send `/start` to the bot in a private chat; it returns your numeric chat ID. Put that ID in `RIPIANO_TELEGRAM_ALLOWED_CHAT_IDS` and restart the Telegram service. You can now send or forward PDF, JPEG, PNG, or photos to the bot. Each accepted file enters the same OCR and search pipeline as web uploads. For multiple people, list IDs separated by commas; all currently file into the configured owner archive. Only private chats are accepted, and the bot exposes no inbound NAS port.
+Telegram is a source like any other: see **Sources** below. Create a bot with BotFather, paste its token into a new Telegram source, and send `/start` to the bot in a private chat. Your chat appears on the source as waiting; choose **Allow**. From then on, files and photos you send or forward to the bot are imported within about a minute, and the bot answers "Saved to Ripiano."
 
-Telegram's [Bot API limits standard bot downloads to 20 MB](https://core.telegram.org/bots/api#getfile). Telegram handles the file before Ripiano downloads it, so use the direct app upload when the document must never pass through Telegram. Updates remain on Telegram for at most 24 hours; prolonged NAS downtime can miss messages. The bot token must remain secret.
+Telegram's [Bot API limits bot downloads to 20 MB](https://core.telegram.org/bots/api#getfile). Telegram handles the file before Ripiano downloads it, so use the direct app upload when a document must never pass through Telegram. Undelivered messages stay on Telegram for at most 24 hours, so a NAS that is off for longer can miss files. Only private chats you allowed are accepted; groups are ignored, and the NAS needs no inbound port.
 
 ### Storage paths
 
@@ -424,7 +424,9 @@ Turn it on as the archive owner under **Agents → Search by meaning**, choosing
 
 Open **Sources** to connect a storage as a document input, much like adding a Hyper Backup destination. Ripiano checks each source on its own schedule and imports new files. Everything is set up in the app; no Compose profile or environment variable is needed.
 
-Available now: **S3-compatible storage** (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others). WebDAV, Telegram, and the watched folder follow on the same screen.
+Available now: **S3-compatible storage** (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others) and **Telegram bots**. WebDAV and the watched folder follow on the same screen.
+
+- **Telegram:** paste the bot token (stored encrypted). Anyone who writes to the bot is listed on the source as waiting until you **Allow** that chat; you can remove an allowed chat at any time. Ripiano asks Telegram for new messages every minute with a quick request, so no extra process runs. Name patterns, file types, the size limit (20 MB at most), and filing apply as for other sources. **Preview** checks the token and shows the bot's name.
 
 - **Connection:** address, bucket, region, address style (path style for MinIO/SeaweedFS and most self-hosted servers; virtual-hosted for AWS), access key, and secret key. The secret is stored encrypted (with `RIPIANO_MAIL_KEY` or a key derived from the server secret) and never shown again.
 - **What to import:** a folder (prefix), **Include subfolders** (recursive) or this folder only, name patterns to include and to skip (for example `fattura*` and `drafts/*`), file types (PDF, images, Office, email), the largest file size (up to the 25 MB upload limit), and an optional "changed after" date.

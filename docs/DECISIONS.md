@@ -101,7 +101,8 @@ The owner wants external storage to work like Synology Hyper Backup destinations
 - Each file version is recorded in `StorageSourceSeen`, so a deleted document is not re-imported. Moves happen only after the original is stored.
 - Only the archive owner may use home-network addresses; others need public `https://` endpoints.
 - Verified live against SeaweedFS through the UI: preview, filters, recursive import, move to `processed/<date>/`, no second import.
-- Next, in order: WebDAV (Nextcloud, Synology WebDAV, ownCloud), Telegram bot (token pasted in the app; replaces the `telegram` profile), watched folder (choose subfolders of a mounted root in the app), then Google Drive / OneDrive / Dropbox (need OAuth app registration by the owner).
+- Done (Telegram): kind `telegram` in the same model and screen (`services/api/archive/telegram.py`). The bot token is pasted in the app (encrypted, format-checked, verified with **Test** via getMe). Chats that write to the bot wait on the source card until the owner chooses **Allow**; groups and messages from other senders are ignored. Polled every minute with a non-blocking `getUpdates` (timeout 0) on the existing scheduler, so no extra process runs; the update offset is saved after each update. The old `telegram_input` command, `telegram` Compose profile, and `RIPIANO_TELEGRAM_*` variables were removed. Not tested against the real Telegram API (needs a bot token); the client is exercised against a fake Bot API.
+- Next, in order: WebDAV (Nextcloud, Synology WebDAV, ownCloud), watched folder (choose subfolders of a mounted root in the app), then Google Drive / OneDrive / Dropbox (need OAuth app registration by the owner).
 
 ## Remaining work that needs no further decision
 

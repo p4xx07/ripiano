@@ -1,0 +1,13 @@
+# Copy to users.yml (not committed) and replace the values.
+# Create a password hash on the Pi (it asks for the password, so it does not land in shell history):
+#   docker run --rm -it authelia/authelia:4.39.4 authelia crypto hash generate argon2
+# Paste the line starting with $argon2id$ below, inside single quotes.
+
+users:
+  owner:
+    disabled: false
+    displayname: 'Owner'
+    password: '$argon2id$REPLACE_WITH_GENERATED_HASH'
+    email: 'owner@example.com'
+    groups:
+      - admins

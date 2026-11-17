@@ -1,0 +1,57 @@
+# Authelia: one sign-in for every https://<service>.<DOMAIN>, checked by Traefik (forward-auth).
+# {{ env "DOMAIN" }} is filled in from .env (X_AUTHELIA_CONFIG_FILTERS=template in compose.yaml).
+# Secrets are not in this file; they are read from secrets/ (see README.md).
+
+theme: auto
+default_2fa_method: totp
+
+server:
+  address: tcp://:9091/
+
+log:
+  level: info
+
+totp:
+  issuer: '{{ env "DOMAIN" }}'
+
+authentication_backend:
+  # No email server is configured, so self-service reset is off. Reset a password by editing users.yml.
+  password_reset:
+    disable: true
+  file:
+    path: /config/users.yml
+    watch: true
+    password:
+      algorithm: argon2
+
+access_control:
+  default_policy: deny
+  rules:
+    - domain: '*.{{ env "DOMAIN" }}'
+      policy: two_factor
+
+session:
+  cookies:
+    # One cookie for all subdomains: sign in once for Ripiano, Jellyfin, and future services.
+    - domain: '{{ env "DOMAIN" }}'
+      authelia_url: 'https://auth.{{ env "DOMAIN" }}'
+      default_redirection_url: 'https://ripiano.{{ env "DOMAIN" }}'
+      # Without "Remember me", a session ends after 12 hours, or after 2 hours unused.
+      expiration: 12h
+      inactivity: 2h
+      # With "Remember me" ticked (recommended on your own phone and computer), it lasts 30 days.
+      remember_me: 30d
+
+regulation:
+  max_retries: 5
+  find_time: 10m
+  ban_time: 30m
+
+storage:
+  local:
+    path: /data/db.sqlite3
+
+notifier:
+  # Device registration links (TOTP setup) are written here instead of being emailed.
+  filesystem:
+    filename: /data/notification.txt

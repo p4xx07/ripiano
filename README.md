@@ -148,6 +148,7 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 
 ## Planning documents
 
+- [Agreed decisions](docs/DECISIONS.md): owner decisions on AI, semantic search, the external access gateway, and S3/Drive import, plus remaining work.
 - [Product specification](docs/PRODUCT_SPEC.md): users, workflows, interaction design, and acceptance criteria.
 - [Feature parity](docs/FEATURE_PARITY.md): Paperless capabilities and Ripiano delivery gates.
 - [Architecture](docs/ARCHITECTURE.md): services, data model, classification, agents, security, deployment, and backup.

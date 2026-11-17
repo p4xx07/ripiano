@@ -10,7 +10,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from .models import Correspondent, DocumentType, StorageSource, Tag
-from .storage_sources import FILE_TYPES, SourceError, preview
+from .storage_sources import CLOUD_KINDS, FILE_TYPES, SourceError, preview
 
 MAX_SOURCES = 20
 
@@ -24,6 +24,7 @@ def _json(source):
         "id": str(source.id), "name": source.name, "kind": source.kind, "enabled": source.enabled,
         "endpoint": source.endpoint, "region": source.region, "bucket": source.bucket, "addressing": source.addressing,
         "username": source.username, "has_secret": bool(source.secret),
+        "connected": bool(source.secret) if source.kind in CLOUD_KINDS else None,
         "path": source.path, "recursive": source.recursive, "include_patterns": source.include_patterns,
         "exclude_patterns": source.exclude_patterns, "file_types": source.file_types, "max_size_mb": source.max_size_mb,
         "modified_after": source.modified_after.isoformat() if source.modified_after else None,
@@ -88,7 +89,8 @@ def _apply(source, body, owner):
     if folder and not owner.is_superuser:
         raise ValueError("Only the archive owner can import from folders on the NAS")
     credentials = source.kind in (StorageSource.Kind.S3, StorageSource.Kind.WEBDAV)
-    files = credentials or folder  # storages with folders, files, and after-import actions
+    cloud = source.kind in CLOUD_KINDS  # signed in with "Connect account" after saving
+    files = credentials or folder or cloud  # storages with folders, files, and after-import actions
     source.endpoint = _text(body, "endpoint", 300, source.endpoint, required=credentials, label="address").rstrip("/")
     source.region = _text(body, "region", 50, source.region) or "us-east-1"
     source.bucket = _text(body, "bucket", 100, source.bucket, required=s3, label="bucket")
@@ -97,7 +99,7 @@ def _apply(source, body, owner):
         raise ValueError("Choose path or virtual-hosted addressing")
     source.addressing = addressing
     source.username = _text(body, "username", 200, source.username, required=credentials, label="access key" if s3 else "user name")
-    if "secret" in body and not folder:
+    if "secret" in body and not folder and not cloud:
         secret = body["secret"]
         if not isinstance(secret, str) or not 0 < len(secret) <= 500:
             raise ValueError("Enter the secret" if credentials else "Enter the bot token")
@@ -108,7 +110,7 @@ def _apply(source, body, owner):
             source.secret = encrypt_secret(secret)
         except MailError as exc:
             raise ValueError(str(exc)) from exc
-    if not source.secret and not folder:
+    if not source.secret and not folder and not cloud:
         raise ValueError(("Enter the secret key" if s3 else "Enter the password") if credentials else "Enter the bot token")
     source.path = _text(body, "path", 500, source.path).lstrip("/")
     source.include_patterns = _text(body, "include_patterns", 500, source.include_patterns)
@@ -288,3 +290,93 @@ def source_run(request, source_id):
     return JsonResponse({"queued": True}, status=202)
 
 
+
+
+@require_http_methods(["POST"])
+def source_connect(request, source_id):
+    """Start the provider sign-in for a cloud drive source; returns the address to open."""
+    from .cloud_sources import authorization_url
+
+    denied = _signed_in(request)
+    if denied:
+        return denied
+    source = _mine(request, source_id)
+    if source is None or source.kind not in CLOUD_KINDS:
+        return JsonResponse({"error": "Cloud drive source not found"}, status=404)
+    try:
+        return JsonResponse({"url": authorization_url(request.user, source)})
+    except SourceError as exc:
+        return JsonResponse({"error": str(exc)}, status=409)
+
+
+@require_http_methods(["GET"])
+def source_oauth_callback(request):
+    from urllib.parse import urlencode
+
+    from django.http import HttpResponseRedirect
+
+    from .cloud_sources import exchange_code, read_state
+    from .mail import encrypt_secret
+
+    def back(**params):
+        return HttpResponseRedirect("/?" + urlencode({"view": "sources", **params}))
+
+    if not request.user.is_authenticated:
+        return back(source_error="Sign in to Ripiano first, then use Connect account again.")
+    if request.GET.get("error"):
+        return back(source_error="The sign-in was cancelled.")
+    try:
+        state = read_state(request.GET.get("state", ""))
+        if state.get("user") != request.user.pk:
+            raise SourceError("This sign-in belongs to another Ripiano account.")
+        source = StorageSource.objects.filter(pk=state.get("source"), owner=request.user, kind__in=CLOUD_KINDS).first()
+        if source is None:
+            raise SourceError("The source was removed while signing in.")
+        refresh = exchange_code(source.kind, request.GET.get("code", ""))
+    except SourceError as exc:
+        return back(source_error=str(exc))
+    StorageSource.objects.filter(pk=source.pk).update(secret=encrypt_secret(refresh), last_error="")
+    return back(source_connected=source.name)
+
+
+@require_http_methods(["GET", "PUT"])
+def source_apps(request):
+    """Archive owner: the OAuth apps registered with Google, Microsoft, and Dropbox."""
+    from django.conf import settings
+
+    from .cloud_sources import PROVIDERS, redirect_uri
+    from .mail import MailError, encrypt_secret
+    from .models import CloudApp
+
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Sign in required"}, status=401)
+    if request.method == "PUT":
+        if not request.user.is_superuser:
+            return JsonResponse({"error": "Archive owner access required"}, status=403)
+        body = _body(request) or {}
+        provider = body.get("provider")
+        if provider not in PROVIDERS:
+            return JsonResponse({"error": "Unknown provider"}, status=400)
+        client_id, secret = body.get("client_id", ""), body.get("client_secret")
+        if not isinstance(client_id, str) or len(client_id.strip()) > 300 or (secret is not None and (not isinstance(secret, str) or len(secret) > 500)):
+            return JsonResponse({"error": "Enter the client ID and secret"}, status=400)
+        if not client_id.strip():
+            CloudApp.objects.filter(provider=provider).delete()
+        else:
+            app = CloudApp.objects.filter(provider=provider).first() or CloudApp(provider=provider)
+            app.client_id = client_id.strip()
+            if secret:
+                try:
+                    app.client_secret = encrypt_secret(secret.strip())
+                except MailError as exc:
+                    return JsonResponse({"error": str(exc)}, status=400)
+            if not app.client_secret:
+                return JsonResponse({"error": "Enter the client secret"}, status=400)
+            app.save()
+    apps = {app.provider: app for app in CloudApp.objects.all()}
+    return JsonResponse({"redirect_uri": redirect_uri(), "providers": [{
+        "provider": key, "label": value["label"], "console": value["console"],
+        "client_id": apps[key].client_id if key in apps and request.user.is_superuser else "",
+        "configured": key in apps or bool(value["fallback"] and settings.RIPIANO_MAIL_OAUTH.get(value["fallback"])),
+        "from_environment": key not in apps and bool(value["fallback"] and settings.RIPIANO_MAIL_OAUTH.get(value["fallback"])),
+    } for key, value in PROVIDERS.items()]})

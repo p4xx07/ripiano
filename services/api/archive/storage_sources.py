@@ -30,6 +30,7 @@ from .storage import SUPPORTED_EXTENSIONS, InvalidDocument
 
 logger = logging.getLogger(__name__)
 PREVIEW_LIMIT = 50
+CLOUD_KINDS = {StorageSource.Kind.GDRIVE, StorageSource.Kind.ONEDRIVE, StorageSource.Kind.DROPBOX}
 RUN_LIMIT = 200  # files imported per pass; the next pass continues
 STALE_RUN = timedelta(minutes=30)
 
@@ -76,6 +77,8 @@ def check_endpoint(source):
         if not source.owner.is_superuser:
             raise SourceError("Only the archive owner can import from folders on the NAS")
         return
+    if source.kind in CLOUD_KINDS:
+        return  # fixed provider addresses
     parts = urlsplit(source.endpoint)
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise SourceError("The address must start with https:// or http://")
@@ -161,13 +164,18 @@ def backend_for(source, transport=None):
         from .folder_source import FolderBackend
 
         return FolderBackend(source)
+    if source.kind in CLOUD_KINDS:
+        from .cloud_sources import BACKENDS
+
+        return BACKENDS[source.kind](source, transport=transport)
     raise SourceError("Unknown storage kind")
 
 
 def document_source(source):
     """Which Document.Source label imported documents carry."""
     return {StorageSource.Kind.S3: Document.Source.S3, StorageSource.Kind.WEBDAV: Document.Source.WEBDAV,
-            StorageSource.Kind.FOLDER: Document.Source.FOLDER}.get(source.kind, Document.Source.S3)
+            StorageSource.Kind.FOLDER: Document.Source.FOLDER, StorageSource.Kind.GDRIVE: Document.Source.GDRIVE,
+            StorageSource.Kind.ONEDRIVE: Document.Source.ONEDRIVE, StorageSource.Kind.DROPBOX: Document.Source.DROPBOX}.get(source.kind, Document.Source.S3)
 
 
 # --- filters -------------------------------------------------------------------------------

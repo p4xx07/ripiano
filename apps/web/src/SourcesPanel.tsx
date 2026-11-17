@@ -6,14 +6,14 @@ import { Button } from "./ui";
 type After = "keep" | "move" | "delete";
 type Chat = { id: number; name: string };
 type Source = {
-  id: string; name: string; kind: "s3" | "webdav" | "folder" | "telegram"; enabled: boolean; allowed_chats: Chat[]; pending_chats: Chat[];
+  id: string; name: string; kind: "s3" | "webdav" | "folder" | "gdrive" | "onedrive" | "dropbox" | "telegram"; connected: boolean | null; enabled: boolean; allowed_chats: Chat[]; pending_chats: Chat[];
   endpoint: string; region: string; bucket: string; addressing: "path" | "virtual"; username: string; has_secret: boolean;
   path: string; recursive: boolean; include_patterns: string; exclude_patterns: string; file_types: string[];
   max_size_mb: number; modified_after: string | null; after: After; processed_path: string; retention_days: number;
   tag_ids: string[]; correspondent_id: string | null; document_type_id: string | null; poll_minutes: number;
   status: { running: boolean; last_checked_at: string | null; last_error: string; last_imported: number; total_imported: number };
 };
-type Draft = Omit<Source, "id" | "has_secret" | "status" | "modified_after" | "correspondent_id" | "document_type_id" | "allowed_chats" | "pending_chats"> & {
+type Draft = Omit<Source, "id" | "has_secret" | "connected" | "status" | "modified_after" | "correspondent_id" | "document_type_id" | "allowed_chats" | "pending_chats"> & {
   secret: string; modified_after: string; correspondent_id: string; document_type_id: string;
 };
 type Preview = { ok: boolean; matching: { path: string; size: number; modified: string }[]; skipped: Record<string, number>; already_imported: number; bot?: string; error?: string };
@@ -23,6 +23,9 @@ const empty: Draft = {
   path: "", recursive: true, include_patterns: "", exclude_patterns: "", file_types: [], max_size_mb: 25, modified_after: "",
   after: "move", processed_path: "processed/", retention_days: 30, tag_ids: [], correspondent_id: "", document_type_id: "", poll_minutes: 15,
 };
+type App = { provider: string; label: string; console: string; client_id: string; configured: boolean; from_environment: boolean };
+const cloudLabels: Record<string, string> = { gdrive: "Google Drive", onedrive: "OneDrive", dropbox: "Dropbox" };
+const isCloud = (kind: string) => kind in cloudLabels;
 const typeLabels: Record<string, string> = { pdf: "PDF", image: "Images", office: "Office documents", email: "Emails (.eml, .msg)" };
 const afterLabels: Record<After, string> = {
   keep: "Leave the file and remember it",
@@ -35,7 +38,7 @@ function describe(source: Source) {
     const chats = source.allowed_chats.length;
     return `Telegram bot · ${chats ? `${chats} allowed chat${chats === 1 ? "" : "s"}` : "no chat allowed yet: send /start to the bot"} · checked every minute.`;
   }
-  const where = source.kind === "folder" ? `NAS folder /${source.path || ""}` : source.kind === "webdav" ? `${new URL(source.endpoint).host}/${source.path || ""}` : `${source.bucket}/${source.path || ""}`;
+  const where = isCloud(source.kind) ? `${cloudLabels[source.kind]} /${source.path || ""}` : source.kind === "folder" ? `NAS folder /${source.path || ""}` : source.kind === "webdav" ? `${new URL(source.endpoint).host}/${source.path || ""}` : `${source.bucket}/${source.path || ""}`;
   const what = [source.recursive ? "including subfolders" : "this folder only", source.include_patterns && `names like ${source.include_patterns}`]
     .filter(Boolean).join(", ");
   const after = source.after === "move"
@@ -49,7 +52,51 @@ function size(bytes: number) {
 }
 
 /** External storages connected as document inputs, like Hyper Backup destinations in reverse. */
-export default function SourcesPanel() {
+/** Archive owner: the OAuth apps registered once with Google, Microsoft, and Dropbox. */
+function SignInApps() {
+  const [data, setData] = useState<{ redirect_uri: string; providers: App[] } | null>(null);
+  const [values, setValues] = useState<Record<string, { client_id: string; client_secret: string }>>({});
+  const [message, setMessage] = useState("");
+  const load = useCallback(async () => {
+    const next = await request<{ redirect_uri: string; providers: App[] }>("/api/source-apps");
+    setData(next);
+    setValues(Object.fromEntries(next.providers.map((item) => [item.provider, { client_id: item.client_id, client_secret: "" }])));
+  }, []);
+  useEffect(() => { void load().catch(() => setMessage("Could not load sign-in apps")); }, [load]);
+  if (!data) return null;
+  async function save(provider: string) {
+    try {
+      const value = values[provider];
+      await request("/api/source-apps", { method: "PUT", body: JSON.stringify({ provider, client_id: value.client_id, ...(value.client_secret ? { client_secret: value.client_secret } : {}) }) });
+      setMessage(value.client_id ? "Saved." : "Removed.");
+      await load();
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "Could not save");
+    }
+  }
+  return (
+    <section className="tag-create-card agent-create-card">
+      <h2>Sign-in apps</h2>
+      <p className="source-note">Google Drive, OneDrive, and Dropbox need an OAuth app you register once with each provider. Use this redirect address there:</p>
+      <code className="source-redirect">{data.redirect_uri}</code>
+      {message && <p className="bulk-notice" role="status">{message}</p>}
+      {data.providers.map((item) => (
+        <details key={item.provider} className="source-app">
+          <summary>{item.label} · {item.configured ? (item.from_environment ? "set up (mail sign-in settings)" : "set up") : "not set up"}</summary>
+          <p className="source-note"><a href={item.console} target="_blank" rel="noreferrer">Open the {item.label} developer console</a></p>
+          <label>Client ID<input value={values[item.provider]?.client_id ?? ""} autoCapitalize="none" spellCheck={false}
+            onChange={(event) => setValues((current) => ({ ...current, [item.provider]: { ...current[item.provider], client_id: event.target.value } }))} /></label>
+          <label>Client secret <small>{item.client_id ? "Saved and never shown. Type a new one to replace it." : "Stored encrypted."}</small>
+            <input type="password" value={values[item.provider]?.client_secret ?? ""} autoComplete="new-password"
+              onChange={(event) => setValues((current) => ({ ...current, [item.provider]: { ...current[item.provider], client_secret: event.target.value } }))} /></label>
+          <Button type="button" variant="secondary" onClick={() => void save(item.provider)}>Save {item.label}</Button>
+        </details>
+      ))}
+    </section>
+  );
+}
+
+export default function SourcesPanel({ owner, notice }: { owner: boolean; notice: { kind: "ok" | "error"; text: string } | null }) {
   const [sources, setSources] = useState<Source[]>([]);
   const [fileTypes, setFileTypes] = useState<string[]>(["email", "image", "office", "pdf"]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -60,8 +107,8 @@ export default function SourcesPanel() {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ id: string; result: Preview } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [status, setStatus] = useState("");
+  const [error, setError] = useState(notice?.kind === "error" ? notice.text : "");
+  const [status, setStatus] = useState(notice?.kind === "ok" ? notice.text : "");
   const formRef = useRef<HTMLFormElement>(null);
 
   const load = useCallback(async () => {
@@ -144,6 +191,13 @@ export default function SourcesPanel() {
     }, "Could not start the check");
   }
 
+  function connect(source: Source) {
+    void run(async () => {
+      const { url } = await request<{ url: string }>(`/api/sources/${source.id}/connect`, { method: "POST" });
+      window.location.assign(url);
+    }, "Could not start the sign-in");
+  }
+
   function changeChat(source: Source, body: { allow: number } | { remove: number }, done: string) {
     void run(async () => {
       await request(`/api/sources/${source.id}/chats`, { method: "POST", body: JSON.stringify(body) });
@@ -195,8 +249,9 @@ export default function SourcesPanel() {
                   <div className="agent-card-body">
                     <strong>{source.name}{!source.enabled && " · Paused"}</strong>
                     <span>{describe(source)}</span>
-                    <small className={source.status.last_error ? "source-problem" : undefined}>
-                      {source.status.running ? "Checking now…"
+                    <small className={source.status.last_error || source.connected === false ? "source-problem" : undefined}>
+                      {source.connected === false ? "Not connected yet: use Connect account."
+                        : source.status.running ? "Checking now…"
                         : source.status.last_error ? `Problem: ${source.status.last_error}`
                         : source.status.last_checked_at ? `Last checked ${new Date(source.status.last_checked_at).toLocaleString()} · ${source.status.last_imported} new · ${source.status.total_imported} imported in total`
                         : "Not checked yet"}
@@ -243,6 +298,8 @@ export default function SourcesPanel() {
                       </>
                     ) : (
                       <>
+                        {source.connected === false && <Button disabled={busy} onClick={() => connect(source)}>Connect account</Button>}
+                        {source.connected && <Button variant="secondary" disabled={busy} onClick={() => connect(source)}>Reconnect</Button>}
                         <Button variant="secondary" disabled={busy} onClick={() => showPreview(source)}><Eye size={16} aria-hidden="true" /> {source.kind === "telegram" ? "Test" : "Preview"}</Button>
                         <Button variant="secondary" disabled={busy || !source.enabled} onClick={() => checkNow(source)}><RefreshCw size={16} aria-hidden="true" /> Check now</Button>
                         <Button variant="secondary" disabled={busy} onClick={() => toggle(source)}>{source.enabled ? "Pause" : "Resume"}</Button>
@@ -258,12 +315,13 @@ export default function SourcesPanel() {
             <div className="tag-empty">
               <Cloud size={27} aria-hidden="true" />
               <strong>No sources yet</strong>
-              <p>Optional. Connect S3-compatible storage (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, …), WebDAV (Nextcloud, Synology, ownCloud, …), a folder on the NAS, or a Telegram bot on the right.</p>
+              <p>Optional. Connect S3-compatible storage (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, …), WebDAV (Nextcloud, Synology, ownCloud, …), Google Drive, OneDrive, Dropbox, a folder on the NAS, or a Telegram bot on the right.</p>
             </div>
           )}
         </section>
 
         <div className="mail-side">
+          {owner && <SignInApps />}
           <section className="tag-create-card agent-create-card">
             <div className="tag-create-icon"><Cloud size={21} aria-hidden="true" /></div>
             <h2>{editing ? `Edit “${editing.name}”` : "New source"}</h2>
@@ -275,7 +333,10 @@ export default function SourcesPanel() {
                   <select value={draft.kind} onChange={(event) => { const kind = event.target.value as Draft["kind"]; setDraft((current) => ({ ...current, kind, max_size_mb: kind === "telegram" ? Math.min(current.max_size_mb, 20) : current.max_size_mb, after: kind === "telegram" ? "keep" : current.after === "keep" ? "move" : current.after })); }}>
                     <option value="s3">S3-compatible storage</option>
                     <option value="webdav">WebDAV (Nextcloud, Synology, ownCloud, …)</option>
-                    <option value="folder">Folder on the NAS (archive owner)</option>
+                    {owner && <option value="folder">Folder on the NAS</option>}
+                    <option value="gdrive">Google Drive</option>
+                    <option value="onedrive">OneDrive</option>
+                    <option value="dropbox">Dropbox</option>
                     <option value="telegram">Telegram bot</option>
                   </select>
                 </label>
@@ -283,6 +344,8 @@ export default function SourcesPanel() {
                   <label>Bot token <small>{editing?.has_secret ? "Saved and never shown. Paste a new one to replace it." : "From BotFather; stored encrypted. Then send /start to the bot and allow your chat here."}</small>
                     <input type="password" value={draft.secret} onChange={(event) => set("secret", event.target.value)} required={!editing?.has_secret} maxLength={100} autoComplete="new-password" placeholder="123456789:AA…" />
                   </label>
+                ) : isCloud(draft.kind) ? (
+                  <p className="source-note">Save the source, then choose <strong>Connect account</strong> on its card to sign in to {cloudLabels[draft.kind]}. Ripiano keeps only an encrypted sign-in token; “Delete” moves files to the {draft.kind === "dropbox" ? "deleted files" : draft.kind === "onedrive" ? "recycle bin" : "trash"}.</p>
                 ) : draft.kind === "folder" ? (
                   <p className="source-note">Uses the NAS folder mounted with <code>RIPIANO_SOURCES_PATH</code>. Choose a subfolder of it below.</p>
                 ) : draft.kind === "webdav" ? (
@@ -320,7 +383,7 @@ export default function SourcesPanel() {
                 <legend>What to import</legend>
                 {draft.kind !== "telegram" && (
                   <>
-                    <label>Folder <small>{draft.kind === "folder" ? "Inside the mounted NAS folder, e.g. Scanner" : draft.kind === "webdav" ? "Leave empty for the whole storage" : "Leave empty for the whole bucket"}</small><input value={draft.path} onChange={(event) => set("path", event.target.value)} maxLength={500} placeholder={draft.kind === "folder" ? "Scanner" : draft.kind === "webdav" ? "Documents/Scans" : "inbox/"} autoCapitalize="none" spellCheck={false} /></label>
+                    <label>Folder <small>{isCloud(draft.kind) ? "From the top of your drive, e.g. Scans; empty for everything" : draft.kind === "folder" ? "Inside the mounted NAS folder, e.g. Scanner" : draft.kind === "webdav" ? "Leave empty for the whole storage" : "Leave empty for the whole bucket"}</small><input value={draft.path} onChange={(event) => set("path", event.target.value)} maxLength={500} placeholder={draft.kind === "folder" ? "Scanner" : draft.kind === "webdav" ? "Documents/Scans" : "inbox/"} autoCapitalize="none" spellCheck={false} /></label>
                     <label className="agent-scope-choice"><input type="checkbox" checked={draft.recursive} onChange={(event) => set("recursive", event.target.checked)} />Include subfolders</label>
                   </>
                 )}

@@ -572,9 +572,17 @@ function App() {
     window.history.replaceState(null, "", window.location.pathname);
     return failed ? { kind: "error" as const, text: failed } : { kind: "ok" as const, text: connected ?? "" };
   });
+  const [initialSourceNotice] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("source_connected");
+    const failed = params.get("source_error");
+    if (!connected && !failed) return null;
+    window.history.replaceState(null, "", window.location.pathname);
+    return failed ? { kind: "error" as const, text: failed } : { kind: "ok" as const, text: `“${connected}” is connected. Use Preview to check the folder.` };
+  });
   const [view, setView] = useState<
     "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations" | "sources" | "workflows" | "security" | "overview" | "shared" | "people"
-  >(initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : "documents");
+  >(initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : initialSourceNotice ? "sources" : "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
   );
@@ -1201,7 +1209,7 @@ function App() {
           ) : view === "workflows" ? (
             <WorkflowsPanel onOpenDocument={(id) => void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch((cause) => setError(cause.message))} />
           ) : view === "sources" ? (
-            <SourcesPanel />
+            <SourcesPanel owner={session.owner} notice={initialSourceNotice} />
           ) : view === "integrations" ? (
             <MailPanel notice={initialMailNotice} />
           ) : view === "tags" ? (

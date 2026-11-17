@@ -21,6 +21,9 @@ class Document(models.Model):
         EMAIL = "email", "Email"
         S3 = "s3", "S3 bucket"
         WEBDAV = "webdav", "WebDAV"
+        GDRIVE = "gdrive", "Google Drive"
+        ONEDRIVE = "onedrive", "OneDrive"
+        DROPBOX = "dropbox", "Dropbox"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -856,6 +859,9 @@ class StorageSource(models.Model):
         TELEGRAM = "telegram", "Telegram bot"
         WEBDAV = "webdav", "WebDAV (Nextcloud, Synology, ownCloud, …)"
         FOLDER = "folder", "Folder on the NAS"
+        GDRIVE = "gdrive", "Google Drive"
+        ONEDRIVE = "onedrive", "OneDrive"
+        DROPBOX = "dropbox", "Dropbox"
 
     class After(models.TextChoices):
         KEEP = "keep", "Leave the file and remember it"
@@ -921,3 +927,12 @@ class StorageSourceSeen(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["source", "ref"], name="unique_storage_source_seen")]
+
+
+class CloudApp(models.Model):
+    """The OAuth app the archive owner registered with a cloud drive provider. The secret is encrypted."""
+
+    provider = models.CharField(max_length=20, primary_key=True)  # gdrive, onedrive, dropbox
+    client_id = models.CharField(max_length=300)
+    client_secret = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)

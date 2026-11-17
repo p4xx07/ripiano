@@ -1,3 +1,4 @@
+import base64
 import time
 from unittest.mock import patch
 
@@ -11,7 +12,7 @@ from archive.models import AccountSecurity
 
 def test_codes_follow_rfc_6238_and_cannot_be_replayed():
     # RFC 6238 appendix B, SHA-1 secret "12345678901234567890" at T=59 → 94287082 (last 6 digits: 287082).
-    secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    secret = base64.b32encode(b"12345678901234567890").decode()  # the RFC's ASCII seed, in base32
     assert two_factor._code(secret, 59 // 30) == "287082"
     step = two_factor.matching_step(secret, "287082", now=59)
     assert step == 1

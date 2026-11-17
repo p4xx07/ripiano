@@ -399,10 +399,9 @@ Use an IMAP app password where your provider offers one. Passwords and OAuth ref
 
 Gmail and Outlook can use OAuth instead. Register a web OAuth client with the redirect URI `${RIPIANO_PUBLIC_ORIGIN}/api/mail/oauth/callback`, then set `RIPIANO_GMAIL_OAUTH_CLIENT_ID`/`_SECRET` (Google Cloud: Gmail API, scope `https://mail.google.com/`) or `RIPIANO_OUTLOOK_OAUTH_CLIENT_ID`/`_SECRET` (Microsoft Entra: delegated `IMAP.AccessAsUser.All` and `offline_access`). The matching **Sign in with Google/Microsoft** button appears only when its client is configured. Browser tests use a local GreenMail server: `docker compose -f deploy/compose.mailtest.yaml up -d`.
 
-### Optional watched folder
+### Folders on the NAS
 
-Mount a NAS folder at `RIPIANO_WATCH_PATH`, set `RIPIANO_WATCH_OWNER_USERNAME` to an existing account, and start `docker compose --profile watch up -d`. The mount is read-only to Ripiano. Stable PDF, PNG, and JPEG files are copied into the archive and left in the incoming folder. The same path and bytes import once across restarts; changing a file creates a new document. Files above the configured 25 MB limit are skipped. Set `RIPIANO_WATCH_POLL_SECONDS` to adjust the default five-second poll.
-
+Watched folders are sources too (see **Sources** below). Mount one NAS folder into Ripiano with `RIPIANO_SOURCES_PATH` (default `/volume1/docker/ripiano/sources`; Ripiano runs as UID 10001 and needs read access, plus write access if a source moves or deletes imported files). Then, as the archive owner, add **Folder on the NAS** sources in the app for any subfolder of it, for example the folder your scanner saves to, each with its own filters and after-import action.
 ### Optional semantic search
 
 **Off by default; Ripiano works fully without it.** When on, the Library shows **Related by meaning** above the normal results for plain-language searches, and MCP agents with OCR-text permission get a `semantic_search` tool that returns the passages most related to a question, so the agent's own model can answer. Ripiano never generates answers and never calls a paid AI provider.
@@ -424,7 +423,9 @@ Turn it on as the archive owner under **Agents → Search by meaning**, choosing
 
 Open **Sources** to connect a storage as a document input, much like adding a Hyper Backup destination. Ripiano checks each source on its own schedule and imports new files. Everything is set up in the app; no Compose profile or environment variable is needed.
 
-Available now: **S3-compatible storage** (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others), **WebDAV** (Nextcloud, ownCloud, Synology WebDAV Server, and others), and **Telegram bots**.
+Available now: **S3-compatible storage** (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others), **WebDAV** (Nextcloud, ownCloud, Synology WebDAV Server, and others), **folders on the NAS**, and **Telegram bots**.
+
+- **Folder on the NAS:** choose a subfolder of the folder mounted with `RIPIANO_SOURCES_PATH` (archive owner only). Files changed in the last minute wait for the next check, so a scanner still writing is never imported half-done. Hidden files and symbolic links are ignored, and paths can never leave the mounted folder. The check interval can be as short as one minute.
 
 - **WebDAV:** enter the WebDAV address (Nextcloud: `https://cloud.example.com/remote.php/dav/files/USER`; Synology WebDAV Server: `https://nas.local:5006`), the user name, and a password (an app password where offered; stored encrypted). Folders are listed with standard PROPFIND requests, recursively when **Include subfolders** is on (up to 25 levels and 20,000 files per check). Moving creates the dated processed folders; if a file with the same name was already moved that day, both are kept.
 

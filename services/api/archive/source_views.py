@@ -84,28 +84,32 @@ def _apply(source, body, owner):
             raise ValueError(f"{key.capitalize()} must be true or false")
         setattr(source, key, value)
     s3 = source.kind == StorageSource.Kind.S3
-    files = source.kind in (StorageSource.Kind.S3, StorageSource.Kind.WEBDAV)  # storages with folders and files
-    source.endpoint = _text(body, "endpoint", 300, source.endpoint, required=files, label="address").rstrip("/")
+    folder = source.kind == StorageSource.Kind.FOLDER
+    if folder and not owner.is_superuser:
+        raise ValueError("Only the archive owner can import from folders on the NAS")
+    credentials = source.kind in (StorageSource.Kind.S3, StorageSource.Kind.WEBDAV)
+    files = credentials or folder  # storages with folders, files, and after-import actions
+    source.endpoint = _text(body, "endpoint", 300, source.endpoint, required=credentials, label="address").rstrip("/")
     source.region = _text(body, "region", 50, source.region) or "us-east-1"
     source.bucket = _text(body, "bucket", 100, source.bucket, required=s3, label="bucket")
     addressing = body.get("addressing", source.addressing)
     if addressing not in StorageSource.Addressing.values:
         raise ValueError("Choose path or virtual-hosted addressing")
     source.addressing = addressing
-    source.username = _text(body, "username", 200, source.username, required=files, label="access key" if s3 else "user name")
-    if "secret" in body:
+    source.username = _text(body, "username", 200, source.username, required=credentials, label="access key" if s3 else "user name")
+    if "secret" in body and not folder:
         secret = body["secret"]
         if not isinstance(secret, str) or not 0 < len(secret) <= 500:
-            raise ValueError("Enter the secret" if files else "Enter the bot token")
-        secret = secret.strip() if not files else secret
-        if not files and not re.fullmatch(r"\d{5,15}:[A-Za-z0-9_-]{30,60}", secret):
+            raise ValueError("Enter the secret" if credentials else "Enter the bot token")
+        secret = secret.strip() if not credentials else secret
+        if not credentials and not re.fullmatch(r"\d{5,15}:[A-Za-z0-9_-]{30,60}", secret):
             raise ValueError("That does not look like a Telegram bot token (it looks like 123456789:AA…)")
         try:
             source.secret = encrypt_secret(secret)
         except MailError as exc:
             raise ValueError(str(exc)) from exc
-    if not source.secret:
-        raise ValueError(("Enter the secret key" if s3 else "Enter the password") if files else "Enter the bot token")
+    if not source.secret and not folder:
+        raise ValueError(("Enter the secret key" if s3 else "Enter the password") if credentials else "Enter the bot token")
     source.path = _text(body, "path", 500, source.path).lstrip("/")
     source.include_patterns = _text(body, "include_patterns", 500, source.include_patterns)
     source.exclude_patterns = _text(body, "exclude_patterns", 500, source.exclude_patterns)
@@ -138,7 +142,7 @@ def _apply(source, body, owner):
         if root and root.startswith(processed):
             raise ValueError("The source folder cannot be inside the processed folder")
     source.retention_days = _number(body, "retention_days", source.retention_days, 0, 3650, "Days to keep processed files")
-    source.poll_minutes = _number(body, "poll_minutes", source.poll_minutes, 5, 1440, "Check interval (minutes)")
+    source.poll_minutes = _number(body, "poll_minutes", source.poll_minutes, 1 if folder else 5, 1440, "Check interval (minutes)")
     if "correspondent_id" in body:
         source.correspondent = _owned(Correspondent, owner, body["correspondent_id"], "Sender")
     if "document_type_id" in body:

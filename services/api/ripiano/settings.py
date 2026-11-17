@@ -164,6 +164,8 @@ DEFAULT_FROM_EMAIL = os.environ.get("RIPIANO_SMTP_FROM", "ripiano@localhost")
 RIPIANO_WEBHOOK_ALLOW_PRIVATE = os.environ.get("RIPIANO_WEBHOOK_ALLOW_PRIVATE", "0") == "1"
 # Optional NAS embedder service for semantic search (Compose profile "semantic"); unused while the feature is off.
 RIPIANO_EMBEDDER_URL = os.environ.get("RIPIANO_EMBEDDER_URL", "http://embedder:8002")
+# NAS folder mounted for folder sources (Sources -> Folder on the NAS); subfolders are chosen in the app.
+RIPIANO_SOURCES_ROOT = os.environ.get("RIPIANO_SOURCES_ROOT", "/sources")
 # Emailing documents from the app is off unless the operator turns it on (SMTP alone is not enough).
 RIPIANO_DOCUMENT_EMAIL = os.environ.get("RIPIANO_DOCUMENT_EMAIL", "0") == "1"
 RIPIANO_EMAIL_ATTACH_MAX_BYTES = int(os.environ.get("RIPIANO_EMAIL_ATTACH_MAX_BYTES", str(10 * 1024 * 1024)))

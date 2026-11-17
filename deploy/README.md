@@ -31,4 +31,4 @@ The **Build browse copy** action in Backups creates an owner-scoped, on-demand f
 
 Telegram and S3 inputs are set up in the app under **Sources** (see the [root README](../README.md)); they need no Compose profile or environment variable. A Telegram source must be added deliberately, because Telegram handles forwarded files before Ripiano receives them.
 
-The optional `watch` profile adds a read-only bind mount from `RIPIANO_WATCH_PATH` to `/watch`. Set `RIPIANO_WATCH_OWNER_USERNAME` to the account that owns imported files. The watcher waits for a stable file, keeps the source file in place, and uses a path/content key to avoid duplicate imports after restarts. Create and grant read access to the NAS folder before enabling the profile.
+`RIPIANO_SOURCES_PATH` mounts one NAS folder at `/sources` (read-only in the API for Preview, read-write in the maintenance worker). The archive owner then adds **Folder on the NAS** sources in the app for its subfolders. Create the folder and give UID 10001 read access (and write access if sources move or delete imported files) before deploying. The former `watch` profile and `RIPIANO_WATCH_*` variables are gone.

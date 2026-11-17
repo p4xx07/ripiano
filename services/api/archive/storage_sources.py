@@ -72,6 +72,10 @@ def _private(host):
 
 def check_endpoint(source):
     """Only the archive owner may connect sources on the home network (for example MinIO on the NAS)."""
+    if source.kind == StorageSource.Kind.FOLDER:
+        if not source.owner.is_superuser:
+            raise SourceError("Only the archive owner can import from folders on the NAS")
+        return
     parts = urlsplit(source.endpoint)
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise SourceError("The address must start with https:// or http://")
@@ -153,12 +157,17 @@ def backend_for(source, transport=None):
         from .webdav import WebDAVBackend
 
         return WebDAVBackend(source, transport=transport)
+    if source.kind == StorageSource.Kind.FOLDER:
+        from .folder_source import FolderBackend
+
+        return FolderBackend(source)
     raise SourceError("Unknown storage kind")
 
 
 def document_source(source):
     """Which Document.Source label imported documents carry."""
-    return {StorageSource.Kind.S3: Document.Source.S3, StorageSource.Kind.WEBDAV: Document.Source.WEBDAV}.get(source.kind, Document.Source.S3)
+    return {StorageSource.Kind.S3: Document.Source.S3, StorageSource.Kind.WEBDAV: Document.Source.WEBDAV,
+            StorageSource.Kind.FOLDER: Document.Source.FOLDER}.get(source.kind, Document.Source.S3)
 
 
 # --- filters -------------------------------------------------------------------------------
@@ -340,6 +349,6 @@ def due_sources(now=None):
     now = now or timezone.now()
     for source in StorageSource.objects.filter(enabled=True).only("id", "kind", "last_checked_at", "poll_minutes"):
         # Telegram is checked every minute: a quick request, and senders expect a prompt answer.
-        minutes = 1 if source.kind == StorageSource.Kind.TELEGRAM else max(5, source.poll_minutes)
+        minutes = 1 if source.kind == StorageSource.Kind.TELEGRAM else max(1 if source.kind == StorageSource.Kind.FOLDER else 5, source.poll_minutes)
         if source.last_checked_at is None or now - source.last_checked_at >= timedelta(minutes=minutes) - timedelta(seconds=5):
             yield source.id

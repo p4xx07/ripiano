@@ -855,6 +855,7 @@ class StorageSource(models.Model):
         S3 = "s3", "S3-compatible storage"
         TELEGRAM = "telegram", "Telegram bot"
         WEBDAV = "webdav", "WebDAV (Nextcloud, Synology, ownCloud, …)"
+        FOLDER = "folder", "Folder on the NAS"
 
     class After(models.TextChoices):
         KEEP = "keep", "Leave the file and remember it"

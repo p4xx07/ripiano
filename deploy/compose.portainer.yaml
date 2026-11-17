@@ -93,6 +93,8 @@ services:
     volumes:
       - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
       - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup:ro
+      # Folder sources (Sources -> Folder on the NAS): read-only here, used by Preview.
+      - ${RIPIANO_SOURCES_PATH:-ripiano_sources}:/sources:ro
     command: ["sh", "-c", ".venv/bin/python manage.py migrate --noinput && exec .venv/bin/gunicorn ripiano.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 60"]
     healthcheck:
       test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
@@ -116,6 +118,8 @@ services:
     volumes:
       - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
       - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup
+      # Folder sources: read-write so imported files can be moved or deleted when a source asks for it.
+      - ${RIPIANO_SOURCES_PATH:-ripiano_sources}:/sources
     command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "maintenance"]
     depends_on:
       api:
@@ -134,22 +138,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
-  watched_folder:
-    <<: *api-base
-    profiles: ["watch"]
-    volumes:
-      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
-      - ${RIPIANO_WATCH_PATH:-/volume1/docker/ripiano/incoming}:/watch:ro
-    command: [".venv/bin/python", "manage.py", "watch_folder"]
-    environment:
-      <<: *api-env
-      RIPIANO_WATCH_PATH: /watch
-      RIPIANO_WATCH_OWNER_USERNAME: ${RIPIANO_WATCH_OWNER_USERNAME:-}
-      RIPIANO_WATCH_POLL_SECONDS: ${RIPIANO_WATCH_POLL_SECONDS:-5}
-    depends_on:
-      api:
-        condition: service_healthy
-  # Optional NAS model for semantic search (turn it on in Integrations -> Search by meaning).
+  # Optional NAS model for semantic search (turn it on in Agents -> Search by meaning).
   # Installs its pinned packages into the models volume on first start; no published port.
   embedder:
     <<: *api-base
@@ -179,6 +168,7 @@ services:
 volumes:
   broker_data:
   ripiano_models:
+  ripiano_sources:
   ripiano_media:
   ripiano_postgres:
   ripiano_backup:

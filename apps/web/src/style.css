@@ -4168,3 +4168,9 @@ button:disabled {
 .source-chats small {
   color: var(--color-muted);
 }
+
+.source-note {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--type-small);
+}

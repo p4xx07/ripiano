@@ -33,7 +33,7 @@ export default defineMessages({
   deleted: (name: string) => `${name} eliminata. I risultati attuali dell'Archivio non cambiano.`,
   deleteError: "Impossibile eliminare la ricerca salvata",
   heading: "Ricerche salvate",
-  empty: "Tieni le ricerche utili a portata di tocco.",
+  empty: "Tieni le ricerche utili a portata di mano.",
   opened: (name: string) => `${name} aperta.`,
   rename: (name: string) => `Rinomina la ricerca salvata ${name}`,
   remove: (name: string) => `Elimina la ricerca salvata ${name}`,

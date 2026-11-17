@@ -29,7 +29,7 @@ export default defineMessages({
   createError: "Impossibile creare un link di condivisione",
   revokeError: "Impossibile revocare il link",
   created: "Link creato. Copialo subito: Ripiano lo mostra una sola volta.",
-  revoked: "Link revocato. Non può più scaricare il file.",
+  revoked: "Link revocato. Non è più possibile scaricare il file con quel link.",
   copied: "Link copiato.",
   copyFailed: "Copia non riuscita. Seleziona il link nel campo e copialo a mano.",
   heading: "Condividi l'originale",

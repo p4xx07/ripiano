@@ -45,7 +45,7 @@ export default defineMessages({
   savedOn: "Salvato. I documenti vengono preparati in background, pochi alla volta.",
   connectionWorks: (model: string) => `La connessione funziona: ${model} ha risposto.`,
   heading: "Ricerca per significato",
-  intro: "Facoltativa. Trova i documenti in base al loro argomento, non solo alle parole esatte, e permette agli agenti di trovare i passaggi per rispondere alle domande. Ripiano funziona benissimo anche senza.",
+  intro: "Facoltativa. La ricerca per significato trova i documenti in base all’argomento, non solo alle parole esatte, e consente agli agenti di trovare i passaggi utili per rispondere alle domande. Ripiano funziona anche senza.",
   dismissError: "Chiudi errore",
   noPgvectorBefore: "L'immagine del database non ha l'estensione pgvector. Passa a ",
   noPgvectorAfter: " prima di attivarla (vedi il README).",
@@ -60,7 +60,7 @@ export default defineMessages({
   testConnection: "Prova la connessione",
   ready: (indexed: string, total: string) => `${indexed} documenti su ${total} pronti per la ricerca per significato`,
   waiting: (n: string) => ` · ${n} in attesa`,
-  lastProblem: (problem: string, at: string | null) => `Ultimo problema: ${problem}${at ? ` (${at})` : ""}. Riprova ogni 15 minuti.`,
+  lastProblem: (problem: string, at: string | null) => `Ultimo problema: ${problem}${at ? ` (${at})` : ""}. Un nuovo tentativo avviene ogni 15 minuti.`,
   unavailable: "La ricerca per significato non è disponibile al momento",
   related: "Correlati per significato",
 });

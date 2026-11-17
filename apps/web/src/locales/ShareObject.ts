@@ -5,9 +5,9 @@ const nouns: Record<ShareKind, string> = { tag: "tag", correspondent: "sender", 
 
 // Italian nouns differ in gender, so each phrase names its object in full.
 const feminine = (kind: ShareKind) => kind === "tag" || kind === "saved_view";
-const this_ = (kind: ShareKind) => ({ tag: "questa etichetta", correspondent: "questo mittente", document_type: "questo tipo di documento", saved_view: "questa vista salvata" })[kind];
-const the = (kind: ShareKind) => ({ tag: "l'etichetta", correspondent: "il mittente", document_type: "il tipo di documento", saved_view: "la vista salvata" })[kind];
-const bare = (kind: ShareKind) => ({ tag: "etichetta", correspondent: "mittente", document_type: "tipo di documento", saved_view: "vista salvata" })[kind];
+const this_ = (kind: ShareKind) => ({ tag: "questa etichetta", correspondent: "questo mittente", document_type: "questo tipo di documento", saved_view: "questa ricerca salvata" })[kind];
+const the = (kind: ShareKind) => ({ tag: "l'etichetta", correspondent: "il mittente", document_type: "il tipo di documento", saved_view: "la ricerca salvata" })[kind];
+const bare = (kind: ShareKind) => ({ tag: "etichetta", correspondent: "mittente", document_type: "tipo di documento", saved_view: "ricerca salvata" })[kind];
 
 export default defineMessages({
   heading: (kind: ShareKind) => `Share this ${nouns[kind]}`,

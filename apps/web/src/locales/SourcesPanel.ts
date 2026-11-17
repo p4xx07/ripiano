@@ -157,7 +157,7 @@ export default defineMessages({
   // Card descriptions
   describeTelegram: (chats: number) => `Bot Telegram · ${chats ? `${chats} ${chats === 1 ? "chat consentita" : "chat consentite"}` : "nessuna chat ancora consentita: invia /start al bot"} · controllo ogni minuto.`,
   describeBuiltin: (recursive: boolean, after: After, processed: string, minutes: number) =>
-    `Integrata: metti i file nella cartella di acquisizione montata${recursive ? " (anche nelle sottocartelle)" : ""}; ${after === "delete" ? "vengono rimossi dopo l'importazione" : after === "move" ? `vengono spostati in ${processed}` : "restano al loro posto"}. Controllo ${minutes === 1 ? "ogni minuto" : `ogni ${minutes} minuti`}.`,
+    `Cartella integrata: metti i file nella cartella di acquisizione montata${recursive ? " (anche nelle sottocartelle)" : ""}; ${after === "delete" ? "vengono rimossi dopo l'importazione" : after === "move" ? `vengono spostati in ${processed}` : "restano al loro posto"}. Controllo ${minutes === 1 ? "ogni minuto" : `ogni ${minutes} minuti`}.`,
   nasFolder: (path: string) => `Cartella NAS /${path}`,
   describeExternal: (where: string, recursive: boolean, include: string, after: After, processed: string, retention: number, minutes: number) =>
     `${where} · ${recursive ? "sottocartelle incluse" : "solo questa cartella"}${include ? `, nomi come ${include}` : ""}; ${after === "move"
@@ -204,7 +204,7 @@ export default defineMessages({
   intro: "Collega uno spazio di archiviazione e Ripiano ne preleverà da solo i nuovi documenti.",
   dismissError: "Chiudi errore",
   connectedHeading: "Spazi di archiviazione collegati",
-  connectedIntro: "Ogni file viene importato una sola volta. L'originale viene conservato al sicuro prima che gli succeda qualcosa nello spazio di archiviazione.",
+  connectedIntro: "Ogni file viene importato una sola volta. L'originale viene conservato al sicuro prima di spostare o eliminare il file dalla sorgente.",
   pausedSuffix: " · In pausa",
   notConnected: "Non ancora collegata: usa Collega account.",
   checkingNow: "Controllo in corso…",
@@ -258,7 +258,7 @@ export default defineMessages({
   botTokenSaved: "Salvato e mai mostrato. Incollane uno nuovo per sostituirlo.",
   botTokenHint: "Da BotFather; conservato cifrato. Poi invia /start al bot e consenti qui la tua chat.",
   cloudNoteStart: "Salva la sorgente, poi scegli",
-  cloudNoteEnd: (service: string, kind: string) => ` sulla sua scheda per accedere a ${service}. Ripiano conserva solo un token di accesso cifrato; “Elimina” sposta i file ${kind === "dropbox" ? "tra i file eliminati" : "nel cestino"}.`,
+  cloudNoteEnd: (service: string, kind: string) => ` sulla sua scheda per accedere a ${service}. Ripiano conserva solo un token di rinnovo cifrato; “Elimina” sposta i file ${kind === "dropbox" ? "tra i file eliminati" : "nel cestino"}.`,
   folderNoteStart: "Usa la cartella del NAS montata con",
   folderNoteEnd: ". Scegli qui sotto una sua sottocartella.",
   address: "Indirizzo",
@@ -268,8 +268,8 @@ export default defineMessages({
   bucket: "Bucket",
   region: "Regione",
   addressStyle: "Stile dell'indirizzo",
-  pathStyle: "Stile percorso (MinIO, SeaweedFS, la maggior parte dei self-hosted)",
-  virtualHosted: "Virtual-hosted (AWS S3)",
+  pathStyle: "Stile percorso (MinIO, SeaweedFS e molti servizi ospitati in proprio)",
+  virtualHosted: "Host virtuale (AWS S3)",
   accessKey: "Chiave di accesso",
   secretKey: "Chiave segreta",
   whatToImport: "Cosa importare",

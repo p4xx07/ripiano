@@ -28,7 +28,7 @@ export default defineMessages({
   remove: "Remove",
 }, {
   docHeading: "Persone con accesso",
-  docIntro: "Condividi questo documento con chi accede a questo Ripiano. Lo vedranno in Condivisi con me. Archiviazione, file, link e Cestino restano a te.",
+  docIntro: "Condividi questo documento con chi usa questo archivio. Lo vedrà in Condivisi con me. I dati di archiviazione che non condividi, i file, i link e il Cestino restano sotto il tuo controllo.",
   docEmpty: "Solo tu puoi aprire questo documento.",
   docEditLabel: "Può modificare i dettagli",
   docRemoved: "non può più aprire questo documento.",

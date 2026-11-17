@@ -34,7 +34,7 @@ export default defineMessages({
   workflowHint: "Workflows do not retry a failed run by themselves. Fix the cause in Workflows (for example the webhook address); later documents use the fix.",
 }, {
   loadError: "Impossibile caricare le attività in background",
-  actionError: "Non ha funzionato",
+  actionError: "Impossibile completare l’operazione",
   showing: (shown: number, total: string) => `${shown} di ${total} mostrati.`,
   heading: "Attività in background",
   dismissError: "Chiudi errore",

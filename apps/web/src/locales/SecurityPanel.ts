@@ -32,7 +32,7 @@ export default defineMessages({
   turnOff: "Turn off two-step sign-in",
 }, {
   loadError: "Impossibile caricare le impostazioni di sicurezza",
-  genericError: "Non ha funzionato",
+  genericError: "Impossibile completare l’operazione",
   enabledNotice: "L'accesso in due passaggi è attivo. Salva i codici di recupero qui sotto prima di lasciare questa pagina.",
   eyebrow: "IL TUO ACCOUNT",
   heading: "Sicurezza",

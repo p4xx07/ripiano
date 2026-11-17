@@ -53,7 +53,7 @@ export default defineMessages({
 }, {
   loadError: "Impossibile caricare le pagine",
   searchError: "Impossibile cercare i documenti",
-  genericError: "Non ha funzionato",
+  genericError: "Impossibile completare l’operazione",
   moved: (page: number, earlier: boolean) => `Pagina ${page} spostata ${earlier ? "prima" : "dopo"}.`,
   sharesRevoked: (count: number) => ` ${count === 1 ? "1 link di condivisione attivo è stato revocato" : `${count} link di condivisione attivi sono stati revocati`} perché non mostrino mai un contenuto diverso.`,
   savedVersion: (shares: string) => `Salvato come nuova versione. Il file precedente è conservato qui sotto; il PDF ricercabile è in ricostruzione.${shares}`,

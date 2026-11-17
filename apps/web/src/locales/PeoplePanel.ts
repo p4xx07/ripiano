@@ -104,7 +104,7 @@ export default defineMessages({
   addGroup: "Aggiungi gruppo",
   eyebrow: "CHI PUÒ ACCEDERE",
   heading: "Persone",
-  intro: "Ogni persona ha un archivio privato. Condividi singoli documenti con persone o gruppi direttamente dal documento.",
+  intro: "Ogni persona ha un archivio privato. Puoi condividere documenti e dati di archiviazione con persone o gruppi.",
   refresh: "Aggiorna",
   refreshTitle: "Aggiorna le persone",
 });

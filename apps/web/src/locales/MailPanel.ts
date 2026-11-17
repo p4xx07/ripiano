@@ -159,7 +159,7 @@ export default defineMessages({
   connectedStatus: (name: string, n: number) => `${name} è collegata. ${n === 1 ? "Trovata 1 cartella" : `Trovate ${n} cartelle`}.`,
   couldNotConnect: "Impossibile collegarsi",
   startSignInError: "Impossibile avviare l'accesso",
-  ruleSaved: (name: string) => `Regola “${name}” salvata. La nuova posta corrispondente viene controllata ogni pochi minuti.`,
+  ruleSaved: (name: string) => `Regola “${name}” salvata. I nuovi messaggi che corrispondono alla regola vengono controllati ogni pochi minuti.`,
   saveRuleError: "Impossibile salvare la regola",
   mailboxRemoved: "Casella di posta rimossa. I documenti importati restano nel tuo archivio.",
   ruleRemoved: "Regola rimossa.",

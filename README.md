@@ -399,6 +399,10 @@ Use an IMAP app password where your provider offers one. Passwords and OAuth ref
 
 Gmail and Outlook can use OAuth instead. Register a web OAuth client with the redirect URI `${RIPIANO_PUBLIC_ORIGIN}/api/mail/oauth/callback`, then set `RIPIANO_GMAIL_OAUTH_CLIENT_ID`/`_SECRET` (Google Cloud: Gmail API, scope `https://mail.google.com/`) or `RIPIANO_OUTLOOK_OAUTH_CLIENT_ID`/`_SECRET` (Microsoft Entra: delegated `IMAP.AccessAsUser.All` and `offline_access`). The matching **Sign in with Google/Microsoft** button appears only when its client is configured. Browser tests use a local GreenMail server: `docker compose -f deploy/compose.mailtest.yaml up -d`.
 
+### Consume folder
+
+Drop files into the consume folder and Ripiano imports them by itself, like Paperless's consume directory. Set `RIPIANO_CONSUME_PATH` (default `/volume1/docker/ripiano/consume`; Ripiano runs as UID 10001 and needs read and write access) and redeploy. Ripiano then adds a built-in **Consume folder** source for the archive owner: it checks every minute, includes subfolders, and removes each file after it is safely imported. A file must be unchanged for a minute first, so a scan that is still being copied is not taken half-done. Unsupported files, hidden files, and links stay where they are. The source appears on the Sources screen, where you can pause it, add filters or tags, or keep files instead of removing them; it cannot be deleted.
+
 ### Folders on the NAS
 
 Watched folders are sources too (see **Sources** below). Mount one NAS folder into Ripiano with `RIPIANO_SOURCES_PATH` (default `/volume1/docker/ripiano/sources`; Ripiano runs as UID 10001 and needs read access, plus write access if a source moves or deletes imported files). Then, as the archive owner, add **Folder on the NAS** sources in the app for any subfolder of it, for example the folder your scanner saves to, each with its own filters and after-import action.

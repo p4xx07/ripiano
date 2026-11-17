@@ -95,6 +95,8 @@ services:
       - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup:ro
       # Folder sources (Sources -> Folder on the NAS): read-only here, used by Preview.
       - ${RIPIANO_SOURCES_PATH:-ripiano_sources}:/sources:ro
+      # Consume folder: drop files here and they are imported (read-only here, used by Preview).
+      - ${RIPIANO_CONSUME_PATH:-ripiano_consume}:/consume:ro
     command: ["sh", "-c", ".venv/bin/python manage.py migrate --noinput && exec .venv/bin/gunicorn ripiano.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 60"]
     healthcheck:
       test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
@@ -120,6 +122,8 @@ services:
       - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup
       # Folder sources: read-write so imported files can be moved or deleted when a source asks for it.
       - ${RIPIANO_SOURCES_PATH:-ripiano_sources}:/sources
+      # Consume folder: read-write so imported files can be removed.
+      - ${RIPIANO_CONSUME_PATH:-ripiano_consume}:/consume
     command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "maintenance"]
     depends_on:
       api:
@@ -169,6 +173,7 @@ volumes:
   broker_data:
   ripiano_models:
   ripiano_sources:
+  ripiano_consume:
   ripiano_media:
   ripiano_postgres:
   ripiano_backup:

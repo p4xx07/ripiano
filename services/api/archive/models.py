@@ -877,6 +877,8 @@ class StorageSource(models.Model):
     name = models.CharField(max_length=100)
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.S3)
     enabled = models.BooleanField(default=True)
+    # The built-in consume folder (mounted at RIPIANO_CONSUME_ROOT); created automatically, cannot be removed.
+    builtin = models.BooleanField(default=False)
     # Connection
     endpoint = models.CharField(max_length=300, blank=True)
     region = models.CharField(max_length=50, blank=True, default="us-east-1")

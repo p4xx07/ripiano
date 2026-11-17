@@ -32,8 +32,10 @@ def _clean(value):
 
 class FolderBackend:
     def __init__(self, source, root=None, now=None):
-        self.root = Path(root or sources_root())
+        self.root = Path(root or (settings.RIPIANO_CONSUME_ROOT if source.builtin else sources_root()))
         if not self.root.is_dir():
+            if source.builtin:
+                raise SourceError("The consume folder is not mounted. Set RIPIANO_CONSUME_PATH in the stack (see the README).")
             raise SourceError("No NAS folder is mounted for sources. Set RIPIANO_SOURCES_PATH in the stack (see the README).")
         self.real_root = self.root.resolve()
         self.base = _clean(source.path)

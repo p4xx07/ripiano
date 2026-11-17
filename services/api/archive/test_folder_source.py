@@ -94,3 +94,37 @@ def test_keep_mode_leaves_files_and_a_changed_file_is_a_new_document(owner, root
     assert run(source) == 0
     write(root, "Scanner/bill.pdf", PDF + b"%changed")
     assert run(source) == 1
+
+
+@pytest.mark.django_db
+def test_consume_folder_is_created_when_mounted_and_consumes_dropped_files(owner, tmp_path):
+    from archive.storage_sources import ensure_consume_source
+
+    consume = tmp_path / "consume"
+    with override_settings(RIPIANO_CONSUME_ROOT=str(consume), MEDIA_ROOT=str(tmp_path / "media")):
+        assert ensure_consume_source() is None  # not mounted: nothing is created
+        consume.mkdir()
+        source = ensure_consume_source()
+        assert source.builtin and source.owner == owner and source.after == StorageSource.After.DELETE and source.recursive
+        assert ensure_consume_source().pk == source.pk  # only one
+        write(consume, "scan.pdf")
+        write(consume, "phone/photo-scan.pdf", PDF + b"%2")
+        write(consume, "notes.exe", b"MZ")
+        write(consume, "copying.pdf", age=2)
+        assert run(source) == 2
+    assert sorted(path.relative_to(consume).as_posix() for path in consume.rglob("*") if path.is_file()) == ["copying.pdf", "notes.exe"]
+    assert Document.objects.filter(owner=owner, source=Document.Source.FOLDER).count() == 2
+    client = Client()
+    client.force_login(owner)
+    assert client.delete(f"/api/sources/{source.id}").status_code == 409
+    changed = client.patch(f"/api/sources/{source.id}", {"kind": "s3", "after": "keep"}, content_type="application/json").json()
+    assert changed["kind"] == "folder" and changed["after"] == "keep" and changed["builtin"] is True
+
+
+@pytest.mark.django_db
+def test_consume_folder_waits_for_an_archive_owner(db, tmp_path):
+    from archive.storage_sources import ensure_consume_source
+
+    (tmp_path / "consume").mkdir()
+    with override_settings(RIPIANO_CONSUME_ROOT=str(tmp_path / "consume")):
+        assert ensure_consume_source() is None

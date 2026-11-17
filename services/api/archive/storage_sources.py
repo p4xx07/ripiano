@@ -15,7 +15,7 @@ import socket
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone as dt_timezone
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 from django.conf import settings
@@ -351,6 +351,27 @@ def run_claimed(source):
         total_imported=F("total_imported") + imported,
     )
     return imported
+
+
+def ensure_consume_source():
+    """Create the built-in consume-folder source once the folder is mounted. Returns it, or None."""
+    from django.contrib.auth import get_user_model
+
+    existing = StorageSource.objects.filter(builtin=True).first()
+    if existing or not Path(settings.RIPIANO_CONSUME_ROOT).is_dir():
+        return existing
+    owner = get_user_model().objects.filter(is_superuser=True, is_active=True).order_by("date_joined", "id").first()
+    if owner is None:
+        return None  # before the first owner is set up
+    name, suffix = "Consume folder", 2
+    while StorageSource.objects.filter(owner=owner, name__iexact=name).exists():
+        name, suffix = f"Consume folder {suffix}", suffix + 1
+    try:
+        with transaction.atomic():
+            return StorageSource.objects.create(owner=owner, name=name, kind=StorageSource.Kind.FOLDER, builtin=True, path="",
+                                                recursive=True, after=StorageSource.After.DELETE, processed_path="", poll_minutes=1)
+    except IntegrityError:
+        return StorageSource.objects.filter(builtin=True).first()
 
 
 def due_sources(now=None):

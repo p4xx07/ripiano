@@ -21,7 +21,7 @@ def _signed_in(request):
 
 def _json(source):
     return {
-        "id": str(source.id), "name": source.name, "kind": source.kind, "enabled": source.enabled,
+        "id": str(source.id), "name": source.name, "kind": source.kind, "enabled": source.enabled, "builtin": source.builtin,
         "endpoint": source.endpoint, "region": source.region, "bucket": source.bucket, "addressing": source.addressing,
         "username": source.username, "has_secret": bool(source.secret),
         "connected": bool(source.secret) if source.kind in CLOUD_KINDS else None,
@@ -75,7 +75,7 @@ def _apply(source, body, owner):
     from .mail import MailError, encrypt_secret
 
     source.name = _text(body, "name", 100, source.name, required=True, label="name")
-    kind = body.get("kind", source.kind)
+    kind = source.kind if source.builtin else body.get("kind", source.kind)
     if kind not in StorageSource.Kind.values:
         raise ValueError("Choose a storage kind")
     source.kind = kind
@@ -216,6 +216,8 @@ def source_detail(request, source_id):
     if source is None:
         return JsonResponse({"error": "Source not found"}, status=404)
     if request.method == "DELETE":
+        if source.builtin:
+            return JsonResponse({"error": "The consume folder is built in. Pause it instead, or unmount RIPIANO_CONSUME_PATH."}, status=409)
         source.delete()  # imported documents stay in the archive
         return JsonResponse({"deleted": True})
     body = _body(request)

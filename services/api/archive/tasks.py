@@ -604,8 +604,12 @@ def poll_storage_source(source_id):
 @shared_task(name="archive.tasks.poll_storage_sources")
 def poll_storage_sources():
     """Every minute: queue each enabled storage source whose check interval has passed."""
-    from .storage_sources import due_sources
+    from .storage_sources import due_sources, ensure_consume_source
 
+    try:
+        ensure_consume_source()
+    except Exception:
+        logger.exception("Could not set up the consume folder source")
     for source_id in due_sources():
         try:
             poll_storage_source.delay(str(source_id))

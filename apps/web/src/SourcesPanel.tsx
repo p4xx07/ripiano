@@ -6,14 +6,14 @@ import { Button } from "./ui";
 type After = "keep" | "move" | "delete";
 type Chat = { id: number; name: string };
 type Source = {
-  id: string; name: string; kind: "s3" | "webdav" | "folder" | "gdrive" | "onedrive" | "dropbox" | "telegram"; connected: boolean | null; enabled: boolean; allowed_chats: Chat[]; pending_chats: Chat[];
+  id: string; name: string; builtin: boolean; kind: "s3" | "webdav" | "folder" | "gdrive" | "onedrive" | "dropbox" | "telegram"; connected: boolean | null; enabled: boolean; allowed_chats: Chat[]; pending_chats: Chat[];
   endpoint: string; region: string; bucket: string; addressing: "path" | "virtual"; username: string; has_secret: boolean;
   path: string; recursive: boolean; include_patterns: string; exclude_patterns: string; file_types: string[];
   max_size_mb: number; modified_after: string | null; after: After; processed_path: string; retention_days: number;
   tag_ids: string[]; correspondent_id: string | null; document_type_id: string | null; poll_minutes: number;
   status: { running: boolean; last_checked_at: string | null; last_error: string; last_imported: number; total_imported: number };
 };
-type Draft = Omit<Source, "id" | "has_secret" | "connected" | "status" | "modified_after" | "correspondent_id" | "document_type_id" | "allowed_chats" | "pending_chats"> & {
+type Draft = Omit<Source, "id" | "builtin" | "has_secret" | "connected" | "status" | "modified_after" | "correspondent_id" | "document_type_id" | "allowed_chats" | "pending_chats"> & {
   secret: string; modified_after: string; correspondent_id: string; document_type_id: string;
 };
 type Preview = { ok: boolean; matching: { path: string; size: number; modified: string }[]; skipped: Record<string, number>; already_imported: number; bot?: string; error?: string };
@@ -37,6 +37,10 @@ function describe(source: Source) {
   if (source.kind === "telegram") {
     const chats = source.allowed_chats.length;
     return `Telegram bot · ${chats ? `${chats} allowed chat${chats === 1 ? "" : "s"}` : "no chat allowed yet: send /start to the bot"} · checked every minute.`;
+  }
+  if (source.builtin) {
+    const after = source.after === "delete" ? "removed after import" : source.after === "move" ? `moved to ${source.processed_path}` : "left in place";
+    return `Built in: drop files into the mounted consume folder${source.recursive ? " (subfolders too)" : ""}; ${after}. Checked ${source.poll_minutes === 1 ? "every minute" : `every ${source.poll_minutes} minutes`}.`;
   }
   const where = isCloud(source.kind) ? `${cloudLabels[source.kind]} /${source.path || ""}` : source.kind === "folder" ? `NAS folder /${source.path || ""}` : source.kind === "webdav" ? `${new URL(source.endpoint).host}/${source.path || ""}` : `${source.bucket}/${source.path || ""}`;
   const what = [source.recursive ? "including subfolders" : "this folder only", source.include_patterns && `names like ${source.include_patterns}`]
@@ -304,7 +308,7 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
                         <Button variant="secondary" disabled={busy || !source.enabled} onClick={() => checkNow(source)}><RefreshCw size={16} aria-hidden="true" /> Check now</Button>
                         <Button variant="secondary" disabled={busy} onClick={() => toggle(source)}>{source.enabled ? "Pause" : "Resume"}</Button>
                         <Button variant="secondary" onClick={() => edit(source)}>Edit</Button>
-                        <Button variant="secondary" aria-label={`Remove source ${source.name}`} onClick={() => setConfirming(source.id)}>Remove</Button>
+                        {!source.builtin && <Button variant="secondary" aria-label={`Remove source ${source.name}`} onClick={() => setConfirming(source.id)}>Remove</Button>}
                       </>
                     )}
                   </div>
@@ -329,7 +333,7 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
               <label>Name<input value={draft.name} onChange={(event) => set("name", event.target.value)} maxLength={100} required placeholder="e.g. Scanner bucket" /></label>
               <fieldset>
                 <legend>Connection</legend>
-                <label>Storage
+                {editing?.builtin ? <p className="source-note">The built-in consume folder: the NAS folder mounted with <code>RIPIANO_CONSUME_PATH</code>.</p> : <label>Storage
                   <select value={draft.kind} onChange={(event) => { const kind = event.target.value as Draft["kind"]; setDraft((current) => ({ ...current, kind, max_size_mb: kind === "telegram" ? Math.min(current.max_size_mb, 20) : current.max_size_mb, after: kind === "telegram" ? "keep" : current.after === "keep" ? "move" : current.after })); }}>
                     <option value="s3">S3-compatible storage</option>
                     <option value="webdav">WebDAV (Nextcloud, Synology, ownCloud, …)</option>
@@ -339,15 +343,17 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
                     <option value="dropbox">Dropbox</option>
                     <option value="telegram">Telegram bot</option>
                   </select>
-                </label>
+                </label>}
                 {draft.kind === "telegram" ? (
                   <label>Bot token <small>{editing?.has_secret ? "Saved and never shown. Paste a new one to replace it." : "From BotFather; stored encrypted. Then send /start to the bot and allow your chat here."}</small>
                     <input type="password" value={draft.secret} onChange={(event) => set("secret", event.target.value)} required={!editing?.has_secret} maxLength={100} autoComplete="new-password" placeholder="123456789:AA…" />
                   </label>
                 ) : isCloud(draft.kind) ? (
                   <p className="source-note">Save the source, then choose <strong>Connect account</strong> on its card to sign in to {cloudLabels[draft.kind]}. Ripiano keeps only an encrypted sign-in token; “Delete” moves files to the {draft.kind === "dropbox" ? "deleted files" : draft.kind === "onedrive" ? "recycle bin" : "trash"}.</p>
-                ) : draft.kind === "folder" ? (
+                ) : draft.kind === "folder" && !editing?.builtin ? (
                   <p className="source-note">Uses the NAS folder mounted with <code>RIPIANO_SOURCES_PATH</code>. Choose a subfolder of it below.</p>
+                ) : draft.kind === "folder" ? (
+                  null
                 ) : draft.kind === "webdav" ? (
                   <>
                     <label>Address <small>Nextcloud: https://cloud.example.com/remote.php/dav/files/USER · Synology: https://nas.local:5006</small>
@@ -383,7 +389,7 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
                 <legend>What to import</legend>
                 {draft.kind !== "telegram" && (
                   <>
-                    <label>Folder <small>{isCloud(draft.kind) ? "From the top of your drive, e.g. Scans; empty for everything" : draft.kind === "folder" ? "Inside the mounted NAS folder, e.g. Scanner" : draft.kind === "webdav" ? "Leave empty for the whole storage" : "Leave empty for the whole bucket"}</small><input value={draft.path} onChange={(event) => set("path", event.target.value)} maxLength={500} placeholder={draft.kind === "folder" ? "Scanner" : draft.kind === "webdav" ? "Documents/Scans" : "inbox/"} autoCapitalize="none" spellCheck={false} /></label>
+                    <label>Folder <small>{isCloud(draft.kind) ? "From the top of your drive, e.g. Scans; empty for everything" : editing?.builtin ? "Inside the consume folder; empty for all of it" : draft.kind === "folder" ? "Inside the mounted NAS folder, e.g. Scanner" : draft.kind === "webdav" ? "Leave empty for the whole storage" : "Leave empty for the whole bucket"}</small><input value={draft.path} onChange={(event) => set("path", event.target.value)} maxLength={500} placeholder={draft.kind === "folder" ? "Scanner" : draft.kind === "webdav" ? "Documents/Scans" : "inbox/"} autoCapitalize="none" spellCheck={false} /></label>
                     <label className="agent-scope-choice"><input type="checkbox" checked={draft.recursive} onChange={(event) => set("recursive", event.target.checked)} />Include subfolders</label>
                   </>
                 )}

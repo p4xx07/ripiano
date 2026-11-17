@@ -137,7 +137,7 @@ def _methods(view):
 
 @require_http_methods(["GET"])
 def schema(request):
-    """A generated OpenAPI 3.1 outline of every /api/ route (paths, path parameters, and methods)."""
+    """OpenAPI 3.1 for every /api/ route; operations in the version-1 contract include body schemas."""
     import re
 
     if not request.user.is_authenticated:
@@ -145,6 +145,9 @@ def schema(request):
 
     from django.urls import URLPattern, get_resolver
 
+    from .api_contract import API_VERSION, load, to_openapi
+
+    recorded = load()["operations"]
     paths = {}
     for pattern in get_resolver().url_patterns:
         if not isinstance(pattern, URLPattern):
@@ -166,10 +169,15 @@ def schema(request):
                 "summary": (pattern.callback.__doc__ or pattern.callback.__name__.replace("_", " ")).strip().splitlines()[0],
                 "parameters": parameters, "responses": {"200": {"description": "JSON response"}},
             }
+            entry = recorded.get(f"{method.upper()} {path}")
+            if entry:
+                operations[method].update(to_openapi(entry))
+                operations[method]["x-ripiano-contract"] = f"v{API_VERSION}"
         paths[path] = operations
     return JsonResponse({
         "openapi": "3.1.0",
-        "info": {"title": "Ripiano API", "version": "1"},
+        "info": {"title": "Ripiano API", "version": API_VERSION,
+                 "description": "Operations marked x-ripiano-contract follow the version-1 compatibility promise: fields may be added, never removed or retyped."},
         "components": {"securitySchemes": {
             "session": {"type": "apiKey", "in": "cookie", "name": "sessionid"},
             "token": {"type": "apiKey", "in": "header", "name": "Authorization", "description": "Token rip_…"},

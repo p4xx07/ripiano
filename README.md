@@ -290,7 +290,8 @@ Existing documents are rechecked in the background when you add a rule.
 Under **Security → API tokens**, create a personal token for your scripts. It is shown once, and you choose an expiry of 7–365 days. Send it as `Authorization: Token rip_…` on `/api/` requests.
 - **Access:** the token acts with your access, needs no CSRF token, and cannot use sign-in or account-security endpoints.
 - **Revoking:** revoke a token at any time. Last use is shown next to each token.
-- **Reference:** `/api/schema.json` is an OpenAPI 3.1 outline of every route.
+- **Reference:** `/api/schema.json` is OpenAPI 3.1 for every route. The 40 most-used operations (documents, upload, notes, tags, senders, types, saved views, sharing, workflows, sources, jobs, overview, tokens, and others) include request and response body schemas and are marked `x-ripiano-contract: v1`.
+- **Compatibility promise (API version 1):** for contract operations, fields may be added but are never removed or changed to another type, and routes never disappear, without a new API version. `services/api/archive/test_api_contract.py` enforces this on every test run against the recorded `archive/api_contract_v1.json`; after an intended, compatible change, regenerate it with `RIPIANO_WRITE_CONTRACT=1 RIPIANO_DEBUG=1 .venv/bin/pytest -q archive/test_api_contract.py`.
 - **Agents:** MCP agents keep their own, more limited grants (see Agents).
 
 ### Share and email

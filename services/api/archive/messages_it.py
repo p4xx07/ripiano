@@ -264,7 +264,7 @@ EXACT = {
     "Documents are already linked": "I documenti sono già collegati",
     "Duplicate media path in snapshot": "Percorso file duplicato nello snapshot",
     "Emailing documents is not turned on for this server.": "L'invio di documenti via email non è attivo su questo server.",
-    "Enabled must be true or false": "Il campo enabled deve essere true o false",
+    "Enabled must be true or false": "Attivo: il valore deve essere vero o falso",
     "Enter a finite number": "Inserisci un numero finito",
     "Enter a host name such as imap.example.com": "Inserisci un nome host, ad esempio imap.example.com",
     "Enter a number": "Inserisci un numero",
@@ -582,4 +582,6 @@ VALUES = {
     "Tag": "Etichetta",
     "Enabled": "Attivo",
     "Recursive": "Ricorsivo",
+    "Storage path": "Percorso di archiviazione",
+    "Custom field": "Campo personalizzato",
 }

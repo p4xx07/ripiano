@@ -26,6 +26,13 @@ LABELS = {
     "include_patterns": "Include patterns",
     "exclude_patterns": "Skip patterns",
     "processed_path": "Processed folder",
+    "correspondent": "Sender",
+    "document_type": "Document type",
+    "storage_path": "Storage path",
+    "enabled": "Enabled",
+    "recursive": "Recursive",
+    "tag": "Tag",
+    "custom_field": "Custom field",
 }
 
 

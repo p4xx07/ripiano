@@ -17,6 +17,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 from pydantic import AnyHttpUrl
 
+from .field_labels import label
 from .models import AgentAudit, AgentGrant, Correspondent, Document, DocumentTag, DocumentType, Tag, TagOverride
 
 TOOLS = {
@@ -249,7 +250,7 @@ def _execute(grant, name, args):
         choice_id = _uuid(args[key])
         choice = model.objects.filter(pk=choice_id, owner=grant.owner).first() if choice_id else None
         if choice is None:
-            return document, {"error": f"{field.replace('_', ' ').title()} not found"}
+            return document, {"error": f"{label(field)} not found"}
         with transaction.atomic():
             document = _documents(grant).select_for_update(of=("self",)).filter(pk=document_id).first()
             if document is None:

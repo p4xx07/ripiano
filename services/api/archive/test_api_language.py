@@ -16,6 +16,9 @@ def test_reviewed_api_messages_have_valid_source_keys_and_templates():
     assert required <= set(EXACT)
     assert set(EXACT) <= exact
     assert set(TEMPLATES) <= templates
+    # Every user-facing message has an Italian version: a new English message fails here until it is translated.
+    assert not exact - set(EXACT), sorted(exact - set(EXACT))[:10]
+    assert not templates - set(TEMPLATES), sorted(templates - set(TEMPLATES))[:10]
     assert all(english != italian and italian.strip() for english, italian in EXACT.items())
     for english, italian in TEMPLATES.items():
         assert sorted(re.findall(r"\{\d+\}", english)) == sorted(re.findall(r"\{\d+\}", italian)), english
@@ -56,6 +59,8 @@ def test_field_names_in_messages_are_readable_and_translated():
         assert "Filtro nome file" in italian and "200" in italian
     if "Enter the {0}" in TEMPLATES:
         assert "nome" in to_italian("Enter the name")
+    assert to_italian(f"{label('document_type')} not found") == "Tipo di documento: elemento non trovato"
+    assert to_italian(f"{label('recursive')} must be true or false") == "Ricorsivo: il valore deve essere vero o falso"
     # User data in other positions is never translated.
     assert "“Note”" in to_italian("ASN 7 is already used by “Note”")
 

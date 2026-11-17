@@ -92,6 +92,9 @@ services:
     volumes:
       - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
       - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup:ro
+      # Folder sources and the consume folder, read-only here (used by Preview).
+      - ${RIPIANO_SOURCES_PATH:-ripiano_sources}:/sources:ro
+      - ${RIPIANO_CONSUME_PATH:-ripiano_consume}:/consume:ro
     command: ["sh", "-c", ".venv/bin/python manage.py migrate --noinput && exec .venv/bin/gunicorn ripiano.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 60"]
     healthcheck:
       test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
@@ -115,6 +118,9 @@ services:
     volumes:
       - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
       - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup
+      # Read-write: Sources move or delete imported files; files dropped in the consume folder are imported.
+      - ${RIPIANO_SOURCES_PATH:-ripiano_sources}:/sources
+      - ${RIPIANO_CONSUME_PATH:-ripiano_consume}:/consume
     command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "maintenance"]
     depends_on:
       api:
@@ -130,33 +136,6 @@ services:
     volumes:
       - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data:ro
     command: [".venv/bin/uvicorn", "mcp_asgi:app", "--host", "0.0.0.0", "--port", "8001"]
-    depends_on:
-      api:
-        condition: service_healthy
-  telegram:
-    <<: *api-base
-    profiles: ["telegram"]
-    command: [".venv/bin/python", "manage.py", "telegram_input"]
-    environment:
-      <<: *api-env
-      RIPIANO_TELEGRAM_BOT_TOKEN: ${RIPIANO_TELEGRAM_BOT_TOKEN:-}
-      RIPIANO_TELEGRAM_OWNER_USERNAME: ${RIPIANO_TELEGRAM_OWNER_USERNAME:-}
-      RIPIANO_TELEGRAM_ALLOWED_CHAT_IDS: ${RIPIANO_TELEGRAM_ALLOWED_CHAT_IDS:-}
-    depends_on:
-      api:
-        condition: service_healthy
-  watched_folder:
-    <<: *api-base
-    profiles: ["watch"]
-    volumes:
-      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
-      - ${RIPIANO_WATCH_PATH:-./incoming}:/watch:ro
-    command: [".venv/bin/python", "manage.py", "watch_folder"]
-    environment:
-      <<: *api-env
-      RIPIANO_WATCH_PATH: /watch
-      RIPIANO_WATCH_OWNER_USERNAME: ${RIPIANO_WATCH_OWNER_USERNAME:-}
-      RIPIANO_WATCH_POLL_SECONDS: ${RIPIANO_WATCH_POLL_SECONDS:-5}
     depends_on:
       api:
         condition: service_healthy
@@ -176,6 +155,8 @@ volumes:
   ripiano_media:
   ripiano_postgres:
   ripiano_backup:
+  ripiano_sources:
+  ripiano_consume:
 
 networks:
   converter:

@@ -14,6 +14,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 
+from .field_labels import label
 from .models import ClassificationRule, Correspondent, CustomField, DocumentType, FilingRule, SavedView, Tag
 from .custom_field_views import normalize_filter_range, normalize_filter_value
 from .classification import validate_pattern
@@ -202,7 +203,7 @@ def _saved_view_values(body, owner, current=None):
         except (TypeError, ValueError, AttributeError):
             item = None
         if item is None:
-            raise ValueError(f"{key.replace('_', ' ').title()} not found")
+            raise ValueError(f"{label(key)} not found")
         values[key] = item
     for key in ("date_from", "date_to"):
         raw = body.get(key, getattr(current, key) if current else None)

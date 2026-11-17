@@ -84,7 +84,7 @@ def _apply(source, body, owner):
     for key in ("enabled", "recursive"):
         value = body.get(key, getattr(source, key))
         if not isinstance(value, bool):
-            raise ValueError(f"{key.capitalize()} must be true or false")
+            raise ValueError(f"{label(key)} must be true or false")
         setattr(source, key, value)
     reply_language = body.get("reply_language", source.reply_language)
     if reply_language not in ("en", "it"):

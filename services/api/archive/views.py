@@ -20,6 +20,7 @@ from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
+from .field_labels import label
 from .models import StoragePath, BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, ShareLink, Tag, TagOverride
 from . import two_factor
 from .bundle_views import revoke_bundles_containing
@@ -971,7 +972,7 @@ def document_detail(request, document_id):
                 if item is not None and item.pk not in usable_field_ids:
                     return JsonResponse({"error": f"This {'sender' if kind == 'correspondent' else 'document type'} was not shared with you"}, status=403)
                 if item is None:
-                    return JsonResponse({"error": f"{field.replace('_', ' ').title()} not found"}, status=400)
+                    return JsonResponse({"error": f"{label(field)} not found"}, status=400)
             setattr(document, field, item)
             setattr(document, f"{field}_origin", Document.FilingOrigin.MANUAL)
             changes.extend([field, f"{field}_origin"])

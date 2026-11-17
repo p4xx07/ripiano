@@ -890,6 +890,8 @@ class StorageSource(models.Model):
     allowed_chats = models.JSONField(default=list, blank=True)
     pending_chats = models.JSONField(default=list, blank=True)
     cursor = models.BigIntegerField(default=0)
+    # Telegram: language of the bot's replies.
+    reply_language = models.CharField(max_length=2, choices=[("en", "English"), ("it", "Italiano")], default="en")
     # What to import
     path = models.CharField(max_length=500, blank=True)
     recursive = models.BooleanField(default=True)

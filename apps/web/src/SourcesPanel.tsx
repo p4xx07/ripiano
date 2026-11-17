@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Cloud, Eye, Plus, RefreshCw, X } from "lucide-react";
 import { FilingItem, request, Tag } from "./api";
 import { Button } from "./ui";
-import { useMessages } from "./i18n";
+import { useLanguage, useMessages } from "./i18n";
 import messages from "./locales/SourcesPanel";
 
 type Messages = typeof messages.en;
@@ -10,7 +10,7 @@ type Messages = typeof messages.en;
 type After = "keep" | "move" | "delete";
 type Chat = { id: number; name: string };
 type Source = {
-  id: string; name: string; builtin: boolean; kind: "s3" | "webdav" | "folder" | "gdrive" | "onedrive" | "dropbox" | "telegram"; connected: boolean | null; enabled: boolean; allowed_chats: Chat[]; pending_chats: Chat[];
+  id: string; name: string; builtin: boolean; kind: "s3" | "webdav" | "folder" | "gdrive" | "onedrive" | "dropbox" | "telegram"; connected: boolean | null; enabled: boolean; allowed_chats: Chat[]; pending_chats: Chat[]; reply_language: "en" | "it";
   endpoint: string; region: string; bucket: string; addressing: "path" | "virtual"; username: string; has_secret: boolean;
   path: string; recursive: boolean; include_patterns: string; exclude_patterns: string; file_types: string[];
   max_size_mb: number; modified_after: string | null; after: After; processed_path: string; retention_days: number;
@@ -25,7 +25,7 @@ type Preview = { ok: boolean; matching: { path: string; size: number; modified: 
 const empty: Draft = {
   name: "", kind: "s3", enabled: true, endpoint: "", region: "us-east-1", bucket: "", addressing: "path", username: "", secret: "",
   path: "", recursive: true, include_patterns: "", exclude_patterns: "", file_types: [], max_size_mb: 25, modified_after: "",
-  after: "move", processed_path: "processed/", retention_days: 30, tag_ids: [], correspondent_id: "", document_type_id: "", poll_minutes: 15,
+  after: "move", processed_path: "processed/", retention_days: 30, tag_ids: [], correspondent_id: "", document_type_id: "", poll_minutes: 15, reply_language: "en",
 };
 type App = { provider: string; label: string; console: string; client_id: string; configured: boolean; from_environment: boolean };
 const cloudLabels: Record<string, string> = { gdrive: "Google Drive", onedrive: "OneDrive", dropbox: "Dropbox" };
@@ -100,7 +100,9 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
   const [tags, setTags] = useState<Tag[]>([]);
   const [senders, setSenders] = useState<FilingItem[]>([]);
   const [types, setTypes] = useState<FilingItem[]>([]);
-  const [draft, setDraft] = useState<Draft>(empty);
+  const language = useLanguage();
+  const fresh = (): Draft => ({ ...empty, reply_language: language === "it" ? "it" : "en" });
+  const [draft, setDraft] = useState<Draft>(fresh);
   const [editing, setEditing] = useState<Source | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ id: string; result: Preview } | null>(null);
@@ -215,7 +217,7 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
     void run(async () => {
       await request(`/api/sources/${source.id}`, { method: "DELETE" });
       setConfirming(null);
-      if (editing?.id === source.id) { setEditing(null); setDraft(empty); }
+      if (editing?.id === source.id) { setEditing(null); setDraft(fresh()); }
       setStatus(m.sourceRemoved(source.name));
       await load();
     }, m.removeError);
@@ -339,9 +341,17 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
                   </select>
                 </label>}
                 {draft.kind === "telegram" ? (
+                  <>
                   <label>{m.botToken} <small>{editing?.has_secret ? m.botTokenSaved : m.botTokenHint}</small>
                     <input type="password" value={draft.secret} onChange={(event) => set("secret", event.target.value)} required={!editing?.has_secret} maxLength={100} autoComplete="new-password" placeholder="123456789:AA…" />
                   </label>
+                  <label>{m.replyLanguage}
+                    <select value={draft.reply_language} onChange={(event) => set("reply_language", event.target.value as Draft["reply_language"])}>
+                      <option value="en">English</option>
+                      <option value="it">Italiano</option>
+                    </select>
+                  </label>
+                  </>
                 ) : isCloud(draft.kind) ? (
                   <p className="source-note">{m.cloudNoteStart} <strong>{m.connectAccount}</strong>{m.cloudNoteEnd(cloudLabels[draft.kind], draft.kind)}</p>
                 ) : draft.kind === "folder" && !editing?.builtin ? (
@@ -432,7 +442,7 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
               </fieldset>
               {draft.kind !== "telegram" && <label>{m.checkEvery}<input type="number" min={draft.kind === "folder" ? 1 : 5} max={1440} value={draft.poll_minutes} onChange={(event) => set("poll_minutes", Number(event.target.value))} /></label>}
               <Button disabled={busy}><Plus size={17} aria-hidden="true" /> {editing ? m.saveSource : m.addSource}</Button>
-              {editing && <Button type="button" variant="secondary" onClick={() => { setEditing(null); setDraft(empty); setPreview(null); }}>{m.newInstead}</Button>}
+              {editing && <Button type="button" variant="secondary" onClick={() => { setEditing(null); setDraft(fresh()); setPreview(null); }}>{m.newInstead}</Button>}
             </form>
           </section>
         </div>

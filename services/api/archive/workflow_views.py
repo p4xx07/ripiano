@@ -11,6 +11,7 @@ from django.views.decorators.http import require_http_methods
 
 from .models import Correspondent, Document, DocumentType, Tag, Workflow, WorkflowRun
 from .workflows import MAX_PDF_PASSWORDS, pdf_passwords, run_workflow, set_pdf_passwords
+from .field_labels import label
 
 
 def _signed_in(request):
@@ -77,7 +78,7 @@ def _tags(owner, values):
 def _text(body, key, limit, current):
     value = body.get(key, current)
     if not isinstance(value, str) or len(value.strip()) > limit:
-        raise ValueError(f"{key.replace('_', ' ').capitalize()} must be text up to {limit} characters")
+        raise ValueError(f"{label(key)} must be text up to {limit} characters")
     return value.strip()
 
 

@@ -45,3 +45,27 @@ def test_api_errors_follow_accept_language():
     client.force_login(get_user_model().objects.get(username="person"))
     weak = client.post("/api/account/password", {"current_password": "secure-password-1", "new_password": "123456789012"}, content_type="application/json", HTTP_ACCEPT_LANGUAGE="it-IT,it;q=0.9")
     assert weak.status_code == 400 and "password" in weak.json()["error"].lower() and "too common" not in weak.json()["error"]
+
+
+def test_field_names_in_messages_are_readable_and_translated():
+    from archive.field_labels import label
+
+    assert label("filter_filename") == "File name filter"
+    if "{0} must be text up to {1} characters" in TEMPLATES:
+        italian = to_italian("File name filter must be text up to 200 characters")
+        assert "Filtro nome file" in italian and "200" in italian
+    if "Enter the {0}" in TEMPLATES:
+        assert "nome" in to_italian("Enter the name")
+    # User data in other positions is never translated.
+    assert "“Note”" in to_italian("ASN 7 is already used by “Note”")
+
+
+@pytest.mark.django_db
+def test_library_filter_errors_are_sentences():
+    user = get_user_model().objects.create_user("person", password="secure-password-1")
+    client = Client()
+    client.force_login(user)
+    english = client.get("/api/documents", {"tag_id": "nope"}).json()["error"]
+    assert english == "Invalid tag filter"
+    italian = client.get("/api/documents", {"date_from": "nope"}, HTTP_ACCEPT_LANGUAGE="it").json()["error"]
+    assert italian == EXACT["Invalid start date"]

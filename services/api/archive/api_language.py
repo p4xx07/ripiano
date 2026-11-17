@@ -11,7 +11,7 @@ import re
 from django.utils import translation
 from django.utils.cache import patch_vary_headers
 
-from .messages_it import EXACT, TEMPLATES
+from .messages_it import EXACT, TEMPLATES, VALUES
 
 
 def _compile(template):
@@ -23,7 +23,16 @@ def _compile(template):
     return re.compile(f"^{pattern}$", re.S)
 
 
-_TEMPLATES = [(_compile(english), italian) for english, italian in sorted(TEMPLATES.items(), key=lambda item: -len(item[0]))]
+_TEMPLATES = [(_compile(english), italian, english.startswith("{0} ") or english == "Enter the {0}")
+              for english, italian in sorted(TEMPLATES.items(), key=lambda item: -len(item[0]))]
+
+
+def _value(text):
+    """A field name inside a template (from archive.field_labels), keeping its capitalization."""
+    if text in VALUES:
+        return VALUES[text]
+    italian = VALUES.get(text[:1].upper() + text[1:])
+    return italian[:1].lower() + italian[1:] if italian else text
 
 
 def to_italian(message):
@@ -31,10 +40,11 @@ def to_italian(message):
         return message
     if message in EXACT:
         return EXACT[message]
-    for pattern, italian in _TEMPLATES:
+    for pattern, italian, names_field in _TEMPLATES:
         match = pattern.match(message)
         if match:
-            values = {int(name[1:]): value for name, value in match.groupdict().items()}
+            # Only a leading {0} (or "Enter the {0}") is a field name; other values are user data and stay as written.
+            values = {int(name[1:]): _value(value) if names_field and name == "p0" else value for name, value in match.groupdict().items()}
             return re.sub(r"\{(\d+)\}", lambda found: values.get(int(found.group(1)), found.group(0)), italian)
     return message
 

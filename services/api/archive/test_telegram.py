@@ -156,3 +156,20 @@ def test_telegram_sources_are_due_every_minute(owner):
     storage = StorageSource.objects.create(owner=owner, name="Bucket", endpoint="http://127.0.0.1:9000", bucket="b", username="k",
                                            secret=encrypt_secret("s"), last_checked_at=timezone.now() - timedelta(seconds=61))
     assert list(due_sources()) == [bot.id] and storage.id not in list(due_sources())
+
+
+@pytest.mark.django_db
+def test_bot_replies_in_the_language_chosen_on_the_source(owner, tmp_path):
+    source = source_for(owner, reply_language="it", allowed_chats=[{"id": 42, "name": "Ada"}], file_types=["pdf"])
+    telegram = FakeTelegram([message(1, chat_id=7, text="/start"), message(2, text="/start"), document(3), document(4, name="scan.pdf")])
+    with override_settings(MEDIA_ROOT=tmp_path):
+        run(source, telegram.client())
+    texts = [text for _, text in telegram.sent]
+    assert texts[0].startswith("Ripiano ha ricevuto la tua richiesta") and texts[1].startswith("Pronto.")
+    assert texts[2] == "Non importato: tipo di file non selezionato."
+    client = Client()
+    client.force_login(owner)
+    url = f"/api/sources/{source.id}"
+    assert client.get("/api/sources").json()["sources"][0]["reply_language"] == "it"
+    assert client.patch(url, {"reply_language": "de"}, content_type="application/json").status_code == 400
+    assert client.patch(url, {"reply_language": "en"}, content_type="application/json").json()["reply_language"] == "en"

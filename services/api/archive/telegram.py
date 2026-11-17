@@ -73,6 +73,47 @@ class TelegramClient:
             raise
 
 
+# Replies sent to people writing to the bot, in the language chosen on the source.
+REPLIES = {
+    "en": {
+        "waiting": "Ripiano received your request. The archive owner can allow this chat in Ripiano → Sources.",
+        "ready": "Ready. Send or forward PDF, image, Office, or email files and Ripiano will file them.",
+        "too_large": "This file is larger than {mb} MB. Use the Ripiano app instead.",
+        "skipped": "Not imported: {reason}.",
+        "unsupported": "Ripiano accepts PDF, image, Office, and email files.",
+        "saved": "Saved to Ripiano.",
+    },
+    "it": {
+        "waiting": "Ripiano ha ricevuto la tua richiesta. Il proprietario dell'archivio può autorizzare questa chat in Ripiano → Sorgenti.",
+        "ready": "Pronto. Invia o inoltra file PDF, immagini, documenti Office o email e Ripiano li archivierà.",
+        "too_large": "Questo file supera i {mb} MB. Usa invece l'app Ripiano.",
+        "skipped": "Non importato: {reason}.",
+        "unsupported": "Ripiano accetta file PDF, immagini, documenti Office ed email.",
+        "saved": "Salvato in Ripiano.",
+    },
+}
+# Skip reasons from storage_sources.skip_reason, for replies in Italian.
+REASONS = {
+    "it": {
+        "in the processed folder": "si trova nella cartella dei file elaborati",
+        "unsupported file type": "tipo di file non supportato",
+        "file type not selected": "tipo di file non selezionato",
+        "name does not match": "il nome non corrisponde",
+        "excluded by a pattern": "escluso da un filtro",
+        "too large": "troppo grande",
+        "older than the date filter": "precedente alla data del filtro",
+    },
+}
+
+
+def _language(source):
+    return source.reply_language if source.reply_language in REPLIES else "en"
+
+
+def _say(source, key, **values):
+    return REPLIES[_language(source)][key].format(**values)
+
+
 def _chat_name(message):
     person = message.get("from") or {}
     name = " ".join(filter(None, [person.get("first_name"), person.get("last_name")])) or person.get("username") or "Telegram user"
@@ -102,11 +143,11 @@ def handle_update(source, update, client):
     if chat_id not in allowed:
         if not any(item["id"] == chat_id for item in source.pending_chats):
             source.pending_chats = (source.pending_chats + [{"id": chat_id, "name": _chat_name(message)}])[-MAX_PENDING:]
-        return chat_id, "Ripiano received your request. The archive owner can allow this chat in Ripiano → Sources.", False
+        return chat_id, _say(source, "waiting"), False
     attachment, filename = _attachment(message, update["update_id"])
     if attachment is None:
         if (message.get("text") or "").startswith("/start"):
-            return chat_id, "Ready. Send or forward PDF, image, Office, or email files and Ripiano will file them.", False
+            return chat_id, _say(source, "ready"), False
         return None
     limit = min(source.max_size_mb * 1024 * 1024, settings.RIPIANO_MAX_UPLOAD_BYTES, TELEGRAM_MAX_DOWNLOAD_BYTES)
     from datetime import datetime, timezone as dt_timezone
@@ -115,24 +156,24 @@ def handle_update(source, update, client):
                   modified=datetime.fromtimestamp(message.get("date", 0), dt_timezone.utc), version=str(update["update_id"]))
     reason = skip_reason(source, entry, "")
     if reason == "too large":
-        return chat_id, f"This file is larger than {limit // (1024 * 1024)} MB. Use the Ripiano app instead.", False
+        return chat_id, _say(source, "too_large", mb=limit // (1024 * 1024)), False
     if reason:
-        return chat_id, f"Not imported: {reason}.", False
+        return chat_id, _say(source, "skipped", reason=REASONS.get(_language(source), {}).get(reason, reason)), False
     ref = hashlib.sha256(f"{source.id}\0{update['update_id']}".encode()).hexdigest()
     if Document.objects.filter(owner=source.owner, source=Document.Source.TELEGRAM, source_ref=ref).exists():
         return None
     try:
         handle = client.download(attachment["file_id"], limit)
     except InvalidDocument:
-        return chat_id, f"This file is larger than {limit // (1024 * 1024)} MB. Use the Ripiano app instead.", False
+        return chat_id, _say(source, "too_large", mb=limit // (1024 * 1024)), False
     try:
         document = ingest_document(source.owner, File(handle, name=filename), source=Document.Source.TELEGRAM, source_ref=ref)
     except InvalidDocument:
-        return chat_id, "Ripiano accepts PDF, image, Office, and email files.", False
+        return chat_id, _say(source, "unsupported"), False
     finally:
         handle.close()
     _file(document, source)
-    return chat_id, "Saved to Ripiano.", True
+    return chat_id, _say(source, "saved"), True
 
 
 def run_telegram(source, client=None):

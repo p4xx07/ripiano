@@ -12,6 +12,7 @@ from django.views.decorators.http import require_http_methods
 from . import mail_oauth
 from .mail import MailError, encrypt_secret, list_folders
 from .models import Correspondent, DocumentType, MailAccount, MailRule, ProcessedMail, Tag
+from .field_labels import label
 
 HOST = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$")
 FOLDER = re.compile(r"^[\x20-\x7e]{1,200}$")
@@ -34,12 +35,12 @@ def _body(request):
 def _text(body, key, limit, *, required=False, default=""):
     value = body.get(key, default)
     if not isinstance(value, str):
-        raise ValueError(f"{key.replace('_', ' ').capitalize()} must be text")
+        raise ValueError(f"{label(key)} must be text")
     value = value.strip()
     if required and not value:
-        raise ValueError(f"{key.replace('_', ' ').capitalize()} is required")
+        raise ValueError(f"{label(key)} is required")
     if len(value) > limit:
-        raise ValueError(f"{key.replace('_', ' ').capitalize()} is too long")
+        raise ValueError(f"{label(key)} is too long")
     return value
 
 

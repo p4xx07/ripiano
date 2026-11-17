@@ -49,6 +49,17 @@ HYBRID_RRF_K = 60
 HYBRID_SCORE_SCALE = 1_000_000_000
 
 
+
+# Whole sentences (not field names) so the Italian catalog can translate them.
+FILTER_ERRORS = {
+    "tag_id": "Invalid tag filter",
+    "correspondent_id": "Invalid sender filter",
+    "document_type_id": "Invalid document type filter",
+    "custom_field_id": "Invalid custom field filter",
+    "date_from": "Invalid start date",
+    "date_to": "Invalid end date",
+}
+
 def _tag_subtree_ids(owner, root_id):
     children = {}
     for tag_id, parent_id in Tag.objects.filter(owner=owner).values_list("id", "parent_id"):
@@ -351,14 +362,14 @@ def documents(request):
                 try:
                     filters[key] = str(UUID(raw))
                 except (TypeError, ValueError, AttributeError):
-                    return JsonResponse({"error": f"Invalid {key.replace('_', ' ')}"}, status=400)
+                    return JsonResponse({"error": FILTER_ERRORS[key]}, status=400)
         for key in ("date_from", "date_to"):
             raw = request.GET.get(key, "")
             if raw:
                 try:
                     filters[key] = date.fromisoformat(raw).isoformat()
                 except (TypeError, ValueError):
-                    return JsonResponse({"error": f"Invalid {key.replace('_', ' ')}"}, status=400)
+                    return JsonResponse({"error": FILTER_ERRORS[key]}, status=400)
         copy_status = request.GET.get("copy_status", "")
         if copy_status not in ("", "paper", "virtual", "missing"):
             return JsonResponse({"error": "Choose a valid paper-copy filter"}, status=400)

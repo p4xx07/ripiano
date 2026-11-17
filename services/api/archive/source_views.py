@@ -11,6 +11,7 @@ from django.views.decorators.http import require_http_methods
 
 from .models import Correspondent, DocumentType, StorageSource, Tag
 from .storage_sources import CLOUD_KINDS, FILE_TYPES, SourceError, preview
+from .field_labels import label
 
 MAX_SOURCES = 20
 
@@ -33,7 +34,7 @@ def _json(source):
         "correspondent_id": str(source.correspondent_id) if source.correspondent_id else None,
         "document_type_id": str(source.document_type_id) if source.document_type_id else None,
         "poll_minutes": source.poll_minutes,
-        "allowed_chats": source.allowed_chats, "pending_chats": source.pending_chats,
+        "allowed_chats": source.allowed_chats, "pending_chats": source.pending_chats, "reply_language": source.reply_language,
         "status": {
             "running": source.running_since is not None,
             "last_checked_at": source.last_checked_at.isoformat() if source.last_checked_at else None,
@@ -42,13 +43,14 @@ def _json(source):
     }
 
 
-def _text(body, key, limit, current, required=False, label=None):
+def _text(body, key, limit, current, required=False, name=None):
+    name = name or label(key)
     value = body.get(key, current)
     if not isinstance(value, str) or len(value.strip()) > limit:
-        raise ValueError(f"{label or key.replace('_', ' ').capitalize()} must be text up to {limit} characters")
+        raise ValueError(f"{name} must be text up to {limit} characters")
     value = value.strip()
     if required and not value:
-        raise ValueError(f"Enter the {label or key.replace('_', ' ')}")
+        raise ValueError(f"Enter the {name.lower()}")
     return value
 
 
@@ -74,7 +76,7 @@ def _owned(model, owner, value, label):
 def _apply(source, body, owner):
     from .mail import MailError, encrypt_secret
 
-    source.name = _text(body, "name", 100, source.name, required=True, label="name")
+    source.name = _text(body, "name", 100, source.name, required=True)
     kind = source.kind if source.builtin else body.get("kind", source.kind)
     if kind not in StorageSource.Kind.values:
         raise ValueError("Choose a storage kind")
@@ -84,6 +86,10 @@ def _apply(source, body, owner):
         if not isinstance(value, bool):
             raise ValueError(f"{key.capitalize()} must be true or false")
         setattr(source, key, value)
+    reply_language = body.get("reply_language", source.reply_language)
+    if reply_language not in ("en", "it"):
+        raise ValueError("Choose English or Italian for the bot's replies")
+    source.reply_language = reply_language
     s3 = source.kind == StorageSource.Kind.S3
     folder = source.kind == StorageSource.Kind.FOLDER
     if folder and not owner.is_superuser:
@@ -91,14 +97,14 @@ def _apply(source, body, owner):
     credentials = source.kind in (StorageSource.Kind.S3, StorageSource.Kind.WEBDAV)
     cloud = source.kind in CLOUD_KINDS  # signed in with "Connect account" after saving
     files = credentials or folder or cloud  # storages with folders, files, and after-import actions
-    source.endpoint = _text(body, "endpoint", 300, source.endpoint, required=credentials, label="address").rstrip("/")
+    source.endpoint = _text(body, "endpoint", 300, source.endpoint, required=credentials).rstrip("/")
     source.region = _text(body, "region", 50, source.region) or "us-east-1"
-    source.bucket = _text(body, "bucket", 100, source.bucket, required=s3, label="bucket")
+    source.bucket = _text(body, "bucket", 100, source.bucket, required=s3)
     addressing = body.get("addressing", source.addressing)
     if addressing not in StorageSource.Addressing.values:
         raise ValueError("Choose path or virtual-hosted addressing")
     source.addressing = addressing
-    source.username = _text(body, "username", 200, source.username, required=credentials, label="access key" if s3 else "user name")
+    source.username = _text(body, "username", 200, source.username, required=credentials, name="Access key" if s3 else None)
     if "secret" in body and not folder and not cloud:
         secret = body["secret"]
         if not isinstance(secret, str) or not 0 < len(secret) <= 500:

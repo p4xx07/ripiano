@@ -1,7 +1,7 @@
 """Find user-facing API messages so the reviewed translation catalog can be checked against source text.
 
 Exact strings and f-string templates (placeholders numbered {0}, {1}, …) are collected from
-error payloads, raised exceptions, and returned (ok, message) pairs in archive/*.py.
+error payloads, `*_ERRORS` message tables, raised exceptions, and returned (ok, message) pairs in archive/*.py.
 """
 
 import ast
@@ -42,7 +42,7 @@ def extract(root=None):
                 exact.add(text)
         elif isinstance(node, ast.JoinedStr):
             text = template(node)
-            if " " in text and text[:1].isupper():
+            if " " in text and (text[:1].isupper() or text.startswith("{0} ")):
                 templates.add(text)
                 for variant in variants(node):
                     collect(ast.Constant(variant))
@@ -54,6 +54,10 @@ def extract(root=None):
             continue
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
+            if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict)
+                    and any(isinstance(target, ast.Name) and target.id.endswith("_ERRORS") for target in node.targets)):
+                for value in node.value.values:  # module-level message tables, e.g. FILTER_ERRORS
+                    collect(value)
             if isinstance(node, ast.Dict):
                 for key, value in zip(node.keys, node.values):
                     if isinstance(key, ast.Constant) and key.value in ("error", "detail", "message"):

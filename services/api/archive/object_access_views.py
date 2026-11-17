@@ -16,6 +16,16 @@ User = get_user_model()
 NAMES = {"tag": "Tag", "correspondent": "Sender", "document_type": "Document type", "saved_view": "Saved view"}
 
 
+OWN_ALREADY_ERRORS = {"tag": "You already own this tag", "correspondent": "You already own this sender",
+               "document_type": "You already own this document type", "saved_view": "You already own this saved search"}
+
+SHARED_EDIT_ERRORS = {
+    "tag": "With edit access you can change only the name, color, and description of a shared tag",
+    "correspondent": "With edit access you can change only the name of a shared sender",
+    "document_type": "With edit access you can change only the name of a shared document type",
+    "saved_view": "With edit access you can change only the name, search text, and dates of a shared saved search",
+}
+
 def _body(request):
     try:
         value = json.loads(request.body or b"{}")
@@ -61,7 +71,7 @@ def object_access(request, kind, object_id):
         if target is None:
             return JsonResponse({"error": "Person not found"}, status=400)
         if target.pk == request.user.pk:
-            return JsonResponse({"error": f"You already own this {NAMES[kind].lower()}"}, status=400)
+            return JsonResponse({"error": OWN_ALREADY_ERRORS[kind]}, status=400)
         lookup = {"user": target}
     else:
         target = Group.objects.filter(pk=raw).first()
@@ -138,7 +148,7 @@ def shared_filing_edit(request, kind, object_id):
     allowed = {"tag": {"name", "color", "description"}, "correspondent": {"name"}, "document_type": {"name"},
                "saved_view": {"name", "query", "date_from", "date_to"}}[kind]
     if set(body) - allowed:
-        return JsonResponse({"error": f"Only the owner can change {', '.join(sorted(set(body) - allowed))}"}, status=403)
+        return JsonResponse({"error": SHARED_EDIT_ERRORS[kind]}, status=403)
     model = MODELS[kind]
     with transaction.atomic():
         item = model.objects.select_for_update().get(pk=item.pk)

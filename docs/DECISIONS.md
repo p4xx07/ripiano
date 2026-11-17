@@ -102,7 +102,8 @@ The owner wants external storage to work like Synology Hyper Backup destinations
 - Only the archive owner may use home-network addresses; others need public `https://` endpoints.
 - Verified live against SeaweedFS through the UI: preview, filters, recursive import, move to `processed/<date>/`, no second import.
 - Done (Telegram): kind `telegram` in the same model and screen (`services/api/archive/telegram.py`). The bot token is pasted in the app (encrypted, format-checked, verified with **Test** via getMe). Chats that write to the bot wait on the source card until the owner chooses **Allow**; groups and messages from other senders are ignored. Polled every minute with a non-blocking `getUpdates` (timeout 0) on the existing scheduler, so no extra process runs; the update offset is saved after each update. The old `telegram_input` command, `telegram` Compose profile, and `RIPIANO_TELEGRAM_*` variables were removed. Not tested against the real Telegram API (needs a bot token); the client is exercised against a fake Bot API.
-- Next, in order: WebDAV (Nextcloud, Synology WebDAV, ownCloud), watched folder (choose subfolders of a mounted root in the app), then Google Drive / OneDrive / Dropbox (need OAuth app registration by the owner).
+- Done (WebDAV): `services/api/archive/webdav.py` (PROPFIND Depth 1 with recursion limits, GET, MKCOL + MOVE with `Overwrite: F`, DELETE; Basic auth with an encrypted password). Verified live against rclone's WebDAV server and with an in-memory Nextcloud-like fake in tests.
+- Next, in order: watched folder (choose subfolders of a mounted root in the app), then Google Drive / OneDrive / Dropbox (need OAuth app registration by the owner).
 
 ## Remaining work that needs no further decision
 

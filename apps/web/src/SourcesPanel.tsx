@@ -6,7 +6,7 @@ import { Button } from "./ui";
 type After = "keep" | "move" | "delete";
 type Chat = { id: number; name: string };
 type Source = {
-  id: string; name: string; kind: "s3" | "telegram"; enabled: boolean; allowed_chats: Chat[]; pending_chats: Chat[];
+  id: string; name: string; kind: "s3" | "webdav" | "telegram"; enabled: boolean; allowed_chats: Chat[]; pending_chats: Chat[];
   endpoint: string; region: string; bucket: string; addressing: "path" | "virtual"; username: string; has_secret: boolean;
   path: string; recursive: boolean; include_patterns: string; exclude_patterns: string; file_types: string[];
   max_size_mb: number; modified_after: string | null; after: After; processed_path: string; retention_days: number;
@@ -35,7 +35,7 @@ function describe(source: Source) {
     const chats = source.allowed_chats.length;
     return `Telegram bot · ${chats ? `${chats} allowed chat${chats === 1 ? "" : "s"}` : "no chat allowed yet: send /start to the bot"} · checked every minute.`;
   }
-  const where = `${source.bucket}/${source.path || ""}`;
+  const where = source.kind === "webdav" ? `${new URL(source.endpoint).host}/${source.path || ""}` : `${source.bucket}/${source.path || ""}`;
   const what = [source.recursive ? "including subfolders" : "this folder only", source.include_patterns && `names like ${source.include_patterns}`]
     .filter(Boolean).join(", ");
   const after = source.after === "move"
@@ -258,7 +258,7 @@ export default function SourcesPanel() {
             <div className="tag-empty">
               <Cloud size={27} aria-hidden="true" />
               <strong>No sources yet</strong>
-              <p>Optional. Connect an S3-compatible storage (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, …) or a Telegram bot on the right.</p>
+              <p>Optional. Connect S3-compatible storage (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, …), WebDAV (Nextcloud, Synology, ownCloud, …), or a Telegram bot on the right.</p>
             </div>
           )}
         </section>
@@ -274,6 +274,7 @@ export default function SourcesPanel() {
                 <label>Storage
                   <select value={draft.kind} onChange={(event) => { const kind = event.target.value as Draft["kind"]; setDraft((current) => ({ ...current, kind, max_size_mb: kind === "telegram" ? Math.min(current.max_size_mb, 20) : current.max_size_mb, after: kind === "telegram" ? "keep" : current.after === "keep" ? "move" : current.after })); }}>
                     <option value="s3">S3-compatible storage</option>
+                    <option value="webdav">WebDAV (Nextcloud, Synology, ownCloud, …)</option>
                     <option value="telegram">Telegram bot</option>
                   </select>
                 </label>
@@ -281,6 +282,16 @@ export default function SourcesPanel() {
                   <label>Bot token <small>{editing?.has_secret ? "Saved and never shown. Paste a new one to replace it." : "From BotFather; stored encrypted. Then send /start to the bot and allow your chat here."}</small>
                     <input type="password" value={draft.secret} onChange={(event) => set("secret", event.target.value)} required={!editing?.has_secret} maxLength={100} autoComplete="new-password" placeholder="123456789:AA…" />
                   </label>
+                ) : draft.kind === "webdav" ? (
+                  <>
+                    <label>Address <small>Nextcloud: https://cloud.example.com/remote.php/dav/files/USER · Synology: https://nas.local:5006</small>
+                      <input value={draft.endpoint} onChange={(event) => set("endpoint", event.target.value)} required maxLength={300} autoCapitalize="none" spellCheck={false} placeholder="https://cloud.example.com/remote.php/dav/files/ada" />
+                    </label>
+                    <label>User name<input value={draft.username} onChange={(event) => set("username", event.target.value)} required maxLength={200} autoCapitalize="none" spellCheck={false} autoComplete="off" /></label>
+                    <label>Password <small>{editing?.has_secret ? "Saved and never shown. Type a new one to replace it." : "Use an app password if your service offers one. Stored encrypted."}</small>
+                      <input type="password" value={draft.secret} onChange={(event) => set("secret", event.target.value)} required={!editing?.has_secret} maxLength={500} autoComplete="new-password" />
+                    </label>
+                  </>
                 ) : (
                 <>
                 <label>Address<input value={draft.endpoint} onChange={(event) => set("endpoint", event.target.value)} required maxLength={300}
@@ -306,7 +317,7 @@ export default function SourcesPanel() {
                 <legend>What to import</legend>
                 {draft.kind !== "telegram" && (
                   <>
-                    <label>Folder <small>Leave empty for the whole bucket</small><input value={draft.path} onChange={(event) => set("path", event.target.value)} maxLength={500} placeholder="inbox/" autoCapitalize="none" spellCheck={false} /></label>
+                    <label>Folder <small>{draft.kind === "webdav" ? "Leave empty for the whole storage" : "Leave empty for the whole bucket"}</small><input value={draft.path} onChange={(event) => set("path", event.target.value)} maxLength={500} placeholder={draft.kind === "webdav" ? "Documents/Scans" : "inbox/"} autoCapitalize="none" spellCheck={false} /></label>
                     <label className="agent-scope-choice"><input type="checkbox" checked={draft.recursive} onChange={(event) => set("recursive", event.target.checked)} />Include subfolders</label>
                   </>
                 )}

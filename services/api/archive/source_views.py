@@ -84,27 +84,28 @@ def _apply(source, body, owner):
             raise ValueError(f"{key.capitalize()} must be true or false")
         setattr(source, key, value)
     s3 = source.kind == StorageSource.Kind.S3
-    source.endpoint = _text(body, "endpoint", 300, source.endpoint, required=s3, label="address").rstrip("/")
+    files = source.kind in (StorageSource.Kind.S3, StorageSource.Kind.WEBDAV)  # storages with folders and files
+    source.endpoint = _text(body, "endpoint", 300, source.endpoint, required=files, label="address").rstrip("/")
     source.region = _text(body, "region", 50, source.region) or "us-east-1"
     source.bucket = _text(body, "bucket", 100, source.bucket, required=s3, label="bucket")
     addressing = body.get("addressing", source.addressing)
     if addressing not in StorageSource.Addressing.values:
         raise ValueError("Choose path or virtual-hosted addressing")
     source.addressing = addressing
-    source.username = _text(body, "username", 200, source.username, required=s3, label="access key")
+    source.username = _text(body, "username", 200, source.username, required=files, label="access key" if s3 else "user name")
     if "secret" in body:
         secret = body["secret"]
         if not isinstance(secret, str) or not 0 < len(secret) <= 500:
-            raise ValueError("Enter the bot token" if not s3 else "Enter the secret")
-        secret = secret.strip()
-        if not s3 and not re.fullmatch(r"\d{5,15}:[A-Za-z0-9_-]{30,60}", secret):
+            raise ValueError("Enter the secret" if files else "Enter the bot token")
+        secret = secret.strip() if not files else secret
+        if not files and not re.fullmatch(r"\d{5,15}:[A-Za-z0-9_-]{30,60}", secret):
             raise ValueError("That does not look like a Telegram bot token (it looks like 123456789:AA…)")
         try:
             source.secret = encrypt_secret(secret)
         except MailError as exc:
             raise ValueError(str(exc)) from exc
     if not source.secret:
-        raise ValueError("Enter the secret" if s3 else "Enter the bot token")
+        raise ValueError(("Enter the secret key" if s3 else "Enter the password") if files else "Enter the bot token")
     source.path = _text(body, "path", 500, source.path).lstrip("/")
     source.include_patterns = _text(body, "include_patterns", 500, source.include_patterns)
     source.exclude_patterns = _text(body, "exclude_patterns", 500, source.exclude_patterns)
@@ -126,7 +127,7 @@ def _apply(source, body, owner):
         raise ValueError("Choose what happens after import")
     source.after = after
     source.processed_path = _text(body, "processed_path", 500, source.processed_path).lstrip("/")
-    if not s3:
+    if not files:
         source.after, source.recursive = StorageSource.After.KEEP, False  # nothing to move or traverse in a chat
         source.max_size_mb = min(source.max_size_mb, 20)  # Telegram bots cannot download larger files
     if source.after == StorageSource.After.MOVE:

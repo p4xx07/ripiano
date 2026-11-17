@@ -20,6 +20,7 @@ class Document(models.Model):
         FOLDER = "folder", "Watched folder"
         EMAIL = "email", "Email"
         S3 = "s3", "S3 bucket"
+        WEBDAV = "webdav", "WebDAV"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -853,6 +854,7 @@ class StorageSource(models.Model):
     class Kind(models.TextChoices):
         S3 = "s3", "S3-compatible storage"
         TELEGRAM = "telegram", "Telegram bot"
+        WEBDAV = "webdav", "WebDAV (Nextcloud, Synology, ownCloud, …)"
 
     class After(models.TextChoices):
         KEEP = "keep", "Leave the file and remember it"
@@ -873,7 +875,7 @@ class StorageSource(models.Model):
     region = models.CharField(max_length=50, blank=True, default="us-east-1")
     bucket = models.CharField(max_length=100, blank=True)
     addressing = models.CharField(max_length=10, choices=Addressing.choices, default=Addressing.PATH)
-    username = models.CharField(max_length=200, blank=True)  # S3 access key ID
+    username = models.CharField(max_length=200, blank=True)  # S3 access key ID or WebDAV user name
     secret = models.TextField(blank=True)  # encrypted S3 secret key or Telegram bot token
     # Telegram: private chats allowed to send files ([{"id", "name"}]), chats waiting for approval, and the update offset.
     allowed_chats = models.JSONField(default=list, blank=True)

@@ -424,7 +424,9 @@ Turn it on as the archive owner under **Agents → Search by meaning**, choosing
 
 Open **Sources** to connect a storage as a document input, much like adding a Hyper Backup destination. Ripiano checks each source on its own schedule and imports new files. Everything is set up in the app; no Compose profile or environment variable is needed.
 
-Available now: **S3-compatible storage** (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others) and **Telegram bots**. WebDAV and the watched folder follow on the same screen.
+Available now: **S3-compatible storage** (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others), **WebDAV** (Nextcloud, ownCloud, Synology WebDAV Server, and others), and **Telegram bots**.
+
+- **WebDAV:** enter the WebDAV address (Nextcloud: `https://cloud.example.com/remote.php/dav/files/USER`; Synology WebDAV Server: `https://nas.local:5006`), the user name, and a password (an app password where offered; stored encrypted). Folders are listed with standard PROPFIND requests, recursively when **Include subfolders** is on (up to 25 levels and 20,000 files per check). Moving creates the dated processed folders; if a file with the same name was already moved that day, both are kept.
 
 - **Telegram:** paste the bot token (stored encrypted). Anyone who writes to the bot is listed on the source as waiting until you **Allow** that chat; you can remove an allowed chat at any time. Ripiano asks Telegram for new messages every minute with a quick request, so no extra process runs. Name patterns, file types, the size limit (20 MB at most), and filing apply as for other sources. **Preview** checks the token and shows the bot's name.
 

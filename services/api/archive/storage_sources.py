@@ -149,7 +149,16 @@ def backend_for(source, transport=None):
     check_endpoint(source)
     if source.kind == StorageSource.Kind.S3:
         return S3Backend(source, transport=transport)
+    if source.kind == StorageSource.Kind.WEBDAV:
+        from .webdav import WebDAVBackend
+
+        return WebDAVBackend(source, transport=transport)
     raise SourceError("Unknown storage kind")
+
+
+def document_source(source):
+    """Which Document.Source label imported documents carry."""
+    return {StorageSource.Kind.S3: Document.Source.S3, StorageSource.Kind.WEBDAV: Document.Source.WEBDAV}.get(source.kind, Document.Source.S3)
 
 
 # --- filters -------------------------------------------------------------------------------
@@ -259,13 +268,13 @@ def run(source, backend=None, now=None):
             if StorageSourceSeen.objects.filter(source=source, ref=ref).exists():
                 continue
             document_ref = ref
-            if not Document.objects.filter(owner=source.owner, source=Document.Source.S3, source_ref=document_ref).exists():
+            if not Document.objects.filter(owner=source.owner, source=document_source(source), source_ref=document_ref).exists():
                 try:
                     with tempfile.TemporaryFile() as handle:
                         backend.download(entry, handle, settings.RIPIANO_MAX_UPLOAD_BYTES)
                         handle.seek(0)
                         with transaction.atomic():
-                            document = ingest_document(source.owner, File(handle, name=entry.name), source=Document.Source.S3,
+                            document = ingest_document(source.owner, File(handle, name=entry.name), source=document_source(source),
                                                        source_ref=document_ref, queue=False)
                             _file(document, source)
                         from .tasks import process_document
@@ -279,7 +288,7 @@ def run(source, backend=None, now=None):
                     StorageSourceSeen.objects.get_or_create(source=source, ref=ref)
                     continue
                 except IntegrityError:
-                    if not Document.objects.filter(owner=source.owner, source=Document.Source.S3, source_ref=document_ref).exists():
+                    if not Document.objects.filter(owner=source.owner, source=document_source(source), source_ref=document_ref).exists():
                         raise
                 else:
                     imported += 1

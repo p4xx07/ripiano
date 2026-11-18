@@ -31,12 +31,12 @@ test("a document lists similar documents found locally", async ({ page }, testIn
   }
   await page.getByRole("textbox", { name: "Search documents" }).fill(`girasole${topic}`);
   await page.getByRole("button", { name: names[0], exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await dialog.getByRole("button", { name: "Find similar documents" }).click();
   const list = dialog.locator(".similar-list");
   await expect(list).toContainText(names[1]);
   await expect(list).toContainText(`girasole${topic}`);
   await dialog.locator(".similar-panel").screenshot({ path: testInfo.outputPath("similar.png"), animations: "disabled" });
   await list.getByRole("button", { name: names[1] }).click();
-  await expect(page.getByRole("dialog", { name: "Keep it in place." })).toBeVisible();
+  await expect(page.getByRole("dialog").filter({ hasText: "Keep it in place." })).toBeVisible();
 });

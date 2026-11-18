@@ -161,6 +161,10 @@ services:
     cpus: ${RIPIANO_EMBEDDER_CPUS:-1.0}
   web:
     image: ${RIPIANO_WEB_IMAGE:?Set a published ghcr.io/p4xx07/ripiano-web image or digest}
+    environment:
+      # Reverse proxies allowed to report the client address (e.g. the Raspberry Pi gateway's LAN IP). Docker networks
+      # and localhost are always trusted. Needed so failed sign-ins are throttled per person, not for the whole proxy.
+      RIPIANO_TRUSTED_PROXIES: ${RIPIANO_TRUSTED_PROXIES:-}
     ports:
       - "${RIPIANO_PORT:-8080}:8080"
     depends_on:

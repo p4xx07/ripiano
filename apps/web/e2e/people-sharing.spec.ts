@@ -33,7 +33,7 @@ test("share one document with another person, who can edit its details but nothi
   await page.getByRole("button", { name: /Browse files/ }).click();
   await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
   await page.getByRole("button", { name, exact: true }).click();
-  let dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  let dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await dialog.getByText("Manage access").click();
   await dialog.getByLabel("Person or group").selectOption({ label: reader.username! });
   await dialog.locator(".access-panel .share-controls").getByLabel("Access").selectOption("edit");
@@ -74,7 +74,7 @@ test("share one document with another person, who can edit its details but nothi
   await signIn(page, owner);
   await page.getByRole("textbox", { name: "Search documents" }).fill(`${name} reviewed`);
   await page.getByRole("button", { name: `${name} reviewed`, exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await expect(dialog.locator(".note-list")).toContainText(`${reader.username}`);
   await dialog.getByText("Manage access").click();
   await dialog.getByRole("button", { name: `Remove access for ${reader.username}` }).click();

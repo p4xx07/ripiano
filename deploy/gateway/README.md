@@ -39,6 +39,7 @@ Internet ─80/443─▶ Router ─▶ Raspberry Pi 4
 
 1. **Copy this folder to the Pi**, for example to `~/gateway`, and open a shell there.
 2. **Settings:** `cp gateway.env.example .env`, then edit `.env`: `DOMAIN`, `NAS_IP`, the ports, and `ACME_EMAIL`.
+   On the NAS, set `RIPIANO_TRUSTED_PROXIES` to the Pi's fixed LAN address in the Ripiano stack (Portainer environment) and redeploy, so Ripiano throttles failed sign-ins per person instead of for everyone coming through the Pi.
 3. **Secrets** (random values Authelia uses to sign and encrypt):
    ```sh
    mkdir -p secrets

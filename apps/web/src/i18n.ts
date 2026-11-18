@@ -17,9 +17,10 @@ const listeners = new Set<() => void>();
 export function readLanguagePreference(): LanguagePreference {
   try {
     const stored = localStorage.getItem(key);
-    return stored === "en" || stored === "it" || stored === "system" ? stored : "en";
+    // With no saved choice, follow the device: an Italian phone starts in Italian.
+    return stored === "en" || stored === "it" || stored === "system" ? stored : "system";
   } catch {
-    return "en";
+    return "system";
   }
 }
 

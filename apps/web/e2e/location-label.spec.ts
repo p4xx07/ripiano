@@ -51,7 +51,7 @@ test("a shelf label finds paper copies inside a nested box", async ({ page }, te
   await upload;
   await page.getByRole("textbox", { name: "Search documents" }).fill(`title:${name}`);
   await page.getByRole("button", { name, exact: true }).click();
-  const detail = page.getByRole("dialog", { name: "Keep it in place." });
+  const detail = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await detail.locator(".new-copy select").selectOption({ label: `${parent} / ${box}` });
   await detail.getByRole("button", { name: "Create sticker" }).click();
   await expect(detail.locator(".copy-card")).toContainText(`${parent} / ${box}`);
@@ -63,5 +63,5 @@ test("a shelf label finds paper copies inside a nested box", async ({ page }, te
   await expect(result.getByRole("button", { name: name })).toBeVisible();
   await result.screenshot({ path: testInfo.outputPath("shelf-contents.png") });
   await result.getByRole("button", { name: name }).click();
-  await expect(page.getByRole("dialog", { name: "Keep it in place." })).toBeVisible();
+  await expect(page.getByRole("dialog").filter({ hasText: "Keep it in place." })).toBeVisible();
 });

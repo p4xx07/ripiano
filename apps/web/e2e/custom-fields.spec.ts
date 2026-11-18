@@ -24,7 +24,7 @@ test("create a typed detail, find it by value, and clear it", async ({ page }, t
   await page.getByRole("button", { name: /Browse files/ }).click();
   await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
   await page.getByRole("button", { name, exact: true }).click();
-  let dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  let dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   const custom = dialog.locator(".custom-fields");
   await custom.getByText("Add a custom field").click();
   await custom.getByRole("textbox", { name: "Field name" }).fill(field);
@@ -59,7 +59,7 @@ test("create a typed detail, find it by value, and clear it", async ({ page }, t
   await expect(page.getByLabel(`${field} value`)).toHaveValue(reference);
   await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   await page.getByRole("button", { name, exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   const reopened = dialog.locator(".custom-fields .custom-field-row").filter({ hasText: field });
   await expect(reopened.getByRole("textbox", { name: field })).toHaveValue(reference);
   await reopened.getByRole("button", { name: "Clear" }).click();
@@ -70,7 +70,7 @@ test("create a typed detail, find it by value, and clear it", async ({ page }, t
   await page.getByRole("button", { name: `Delete saved search ${savedName}` }).click();
   await page.getByRole("button", { name: "Clear filters" }).click();
   await page.getByRole("button", { name, exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   const manage = dialog.locator(".custom-manage");
   await manage.locator("summary").click();
   await manage.getByRole("button", { name: `Rename ${field}` }).click();

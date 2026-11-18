@@ -20,9 +20,10 @@ def test_parse_exclusion_or_and_ranges():
     assert date_range("2026-03-01..") == ("2026-03-01", None)
     assert date_range(">2026-03-01") == ("2026-03-02", None) and date_range("<2026-03") == (None, "2026-02-28")
     assert date_range(">=2026") == ("2026-01-01", None) and date_range("<=2026-03") == (None, "2026-03-31")
-    for bad in ("2026-13", "2026-02-30", "..", "26", "2026-03-02..2026-03-01", "2026--01"):
-        with pytest.raises(ValueError):
+    for bad in (">9999", "<0001", ">9999-12-31", "2026-13", "2026-02-30", "..", "26", "2026-03-02..2026-03-01", "2026--01"):
+        with pytest.raises(ValueError) as error:
             date_range(bad)
+        assert str(error.value)[:3] in ("Use", "The")  # always a message written for people
 
 
 @pytest.mark.django_db

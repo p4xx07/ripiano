@@ -1,0 +1,819 @@
+===== lib.mjs =====
+import { chromium, request as pwRequest } from "/Users/debotta/dbrepos/ripiano/apps/web/node_modules/@playwright/test/index.mjs";
+import fs from "node:fs";
+export { chromium, pwRequest };
+export const BASE = "http://localhost:18080";
+export const SCR = "/private/tmp/claude-501/-Users-debotta-dbrepos-ripiano/23569b07-51e7-4ab9-89ce-c4e342f5998a/scratchpad";
+export const OUT = "/Users/debotta/dbrepos/ripiano/qa-artifacts/20261118-judge-3";
+export const FIX = "/Users/debotta/dbrepos/ripiano/apps/web/e2e/fixtures";
+export function password(key = "JUDGE3_PASSWORD") {
+  const line = fs.readFileSync(`${SCR}/judges.env`, "utf8").split("\n").find((l) => l.startsWith(key + "="));
+  return line.slice(key.length + 1).trim().replace(/^['"]|['"]$/g, "");
+}
+export function mask(s) { return String(s).replace(/(rip_|rpa_|ripa_)[A-Za-z0-9_\-]+/g, "$1****").replace(/[A-Za-z0-9_\-]{40,}/g, "****"); }
+// API context with a session cookie and CSRF header helper
+export async function apiSession(username = "judge3", pw = password()) {
+  const ctx = await pwRequest.newContext({ baseURL: BASE, extraHTTPHeaders: { Origin: BASE, Referer: BASE + "/" } });
+  await ctx.get("/api/session");
+  let csrf = (await ctx.storageState()).cookies.find((c) => c.name === "csrftoken")?.value;
+  const r = await ctx.post("/api/session", { data: { username, password: pw }, headers: csrf ? { "X-CSRFToken": csrf } : {} });
+  if (!r.ok()) throw new Error("login failed " + r.status() + " " + (await r.text()));
+  csrf = (await ctx.storageState()).cookies.find((c) => c.name === "csrftoken")?.value;
+  const h = () => ({ "X-CSRFToken": csrf });
+  return {
+    ctx,
+    get: (u) => ctx.get(u),
+    post: (u, data, extra = {}) => ctx.post(u, { data, headers: { ...h(), ...(extra.headers || {}) }, ...extra }),
+    patch: (u, data) => ctx.patch(u, { data, headers: h() }),
+    del: (u) => ctx.delete(u, { headers: h() }),
+    multipart: (u, multipart) => ctx.post(u, { multipart, headers: h() }),
+  };
+}
+export async function uiLogin(page, username = "judge3", pw = password()) {
+  await page.goto(BASE + "/");
+  await page.getByLabel(/Username|Nome utente/).fill(username);
+  await page.getByLabel(/^(Password)$/).fill(pw);
+  await page.getByRole("button", { name: /Sign in|Accedi/ }).click();
+  await page.waitForTimeout(1500);
+}
+export async function j(r) { const t = await r.text(); try { return JSON.parse(t); } catch { return t.slice(0, 500); } }
+
+===== probe.mjs =====
+import { chromium } from "/Users/debotta/dbrepos/ripiano/apps/web/node_modules/@playwright/test/index.mjs";
+const browser = await chromium.launch({ channel: "chrome" });
+console.log("chrome", browser.version());
+const page = await browser.newPage();
+const r = await page.goto("http://localhost:18080/");
+console.log("status", r.status(), await page.title());
+await browser.close();
+
+===== s1-explore.mjs =====
+import { chromium, apiSession, uiLogin, OUT, j, mask } from "./lib.mjs";
+const api = await apiSession();
+console.log("session", await j(await api.get("/api/session")));
+const docs = await j(await api.get("/api/documents"));
+console.log("docs", JSON.stringify(docs).slice(0, 600));
+console.log("agents", mask(JSON.stringify(await j(await api.get("/api/agents")))).slice(0, 800));
+console.log("tokens", mask(JSON.stringify(await j(await api.get("/api/account/tokens")))).slice(0, 400));
+console.log("people", JSON.stringify(await j(await api.get("/api/people"))).slice(0, 600));
+console.log("backups", JSON.stringify(await j(await api.get("/api/backups"))).slice(0, 600));
+const browser = await chromium.launch({ channel: "chrome" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await uiLogin(page);
+await page.screenshot({ path: `${OUT}/01-desktop-home.png` });
+const nav = await page.locator("nav a, nav button").allInnerTexts();
+console.log("nav", nav);
+await browser.close();
+
+===== s2-capture.mjs =====
+import { chromium, apiSession, uiLogin, OUT, FIX, j } from "./lib.mjs";
+const browser = await chromium.launch({ channel: "chrome" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await uiLogin(page);
+await page.getByRole("button", { name: "Add document" }).first().click();
+await page.waitForTimeout(800);
+await page.screenshot({ path: `${OUT}/02-desktop-add-dialog.png` });
+const inputs = page.locator('input[type="file"]');
+console.log("file inputs", await inputs.count());
+for (let i = 0; i < await inputs.count(); i++) console.log(i, await inputs.nth(i).getAttribute("accept"), await inputs.nth(i).getAttribute("multiple"), await inputs.nth(i).getAttribute("capture"), await inputs.nth(i).getAttribute("aria-label"));
+const dialogText = await page.locator('[role="dialog"]').first().innerText().catch(() => "none");
+console.log("dialog:", dialogText.slice(0, 800));
+await browser.close();
+
+===== s3-upload.mjs =====
+import { chromium, apiSession, uiLogin, OUT, FIX, j } from "./lib.mjs";
+const BAD = "/private/tmp/claude-501/-Users-debotta-dbrepos-ripiano/23569b07-51e7-4ab9-89ce-c4e342f5998a/scratchpad/j3/bad";
+const browser = await chromium.launch({ channel: "chrome" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await uiLogin(page);
+async function openAdd() { await page.getByRole("button", { name: "Add document" }).first().click(); await page.waitForTimeout(500); }
+// camera
+await openAdd();
+await page.locator('input[type="file"]').nth(0).setInputFiles(`${FIX}/judge.png`);
+await page.waitForTimeout(3000);
+await page.screenshot({ path: `${OUT}/03-desktop-after-camera.png` });
+console.log("after camera:", (await page.locator("main").innerText()).slice(0, 600));
+// files, mixed validity
+await openAdd().catch((e) => console.log("reopen failed", e.message));
+const files = ["three-pages.pdf", "office-letter.docx", "email-notice.eml", "outlook-notice.msg", "office-sheet.xlsx", "office-legacy.doc", "tag-barcode-desktop.pdf", "asn-batch-desktop.pdf", "barcode-batch-desktop.pdf", "office-open.odt", "office-slides.pptx"].map((f) => `${FIX}/${f}`);
+await page.locator('input[type="file"]').nth(2).setInputFiles([...files, `${BAD}/fake-invoice.pdf`, `${BAD}/empty.pdf`]);
+await page.waitForTimeout(8000);
+await page.screenshot({ path: `${OUT}/04-desktop-batch-mixed.png`, fullPage: false });
+console.log("after batch:", (await page.locator("body").innerText()).slice(0, 2000));
+await browser.close();
+
+===== s4-status.mjs =====
+import { apiSession, j } from "./lib.mjs";
+const api = await apiSession();
+const d = await j(await api.get("/api/documents"));
+console.log(d.counts);
+for (const x of d.documents) console.log(x.id, x.status, x.original_filename || x.filename, "|", x.title, "|", (x.correspondent && x.correspondent.name) || "", (x.tags || []).map((t) => t.name).join(","), x.duplicate_of ? "DUP" : "");
+console.log(Object.keys(d.documents[0]).join(","));
+const one = await j(await api.get(`/api/documents/${d.documents.find((x) => (x.original_filename || "").includes("three") || x.title === "three-pages").id}`));
+console.log(JSON.stringify(one).slice(0, 1500));
+
+===== s5-agents-tokens.mjs =====
+import { apiSession, pwRequest, BASE, j, mask, password } from "./lib.mjs";
+import fs from "node:fs";
+const log = (...a) => console.log(...a.map((x) => mask(typeof x === "string" ? x : JSON.stringify(x))));
+const api = await apiSession();
+const docs = (await j(await api.get("/api/documents"))).documents;
+const byTitle = (t) => docs.find((d) => d.title === t);
+const three = byTitle("three-pages"), letter = byTitle("office-letter"), tari = byTitle("Avviso TARI 2026 lampone");
+
+// ---- CSRF: session POST without CSRF header
+const raw = api.ctx;
+let r = await raw.post("/api/tags", { data: { name: "j3-csrf-probe" } });
+log("CSRF missing ->", r.status(), (await r.text()).slice(0, 120));
+r = await raw.post("/api/tags", { data: { name: "j3-csrf-probe" }, headers: { "X-CSRFToken": "bogus" } });
+log("CSRF bogus ->", r.status());
+
+// ---- tags
+async function tag(name) {
+  const all = await j(await api.get("/api/tags"));
+  const list = all.tags || all;
+  const ex = list.find((t) => t.name === name);
+  if (ex) return ex;
+  const c = await api.post("/api/tags", { name });
+  const body = await j(c);
+  log("create tag", name, c.status());
+  return body.tag || body;
+}
+const tOk = await tag("j3-agent-ok");
+r = await api.post("/api/documents/bulk-tags", { document_ids: [three.id], tag_id: tOk.id, action: "add" });
+log("bulk tag ->", r.status());
+
+// ---- Agent grants
+r = await api.post("/api/agents", { name: "j3-bad", scopes: ["documents:search", "documents:search"], expires_in_days: 7 });
+log("dup scopes ->", r.status(), await j(r));
+r = await api.post("/api/agents", { name: "j3-bad", scopes: ["documents:admin"], expires_in_days: 7 });
+log("unknown scope ->", r.status());
+r = await api.post("/api/agents", { name: "j3-bad", scopes: ["documents:search"], expires_in_days: 0 });
+log("expiry 0 ->", r.status());
+r = await api.post("/api/agents", { name: "j3-bad", scopes: ["documents:search"], expires_in_days: true });
+log("expiry bool ->", r.status());
+const gA = await j(await api.post("/api/agents", { name: "j3-agent-A text+tag filter", scopes: ["documents:search", "documents:text"], filter_tag_id: tOk.id, expires_in_days: 7 }));
+const gB = await j(await api.post("/api/agents", { name: "j3-agent-B titles only", scopes: ["documents:search"], expires_in_days: 7 }));
+log("grant A keys", Object.keys(gA), "grant B keys", Object.keys(gB));
+const tokA = gA.token, tokB = gB.token;
+const idA = (gA.grant || gA).id, idB = (gB.grant || gB).id;
+log("tokens present", !!tokA, !!tokB, tokA && tokA.slice(0, 4));
+
+const mcp = await pwRequest.newContext({ baseURL: BASE });
+let rid = 1;
+async function call(tok, method, params = {}, extraHeaders = {}) {
+  const res = await mcp.post("/mcp", { headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18", ...extraHeaders }, data: { jsonrpc: "2.0", id: rid++, method, params } });
+  const text = await res.text();
+  let body; try { body = JSON.parse(text); } catch { body = text.slice(0, 300); }
+  return { status: res.status(), body, headers: res.headers() };
+}
+const init = { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "judge3", version: "1" } };
+log("A init", (await call(tokA, "initialize", init)).status);
+const listA = await call(tokA, "tools/list");
+const listB = await call(tokB, "tools/list");
+log("A tools", listA.status, (listA.body.result?.tools || []).map((t) => t.name));
+log("B tools", listB.status, (listB.body.result?.tools || []).map((t) => t.name));
+// B search by OCR phrase (should match titles only)
+const sB = await call(tokB, "tools/call", { name: "search_documents", arguments: { query: "lampone" } });
+log("B search 'lampone'", sB.status, JSON.stringify(sB.body.result?.structuredContent || sB.body).slice(0, 400));
+const sB2 = await call(tokB, "tools/call", { name: "search_documents", arguments: { query: "" } });
+log("B search all count", JSON.stringify(sB2.body.result?.structuredContent || sB2.body).slice(0, 300));
+const tB = await call(tokB, "tools/call", { name: "get_document_text", arguments: { document_id: three.id } });
+log("B get_document_text (not granted)", tB.status, JSON.stringify(tB.body.result?.structuredContent || tB.body).slice(0, 200));
+// A: allowed doc, disallowed doc
+const tA1 = await call(tokA, "tools/call", { name: "get_document_text", arguments: { document_id: three.id } });
+log("A text tagged doc", tA1.status, JSON.stringify(tA1.body.result?.structuredContent || tA1.body).slice(0, 250));
+const tA2 = await call(tokA, "tools/call", { name: "get_document_text", arguments: { document_id: tari.id } });
+log("A text untagged doc", tA2.status, JSON.stringify(tA2.body.result?.structuredContent || tA2.body).slice(0, 250));
+const sA = await call(tokA, "tools/call", { name: "search_documents", arguments: { query: "" } });
+log("A search all", JSON.stringify(sA.body.result?.structuredContent || sA.body).slice(0, 400));
+const ctA = await call(tokA, "tools/call", { name: "change_document_tags", arguments: { document_id: three.id, add: [tOk.id] } });
+log("A change tags (not granted)", JSON.stringify(ctA.body.result?.structuredContent || ctA.body).slice(0, 200));
+// Bad tokens / origin
+log("no token", (await mcp.post("/mcp", { headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, data: { jsonrpc: "2.0", id: 9, method: "tools/list" } })).status());
+log("garbage token", (await call("rpa_" + "x".repeat(40), "tools/list")).status);
+log("evil Origin", (await call(tokA, "tools/list", {}, { Origin: "https://evil.example" })).status);
+log("evil Host", (await call(tokA, "tools/list", {}, { Host: "evil.example" })).status);
+// Agent token on REST API, as Token and Bearer
+const rest = await pwRequest.newContext({ baseURL: BASE });
+log("agent token as API Token", (await rest.get("/api/documents", { headers: { Authorization: `Token ${tokA}` } })).status());
+log("agent token as Bearer on /api", (await rest.get("/api/documents", { headers: { Authorization: `Bearer ${tokA}` } })).status());
+// Revoke B
+r = await api.del(`/api/agents/${idB}`);
+log("revoke B ->", r.status());
+if (r.status() >= 400) { r = await api.patch(`/api/agents/${idB}`, { revoked: true }); log("revoke B PATCH ->", r.status()); }
+const afterB = await call(tokB, "tools/list");
+log("B after revoke", afterB.status, JSON.stringify(afterB.body).slice(0, 150));
+log("A still works", (await call(tokA, "tools/list")).status);
+// audit
+const ev = await j(await api.get("/api/agents/events"));
+log("events", JSON.stringify(ev).slice(0, 1500));
+const grants = await j(await api.get("/api/agents"));
+log("grants", grants.grants.map((g) => [g.name, g.scopes, g.filter_tag_name, g.revoked_at ? "revoked" : "active", g.last_used_at ? "used" : "unused"]));
+
+// ---- API tokens
+r = await api.post("/api/account/tokens", { name: "j3-script", expires_in_days: 7, password: "wrong" });
+log("token wrong pw ->", r.status());
+r = await api.post("/api/account/tokens", { name: "j3-script", expires_in_days: 400, password: password() });
+log("token 400d ->", r.status());
+const tk = await j(await api.post("/api/account/tokens", { name: "j3-script", expires_in_days: 7, password: password() }));
+const apiTok = tk.token; const apiTokId = (tk.item || tk.token_info || tk).id;
+log("api token keys", Object.keys(tk), "prefix", apiTok && apiTok.slice(0, 4));
+const T = (path, opt = {}) => ({ ...opt, headers: { Authorization: `Token ${apiTok}`, ...(opt.headers || {}) } });
+log("token GET docs", (await rest.get("/api/documents", T())).status());
+log("token POST tag (no csrf)", (await rest.post("/api/tags", T("", { data: { name: "j3-token-tag" } }))).status());
+log("token GET account/tokens", (await rest.get("/api/account/tokens", T())).status());
+log("token POST agents", (await rest.post("/api/agents", T("", { data: { name: "x", scopes: ["documents:search"] } }))).status());
+log("token GET people", (await rest.get("/api/people", T())).status());
+log("token POST share link", (await rest.post(`/api/documents/${three.id}/shares`, T("", { data: { expires_in_days: 1 } }))).status());
+log("token POST access grant", (await rest.post(`/api/documents/${three.id}/access`, T("", { data: { level: "view" } }))).status());
+log("token POST email (bad body, probes reachability)", (await rest.post(`/api/documents/${three.id}/email`, T("", { data: { to: "" } }))).status());
+log("token GET sources", (await rest.get("/api/sources", T())).status());
+log("token GET backups", (await rest.get("/api/backups", T())).status());
+log("token GET workflows", (await rest.get("/api/workflows", T())).status());
+log("token GET mail accounts", (await rest.get("/api/mail/accounts", T())).status());
+log("token GET semantic-settings", (await rest.get("/api/semantic-settings", T())).status());
+log("token GET /mcp as Bearer", (await mcp.post("/mcp", { headers: { Authorization: `Bearer ${apiTok}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, data: { jsonrpc: "2.0", id: 1, method: "tools/list" } })).status());
+log("token lowercase scheme", (await rest.get("/api/documents", { headers: { Authorization: `token ${apiTok}` } })).status());
+r = await api.del(`/api/account/tokens/${apiTokId}`);
+log("revoke api token ->", r.status());
+log("token after revoke", (await rest.get("/api/documents", T())).status());
+fs.writeFileSync("/private/tmp/claude-501/-Users-debotta-dbrepos-ripiano/23569b07-51e7-4ab9-89ce-c4e342f5998a/scratchpad/j3/state.json", JSON.stringify({ tokA, idA, tagOk: tOk.id, three: three.id, tari: tari.id, letter: letter.id }));
+
+===== s6-people.mjs =====
+import { chromium, uiLogin, OUT } from "./lib.mjs";
+const browser = await chromium.launch({ channel: "chrome" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await uiLogin(page);
+await page.getByRole("button", { name: "People", exact: true }).click().catch(async () => page.getByRole("link", { name: "People", exact: true }).click());
+await page.waitForTimeout(1200);
+await page.screenshot({ path: `${OUT}/05-desktop-people.png` });
+const labels = await page.locator("main label").allInnerTexts();
+console.log("labels", labels);
+console.log((await page.locator("main").innerText()).slice(0, 1200));
+await browser.close();
+
+===== s7-iso.mjs =====
+import { chromium, uiLogin, OUT, apiSession, pwRequest, BASE, j, password, SCR } from "./lib.mjs";
+import fs from "node:fs";
+import crypto from "node:crypto";
+const ISO = "judge3-iso";
+const isoFile = `${SCR}/j3/iso.env`;
+let isoPw = fs.existsSync(isoFile) ? fs.readFileSync(isoFile, "utf8").trim() : crypto.randomBytes(12).toString("base64url");
+fs.writeFileSync(isoFile, isoPw, { mode: 0o600 });
+const st = JSON.parse(fs.readFileSync(`${SCR}/j3/state.json`, "utf8"));
+const owner = await apiSession();
+const people = (await j(await owner.get("/api/people"))).people;
+let iso = people.find((p) => p.username === ISO);
+if (!iso) {
+  const browser = await chromium.launch({ channel: "chrome" });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await uiLogin(page);
+  await page.getByRole("button", { name: "People", exact: true }).click();
+  await page.waitForTimeout(1000);
+  await page.getByLabel("Your password").fill(password());
+  const form = page.locator("form", { has: page.getByRole("button", { name: "Add person" }) });
+  await form.getByLabel("Username").fill(ISO);
+  await form.getByLabel(/^Password/).fill(isoPw);
+  await form.getByRole("button", { name: "Add person" }).click();
+  await page.waitForTimeout(1500);
+  await page.getByText(`${ISO} can now sign in.`).screenshot({ path: `${OUT}/06-desktop-person-added.png` }).catch((e) => console.log("no confirmation", e.message));
+  await browser.close();
+  iso = (await j(await owner.get("/api/people"))).people.find((p) => p.username === ISO);
+}
+console.log("iso", iso && { id: iso.id, admin: iso.is_admin });
+// Share three-pages with iso (view)
+let r = await owner.post(`/api/documents/${st.three}/access`, { person_id: iso.id, level: "view" });
+let body = await j(r);
+console.log("share view ->", r.status(), JSON.stringify(body).slice(0, 200));
+if (r.status() >= 400) { r = await owner.post(`/api/documents/${st.three}/access`, { user_id: iso.id, level: "view" }); body = await j(r); console.log("share retry ->", r.status(), JSON.stringify(body).slice(0, 200)); }
+const grantId = body.id || body.grant?.id || (body.grants || []).find?.((g) => g.username === ISO)?.id;
+const B = await apiSession(ISO, isoPw);
+const shared = await j(await B.get("/api/documents?view=shared"));
+console.log("B shared docs", shared.documents.map((d) => [d.title, d.access]));
+console.log("B own docs", (await j(await B.get("/api/documents"))).counts);
+console.log("B GET shared doc", (await B.get(`/api/documents/${st.three}`)).status());
+console.log("B GET unshared doc", (await B.get(`/api/documents/${st.tari}`)).status());
+console.log("B download shared original", (await B.get(`/api/documents/${st.three}/original`)).status());
+console.log("B download unshared original", (await B.get(`/api/documents/${st.tari}/original`)).status());
+console.log("B archive unshared", (await B.get(`/api/documents/${st.tari}/archive`)).status());
+console.log("B pages unshared", (await B.get(`/api/documents/${st.tari}/pages/1.png`)).status());
+console.log("B export unshared", (await B.get(`/api/documents/${st.tari}/export`)).status());
+console.log("B PATCH title on view-only", (await B.patch(`/api/documents/${st.three}`, { title: "hacked" })).status());
+console.log("B notes add on view-only", (await B.post(`/api/documents/${st.three}/notes`, { body: "x" })).status());
+console.log("B trash shared", (await B.post(`/api/documents/${st.three}/trash`, {})).status());
+console.log("B share-link shared doc", (await B.post(`/api/documents/${st.three}/shares`, { expires_in_days: 1 })).status());
+console.log("B re-share access", (await B.post(`/api/documents/${st.three}/access`, { person_id: iso.id, level: "edit" })).status());
+console.log("B bulk-tags owner doc", (await B.post(`/api/documents/bulk-tags`, { document_ids: [st.three], tag_id: st.tagOk, action: "add" })).status());
+console.log("B export collection", (await B.post(`/api/documents/export`, { document_ids: [st.three, st.tari] })).status());
+console.log("B search 'otter' own", JSON.stringify((await j(await B.get(`/api/documents?q=otter`))).counts));
+console.log("B search 'lampone' shared view", (await j(await B.get(`/api/documents?view=shared&q=lampone`))).documents.length);
+console.log("B people", (await B.get(`/api/people`)).status());
+console.log("B agents", (await B.get(`/api/agents`)).status());
+console.log("B backups", (await B.get(`/api/backups`)).status());
+console.log("B owner tag detail", (await B.get(`/api/tags/${st.tagOk}`)).status());
+console.log("B jobs", JSON.stringify(await j(await B.get(`/api/jobs`))).slice(0, 200));
+console.log("B overview", JSON.stringify(await j(await B.get(`/api/overview`))).slice(0, 200));
+console.log("B semantic-search", (await B.get(`/api/semantic-search?q=otter`)).status(), JSON.stringify(await j(await B.get(`/api/semantic-search?q=otter`))).slice(0, 200));
+// revoke share
+const access = await j(await owner.get(`/api/documents/${st.three}/access`));
+console.log("access list", JSON.stringify(access).slice(0, 300));
+const g = (access.grants || access.access || []).find((x) => (x.username || x.person?.username || x.name) === ISO);
+if (g) {
+  r = await owner.del(`/api/documents/${st.three}/access/${g.id}`);
+  console.log("revoke share ->", r.status());
+  console.log("B GET after revoke", (await B.get(`/api/documents/${st.three}`)).status(), "original", (await B.get(`/api/documents/${st.three}/original`)).status());
+}
+fs.writeFileSync(`${SCR}/j3/state.json`, JSON.stringify({ ...st, isoId: iso.id }));
+
+===== s8-iso2.mjs =====
+import { apiSession, j, SCR, pwRequest, BASE } from "./lib.mjs";
+import fs from "node:fs";
+const st = JSON.parse(fs.readFileSync(`${SCR}/j3/state.json`, "utf8"));
+const isoPw = fs.readFileSync(`${SCR}/j3/iso.env`, "utf8").trim();
+const owner = await apiSession();
+const B = await apiSession("judge3-iso", isoPw);
+const p = await j(await B.get("/api/people"));
+console.log("B /api/people keys", Object.keys(p), "count", (p.people || []).length, JSON.stringify((p.people || [])[0]));
+// edit share then test edit perms
+const access = await j(await owner.get(`/api/documents/${st.three}/access`));
+const g = access.grants.find((x) => x.target.name === "judge3-iso");
+let r = await owner.patch(`/api/documents/${st.three}/access/${g.id}`, { level: "edit" });
+console.log("upgrade to edit ->", r.status());
+console.log("B PATCH title as editor", (await B.patch(`/api/documents/${st.three}`, { title: "three-pages (iso edit)" })).status());
+console.log("B PATCH tags as editor (owner tag not shared)", (await B.patch(`/api/documents/${st.three}`, { tag_ids: [] })).status());
+console.log("B add note as editor", (await B.post(`/api/documents/${st.three}/notes`, { body: "note from iso" })).status());
+console.log("B download page png", (await B.get(`/api/documents/${st.three}/pages/1.png`)).status());
+// iso token
+r = await B.post("/api/account/tokens", { name: "iso", expires_in_days: 7, password: isoPw });
+const tk = await j(r);
+console.log("iso token create", r.status());
+const rest = await pwRequest.newContext({ baseURL: BASE });
+const T = { headers: { Authorization: `Token ${tk.token}` } };
+console.log("iso token shared docs", (await j(await rest.get("/api/documents?view=shared", T))).documents.length);
+console.log("iso token unshared doc", (await rest.get(`/api/documents/${st.tari}`, T)).status());
+// revoke share
+r = await owner.del(`/api/documents/${st.three}/access/${g.id}`);
+console.log("revoke share ->", r.status());
+console.log("B GET after revoke", (await B.get(`/api/documents/${st.three}`)).status(), "original", (await B.get(`/api/documents/${st.three}/original`)).status(), "token", (await rest.get(`/api/documents/${st.three}`, T)).status());
+console.log("B shared list after revoke", (await j(await B.get("/api/documents?view=shared"))).documents.length);
+// password reset ends iso token
+const ownerPw = (await import("./lib.mjs")).password();
+const newPw = isoPw + "Z1";
+r = await owner.patch(`/api/people/${st.isoId}`, { password: newPw, current_password: ownerPw });
+console.log("reset iso password ->", r.status(), JSON.stringify(await j(r)).slice(0, 120));
+console.log("iso token after reset", (await rest.get(`/api/documents`, T)).status());
+console.log("iso old session after reset", (await B.get(`/api/documents`)).status());
+fs.writeFileSync(`${SCR}/j3/iso.env`, newPw, { mode: 0o600 });
+// restore title
+await owner.patch(`/api/documents/${st.three}`, { title: "three-pages" });
+
+===== s9-upload-sec.mjs =====
+import { apiSession, j, SCR, FIX } from "./lib.mjs";
+import fs from "node:fs";
+import net from "node:net";
+import crypto from "node:crypto";
+const BAD = `${SCR}/j3/bad`;
+const api = await apiSession();
+const up = async (name, buf, mime = "application/octet-stream", headers = {}) => {
+  const r = await api.ctx.post("/api/documents", { multipart: { document: { name, mimeType: mime, buffer: buf } }, headers: { "X-CSRFToken": (await api.ctx.storageState()).cookies.find((c) => c.name === "csrftoken").value, ...headers } });
+  return { status: r.status(), body: await j(r) };
+};
+let r = await up("polyglot.pdf", fs.readFileSync(`${BAD}/polyglot.pdf`), "application/pdf");
+console.log("polyglot %PDF+html ->", r.status, r.body.status || r.body.error, r.body.id);
+const polyId = r.body.id;
+r = await up("svg-as.png", fs.readFileSync(`${BAD}/x.png`), "image/png");
+console.log("svg-as-png ->", r.status, r.body.error || r.body.status);
+r = await up("doc.html", Buffer.from("<html><script>alert(1)</script></html>"), "text/html");
+console.log("html ->", r.status, r.body.error || r.body.status);
+r = await up("<img src=x onerror=alert(1)>.pdf", fs.readFileSync(`${FIX}/three-pages.pdf`), "application/pdf");
+console.log("xss filename (duplicate bytes) ->", r.status, r.body.title, r.body.original_name, "dup:", !!r.body.duplicate_of);
+const xssId = r.body.id;
+r = await up("../../../../etc/passwd.pdf", Buffer.concat([fs.readFileSync(`${FIX}/three-pages.pdf`), Buffer.from("\n%j3-traversal\n")]), "application/pdf");
+console.log("traversal filename ->", r.status, r.body.title, r.body.original_name);
+const travId = r.body.id;
+const big = Buffer.concat([Buffer.from("%PDF-1.4\n"), crypto.randomBytes(26 * 1024 * 1024)]);
+r = await up("big.pdf", big, "application/pdf").catch((e) => ({ status: "ERR", body: { error: e.message } }));
+console.log("26MB ->", r.status, JSON.stringify(r.body).slice(0, 150));
+// zip bomb-ish docx: random zip with docx name
+r = await up("not-really.docx", Buffer.from("PK\x03\x04garbage"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+console.log("broken docx ->", r.status, r.body.error || r.body.status);
+// Android-style idempotent retry
+const scan = crypto.randomUUID();
+const pngBytes = Buffer.concat([fs.readFileSync(`${FIX}/judge.png`)]);
+const a1 = await up("scan-retry.png", pngBytes, "image/png", { "X-Ripiano-Scan-ID": scan });
+const a2 = await up("scan-retry.png", pngBytes, "image/png", { "X-Ripiano-Scan-ID": scan });
+console.log("scan retry", a1.status, a2.status, "same id:", a1.body.id === a2.body.id);
+r = await up("x.png", pngBytes, "image/png", { "X-Ripiano-Scan-ID": "not-a-uuid" });
+console.log("bad scan id ->", r.status);
+// polyglot download headers
+if (polyId) {
+  await new Promise((res) => setTimeout(res, 4000));
+  const d = await api.get(`/api/documents/${polyId}/original`);
+  const h = d.headers();
+  console.log("polyglot original", d.status(), h["content-type"], "| disp:", h["content-disposition"], "| nosniff:", h["x-content-type-options"], "| csp:", h["content-security-policy"]);
+  const det = await j(await api.get(`/api/documents/${polyId}`));
+  console.log("polyglot doc status", det.status, det.error);
+}
+// interrupted upload: send headers + half body over raw socket then destroy
+const before = (await j(await api.get("/api/documents"))).counts.total;
+const st = await api.ctx.storageState();
+const cookie = st.cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+const csrf = st.cookies.find((c) => c.name === "csrftoken").value;
+const boundary = "----j3boundary";
+const file = fs.readFileSync(`${FIX}/office-letter.docx`);
+const head = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="interrupted.docx"\r\nContent-Type: application/octet-stream\r\n\r\n`);
+const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+const total = head.length + file.length + tail.length;
+await new Promise((resolve) => {
+  const s = net.connect(18080, "localhost", () => {
+    s.write(`POST /api/documents HTTP/1.1\r\nHost: localhost:18080\r\nOrigin: http://localhost:18080\r\nReferer: http://localhost:18080/\r\nCookie: ${cookie}\r\nX-CSRFToken: ${csrf}\r\nContent-Type: multipart/form-data; boundary=${boundary}\r\nContent-Length: ${total}\r\n\r\n`);
+    s.write(head); s.write(file.subarray(0, Math.floor(file.length / 2)));
+    setTimeout(() => { s.destroy(); resolve(); }, 1500);
+  });
+  s.on("error", () => resolve());
+});
+await new Promise((res) => setTimeout(res, 3000));
+const after = await j(await api.get("/api/documents"));
+console.log("interrupted upload: docs before", before, "after", after.counts.total, "interrupted present:", after.documents.some((d) => d.original_name === "interrupted.docx"));
+console.log("health", (await api.get("/healthz")).status());
+fs.writeFileSync(`${SCR}/j3/up.json`, JSON.stringify({ polyId, xssId, travId }));
+
+===== s10-reliab.mjs =====
+import { apiSession, j, SCR, FIX, pwRequest, BASE } from "./lib.mjs";
+import fs from "node:fs";
+const api = await apiSession();
+const anon = await pwRequest.newContext({ baseURL: BASE });
+for (const p of ["/", "/api/session", "/mcp"]) {
+  const r = p === "/mcp" ? await anon.post(p, { data: {} }) : await anon.get(p);
+  const h = r.headers();
+  console.log(p, r.status(), "csp:", (h["content-security-policy"] || "none").slice(0, 120), "| xfo:", h["x-frame-options"], "| nosniff:", h["x-content-type-options"], "| referrer:", h["referrer-policy"], "| www-auth:", h["www-authenticate"]);
+}
+const up = JSON.parse(fs.readFileSync(`${SCR}/j3/up.json`, "utf8"));
+// retry a failed doc
+let r = await api.post(`/api/documents/${up.polyId}/retry`, {});
+console.log("retry failed polyglot ->", r.status(), JSON.stringify(await j(r)).slice(0, 120));
+await new Promise((res) => setTimeout(res, 5000));
+console.log("polyglot after retry", (await j(await api.get(`/api/documents/${up.polyId}`))).status);
+// queue several then cancel
+const csrf = (await api.ctx.storageState()).cookies.find((c) => c.name === "csrftoken").value;
+const ids = [];
+for (let i = 0; i < 4; i++) {
+  const buf = Buffer.concat([fs.readFileSync(`${FIX}/asn-batch-mobile.pdf`), Buffer.from(`\n%j3-cancel-${i}-${Date.now()}\n`)]);
+  const res = await api.ctx.post("/api/documents", { multipart: { document: { name: `cancel-probe-${i}.pdf`, mimeType: "application/pdf", buffer: buf } }, headers: { "X-CSRFToken": csrf } });
+  ids.push((await j(res)).id);
+}
+const jobs = await j(await api.get("/api/jobs"));
+console.log("jobs waiting", JSON.stringify(jobs.documents_waiting).slice(0, 400));
+for (const id of ids.reverse()) {
+  r = await api.post(`/api/documents/${id}/cancel-processing`, {});
+  console.log("cancel", id.slice(0, 8), r.status(), JSON.stringify(await j(r)).slice(0, 140));
+}
+await new Promise((res) => setTimeout(res, 8000));
+for (const id of ids) {
+  const d = await j(await api.get(`/api/documents/${id}`));
+  console.log("after cancel", id.slice(0, 8), d.status, d.error);
+}
+// retry a cancelled one
+const cancelled = [];
+for (const id of ids) { const d = await j(await api.get(`/api/documents/${id}`)); if (d.status !== "ready") cancelled.push(id); }
+if (cancelled[0]) {
+  r = await api.post(`/api/documents/${cancelled[0]}/retry`, {});
+  console.log("retry cancelled ->", r.status());
+  await new Promise((res) => setTimeout(res, 10000));
+  console.log("retried state", (await j(await api.get(`/api/documents/${cancelled[0]}`))).status);
+}
+// backups
+const b0 = await j(await api.get("/api/backups"));
+console.log("backup runs", b0.runs.length, "latest", b0.runs[0].status, b0.runs[0].created_at, "keys", Object.keys(b0));
+fs.writeFileSync(`${SCR}/j3/cancel.json`, JSON.stringify(ids));
+
+===== s11-backup.mjs =====
+import { chromium, uiLogin, OUT, apiSession, j } from "./lib.mjs";
+const api = await apiSession();
+const browser = await chromium.launch({ channel: "chrome" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await uiLogin(page);
+await page.getByRole("button", { name: "Backups", exact: true }).click();
+await page.waitForTimeout(1200);
+console.log((await page.locator("main").innerText()).slice(0, 900));
+const btn = page.getByRole("button", { name: /back up now|create backup|start backup|run backup/i }).first();
+console.log("backup buttons", await page.getByRole("button").allInnerTexts());
+await btn.click();
+await page.waitForTimeout(500);
+// double click protection: try again via API immediately
+const csrf = (await api.ctx.storageState()).cookies.find((c) => c.name === "csrftoken").value;
+const second = await api.ctx.post("/api/backups", { data: {}, headers: { "X-CSRFToken": csrf } });
+console.log("second concurrent backup request ->", second.status(), JSON.stringify(await j(second)).slice(0, 200));
+await page.screenshot({ path: `${OUT}/07-desktop-backup-started.png` });
+const t0 = Date.now();
+let latest;
+for (let i = 0; i < 60; i++) {
+  latest = (await j(await api.get("/api/backups"))).runs[0];
+  if (["complete", "failed", "cancelled"].includes(latest.status)) break;
+  await new Promise((r) => setTimeout(r, 5000));
+}
+console.log("backup result", latest.status, latest.trigger, latest.snapshot_name, latest.error, "secs", (Date.now() - t0) / 1000);
+await page.reload(); await page.waitForTimeout(1500);
+await page.getByRole("button", { name: "Backups", exact: true }).click().catch(() => {});
+await page.waitForTimeout(1200);
+await page.screenshot({ path: `${OUT}/08-desktop-backup-complete.png` });
+await browser.close();
+
+===== s12-runs.mjs =====
+import { apiSession, j } from "./lib.mjs";
+const api = await apiSession();
+await new Promise((r) => setTimeout(r, 20000));
+const b = await j(await api.get("/api/backups"));
+for (const r of b.runs.slice(0, 6)) console.log(r.created_at, r.status, r.trigger, r.snapshot_name, r.error.slice(0, 120), r.can_retry, r.retry_of);
+console.log(b.runs.filter((r) => r.status !== "complete").map((r) => [r.created_at, r.status, r.error.slice(0, 120)]));
+
+===== s13-ui.mjs =====
+import { chromium, uiLogin, OUT, SCR } from "./lib.mjs";
+import fs from "node:fs";
+const browser = await chromium.launch({ channel: "chrome" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await uiLogin(page);
+await page.getByRole("button", { name: "Agents", exact: true }).click();
+await page.waitForTimeout(1200);
+console.log("AGENTS:", (await page.locator("main").innerText()).slice(0, 2500));
+console.log("labels", await page.locator("main label").allInnerTexts());
+await page.screenshot({ path: `${OUT}/09-desktop-agents.png`, fullPage: true });
+// failed doc
+await page.getByRole("button", { name: "All documents", exact: true }).click();
+await page.waitForTimeout(800);
+await page.getByPlaceholder(/Search text/).fill("polyglot");
+await page.waitForTimeout(1500);
+await page.getByText("polyglot", { exact: true }).first().click();
+await page.waitForTimeout(1200);
+console.log("FAILED DOC:", (await page.locator("body").innerText()).split("Your documents")[1]?.slice(0, 1500));
+await page.screenshot({ path: `${OUT}/10-desktop-failed-doc.png` });
+// big upload via UI
+const big = `${SCR}/j3/bad/big-27mb.pdf`;
+if (!fs.existsSync(big)) fs.writeFileSync(big, Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(27 * 1024 * 1024, 65)]));
+await page.keyboard.press("Escape");
+await page.getByRole("button", { name: "Add document" }).first().click();
+await page.waitForTimeout(400);
+await page.locator('input[type="file"]').nth(2).setInputFiles(big);
+await page.waitForTimeout(5000);
+const alerts = await page.locator('[role="alert"], [role="status"], .error, .notice').allInnerTexts();
+console.log("BIG upload messages:", alerts.filter(Boolean).slice(0, 5));
+await page.screenshot({ path: `${OUT}/11-desktop-too-large.png` });
+await browser.close();
+
+===== s14-agent-ui.mjs =====
+import { chromium, uiLogin, OUT, BASE, pwRequest } from "./lib.mjs";
+const browser = await chromium.launch({ channel: "chrome" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await uiLogin(page);
+{ const { apiSession, j } = await import("./lib.mjs"); const api = await apiSession(); const g = (await j(await api.get("/api/agents"))).grants.find((x) => x.name === "j3-ui-cloud-agent" && !x.revoked_at); if (g) console.log("revoke leaked-screenshot grant", (await api.del(`/api/agents/${g.id}`)).status()); }
+await page.getByRole("button", { name: "Agents", exact: true }).click();
+await page.waitForTimeout(1000);
+const form = page.locator("form", { has: page.getByRole("button", { name: "Create agent token" }) });
+await form.getByLabel("Name").fill("j3-ui-cloud-agent-2");
+await form.getByLabel("Find document titles and tags").check();
+await form.getByLabel("Add or remove tags").check();
+await form.getByLabel("Document access").selectOption({ label: "Only “j3-agent-ok” documents" });
+await form.getByLabel(/Expires after/).fill("3");
+await form.getByRole("button", { name: "Create agent token" }).click();
+await page.waitForTimeout(1500);
+// grab token from DOM, then mask it before screenshot
+const tokInput = page.locator('input[readonly], input').filter({ hasNot: page.locator("xx") });
+let tok = null;
+for (const el of await page.locator("input").all()) { const v = await el.inputValue().catch(() => ""); if (v.startsWith("rpa_")) { tok = v; await el.evaluate((n) => { n.value = "rpa_****MASKED****"; }); } }
+console.log("token shown in UI:", !!tok);
+await page.screenshot({ path: `${OUT}/12-desktop-agent-created-masked.png` });
+console.log((await page.locator("main").innerText()).slice(0, 900).replace(/rpa_[A-Za-z0-9_\-]+/g, "rpa_****"));
+const mcp = await pwRequest.newContext({ baseURL: BASE });
+const call = async (method, params = {}) => { const r = await mcp.post("/mcp", { headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, data: { jsonrpc: "2.0", id: 1, method, params } }); let b; try { b = await r.json(); } catch { b = null; } return { s: r.status(), b }; };
+const l = await call("tools/list");
+console.log("ui agent tools", l.s, (l.b?.result?.tools || []).map((t) => t.name));
+const s = await call("tools/call", { name: "search_documents", arguments: { query: "otter" } });
+console.log("ui agent search 'otter' (OCR word, no text scope)", JSON.stringify(s.b?.result?.structuredContent || s.s).slice(0, 200));
+// revoke via UI
+const card = page.locator("article, li, section").filter({ hasText: "j3-ui-cloud-agent-2" }).filter({ has: page.getByRole("button", { name: /Revoke/ }) }).last();
+await card.getByRole("button", { name: /Revoke/ }).click();
+await page.waitForTimeout(600);
+const confirm = page.getByRole("button", { name: /Confirm|Revoke now|Yes/ });
+if (await confirm.count()) await confirm.first().click();
+await page.waitForTimeout(1200);
+await page.screenshot({ path: `${OUT}/13-desktop-agent-revoked.png` });
+console.log("after revoke status", (await call("tools/list")).s);
+await browser.close();
+
+===== s15-mobile.mjs =====
+import { chromium, uiLogin, OUT, FIX } from "./lib.mjs";
+const browser = await chromium.launch({ channel: "chrome" });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, locale: "it-IT" });
+const page = await ctx.newPage();
+await uiLogin(page);
+const overflow = async (tag) => console.log(tag, "hscroll:", await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1));
+await overflow("home");
+await page.screenshot({ path: `${OUT}/14-mobile-home.png` });
+// switch to Italian
+const langSelect = page.getByLabel(/Language|Lingua/);
+console.log("lang select count", await langSelect.count());
+if (await langSelect.count()) { await langSelect.first().selectOption({ label: "Italiano" }).catch(async () => langSelect.first().selectOption("it")); }
+else {
+  const menu = page.getByRole("button", { name: /menu|Menu/ }).first();
+  if (await menu.count()) { await menu.click(); await page.waitForTimeout(400); }
+  await page.getByLabel(/Language|Lingua/).first().selectOption("it").catch((e) => console.log("lang fail", e.message));
+}
+await page.waitForTimeout(1000);
+await page.keyboard.press("Escape").catch(() => {});
+await page.screenshot({ path: `${OUT}/15-mobile-italian-home.png` });
+console.log("IT text:", (await page.locator("body").innerText()).slice(0, 500));
+// search OCR phrase
+const search = page.getByRole("searchbox").first().or(page.getByPlaceholder(/Cerca|Search/).first());
+await search.first().fill("second heron");
+await page.waitForTimeout(1500);
+await overflow("search");
+await page.screenshot({ path: `${OUT}/16-mobile-it-search-ocr.png` });
+console.log("search results:", (await page.locator("main").innerText()).split("\n").filter((l) => /three|heron|Pagina|Page/i.test(l)).slice(0, 6));
+await page.getByText("three-pages", { exact: true }).first().tap();
+await page.waitForTimeout(1500);
+await overflow("detail");
+await page.screenshot({ path: `${OUT}/17-mobile-it-detail.png` });
+const detailText = await page.locator("body").innerText();
+const english = ["Title", "Document date", "Optional", "Tags", "Download", "Paper copy", "Move to Trash", "Share original", "People with access"].filter((w) => new RegExp(`(^|\\n)${w}(\\n|$)`).test(detailText));
+console.log("english leftovers in IT detail:", english);
+await page.keyboard.press("Escape").catch(() => {});
+// offline interrupted upload in browser
+await page.goto("http://localhost:18080/");
+await page.waitForTimeout(1500);
+await page.getByRole("button", { name: /Aggiungi documento|Add document/ }).first().tap();
+await page.waitForTimeout(500);
+await ctx.setOffline(true);
+await page.locator('input[type="file"]').nth(0).setInputFiles(`${FIX}/judge.png`);
+await page.waitForTimeout(2500);
+const msgs = await page.locator('[role="alert"], [role="status"]').allInnerTexts();
+console.log("offline upload message:", msgs.filter(Boolean));
+await page.screenshot({ path: `${OUT}/18-mobile-offline-upload.png` });
+await ctx.setOffline(false);
+await page.waitForTimeout(3000);
+console.log("after back online:", (await page.locator('[role="alert"], [role="status"]').allInnerTexts()).filter(Boolean));
+await browser.close();
+
+===== s15b-offline.mjs =====
+import { chromium, uiLogin, OUT, FIX } from "./lib.mjs";
+const browser = await chromium.launch({ channel: "chrome" });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, locale: "it-IT" });
+
+const page = await ctx.newPage();
+await uiLogin(page);
+const overflow = async (tag) => console.log(tag, "hscroll:", await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1));
+await overflow("home");
+
+// offline interrupted upload in browser
+await page.goto("http://localhost:18080/");
+await page.waitForTimeout(1500);
+await page.getByRole("button", { name: /^(Aggiungi|Add|Aggiungi documento|Add document)$/ }).first().tap();
+await page.waitForTimeout(500);
+await ctx.setOffline(true);
+await page.locator('input[type="file"]').nth(0).setInputFiles(`${FIX}/judge.png`);
+await page.waitForTimeout(2500);
+const msgs = await page.locator('[role="alert"], [role="status"]').allInnerTexts();
+console.log("offline upload message:", msgs.filter(Boolean));
+await page.screenshot({ path: `${OUT}/18-mobile-offline-upload.png` });
+await ctx.setOffline(false);
+await page.waitForTimeout(3000);
+console.log("after back online:", (await page.locator('[role="alert"], [role="status"]').allInnerTexts()).filter(Boolean));
+await browser.close();
+
+===== s16-keyboard.mjs =====
+import { chromium, uiLogin, OUT } from "./lib.mjs";
+const browser = await chromium.launch({ channel: "chrome" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await uiLogin(page);
+await page.goto("http://localhost:18080/"); await page.waitForTimeout(1500);
+const active = () => page.evaluate(() => { const a = document.activeElement; return `${a.tagName} "${(a.getAttribute("aria-label") || a.innerText || a.getAttribute("placeholder") || "").slice(0, 40)}"`; });
+await page.keyboard.press("Tab"); console.log("Tab1:", await active());
+await page.keyboard.press("Tab"); console.log("Tab2:", await active());
+await page.keyboard.press("Escape");
+await page.locator("body").click({ position: { x: 700, y: 5 } });
+await page.keyboard.press("/"); console.log("after '/':", await active());
+await page.keyboard.type("third badger"); await page.keyboard.press("Enter"); await page.waitForTimeout(1500);
+console.log("results:", (await page.locator("main").innerText()).split("\n").filter((l) => /badger/.test(l)).length, "lines mention badger");
+await page.keyboard.press("Escape"); await page.locator("h1").first().click();
+await page.keyboard.press("j"); await page.waitForTimeout(200); console.log("after j:", await active());
+await page.keyboard.press("Enter"); await page.waitForTimeout(1000); console.log("after Enter:", await active(), "dialog:", await page.locator('[role="dialog"]').count());
+await page.keyboard.press("Escape"); await page.waitForTimeout(500); console.log("after Esc focus returns to:", await active(), "dialog:", await page.locator('[role="dialog"]').count());
+await page.locator("h1").first().click();
+await page.keyboard.press("Shift+?"); await page.waitForTimeout(500);
+console.log("help dialog:", await page.locator('[role="dialog"]').count(), (await page.locator('[role="dialog"]').first().innerText().catch(() => "")).slice(0, 300).replace(/\n/g, " | "));
+await page.screenshot({ path: `${OUT}/19-desktop-keyboard-help.png` });
+await page.keyboard.press("Escape");
+await page.keyboard.press("g"); await page.keyboard.press("a"); await page.waitForTimeout(800);
+console.log("after g a:", await page.locator("h1").first().innerText());
+// Tab through Agents form with keyboard only and check visible focus indicator
+await page.getByRole("button", { name: "Agents", exact: true }).focus();
+await page.keyboard.press("Enter"); await page.waitForTimeout(800);
+let noOutline = 0, n = 0;
+for (let i = 0; i < 25; i++) {
+  await page.keyboard.press("Tab");
+  const vis = await page.evaluate(() => { const a = document.activeElement; const s = getComputedStyle(a); return s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0 || s.boxShadow !== "none"; });
+  n++; if (!vis) noOutline++;
+}
+console.log(`focus indicator missing on ${noOutline}/${n} tab stops (Agents)`);
+await page.screenshot({ path: `${OUT}/20-desktop-keyboard-focus.png` });
+await browser.close();
+
+===== s17-retrieval.mjs =====
+import { apiSession, j, SCR } from "./lib.mjs";
+import fs from "node:fs";
+const st = JSON.parse(fs.readFileSync(`${SCR}/j3/state.json`, "utf8"));
+const api = await apiSession();
+// sender + date on TARI notice
+let c = await j(await api.get("/api/correspondents"));
+let list = c.correspondents || c;
+let sender = list.find((x) => x.name === "J3 Comune di Lampone");
+if (!sender) { const r = await api.post("/api/correspondents", { name: "J3 Comune di Lampone" }); sender = await j(r); sender = sender.correspondent || sender; console.log("create sender", r.status()); }
+let r = await api.patch(`/api/documents/${st.tari}`, { correspondent_id: sender.id, document_date: "2026-03-15" });
+console.log("set sender/date", r.status(), JSON.stringify(await j(r)).slice(0, 150));
+const q = async (s) => { const d = await j(await api.get(`/api/documents?q=${encodeURIComponent(s)}`)); return d.documents ? d.documents.map((x) => x.title).slice(0, 4) : d; };
+console.log("OCR 'second heron':", await q("second heron"));
+console.log("sender:'J3 Comune':", await q('sender:"J3 Comune di Lampone"'));
+console.log("date:2026-03:", await q("date:2026-03"));
+console.log("tag:j3-agent-ok:", await q("tag:j3-agent-ok"));
+console.log("bad date:", await q("date:yesterday"));
+console.log("eml body text 'TARI':", await q("TARI"));
+console.log("msg 'mirtillo':", await q("mirtillo"));
+console.log("docx text:", await q("text:letter"));
+// paper archive
+let loc = await api.post("/api/locations", { name: "J3 Shelf A" });
+const locB = await j(loc); console.log("location", loc.status());
+const locId = (locB.location || locB).id;
+r = await api.post(`/api/documents/${st.tari}/copies`, { location_id: locId });
+const copy = await j(r); console.log("add paper copy", r.status(), JSON.stringify(copy).slice(0, 250));
+const cp = copy.copy || copy.physical_copies?.[0] || copy;
+const sticker = cp.sticker_code || cp.sticker || cp.code;
+console.log("sticker", sticker);
+if (sticker) {
+  r = await api.get(`/api/stickers/${sticker}`); console.log("sticker lookup", r.status(), JSON.stringify(await j(r)).slice(0, 200));
+  console.log("search sticker:", await q(`sticker:${sticker}`));
+}
+if (cp.id) {
+  r = await api.get(`/api/copies/${cp.id}/label`); console.log("label", r.status(), r.headers()["content-type"]);
+  const loc2 = await j(await api.post("/api/locations", { name: "J3 Box 2", parent_id: locId }));
+  r = await api.patch(`/api/copies/${cp.id}`, { location_id: (loc2.location || loc2).id }); console.log("move copy", r.status());
+  r = await api.get(`/api/copies/${cp.id}/history`); console.log("history", JSON.stringify(await j(r)).slice(0, 300));
+}
+// isolation of sticker lookup from iso user
+const isoPw = fs.readFileSync(`${SCR}/j3/iso.env`, "utf8").trim();
+const B = await apiSession("judge3-iso", isoPw);
+if (sticker) console.log("iso sticker lookup of owner sticker", (await B.get(`/api/stickers/${sticker}`)).status(), "label", (await B.get(`/api/copies/${cp.id}/label`)).status(), "location", (await B.get(`/api/locations/${locId}`)).status());
+fs.writeFileSync(`${SCR}/j3/state.json`, JSON.stringify({ ...st, sticker, copyId: cp.id, locId }));
+
+===== s18-final.mjs =====
+import { chromium, uiLogin, OUT, apiSession, pwRequest, BASE, j, SCR } from "./lib.mjs";
+import fs from "node:fs";
+const st = JSON.parse(fs.readFileSync(`${SCR}/j3/state.json`, "utf8"));
+const api = await apiSession();
+// semantic_search tool while feature off
+const mcp = await pwRequest.newContext({ baseURL: BASE });
+const r0 = await mcp.post("/mcp", { headers: { Authorization: `Bearer ${st.tokA}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, data: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "semantic_search", arguments: { query: "otter" } } } });
+console.log("semantic_search while off:", r0.status(), JSON.stringify((await r0.json()).result?.structuredContent).slice(0, 200));
+const q = async (s) => { const d = await j(await api.get(`/api/documents?q=${encodeURIComponent(s)}`)); return d.documents ? d.documents.map((x) => x.title).slice(0, 3) : d; };
+console.log("date:2026-03-15", await q("date:2026-03-15"));
+console.log("date range", await q("date:2026-03-01..2026-03-31"));
+// re-share to iso for UI check
+const share = await j(await api.post(`/api/documents/${st.three}/access`, { user_id: st.isoId, level: "view" }));
+const isoPw = fs.readFileSync(`${SCR}/j3/iso.env`, "utf8").trim();
+const browser = await chromium.launch({ channel: "chrome" });
+const dialogs = [];
+// XSS filename check as owner, desktop
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+page.on("dialog", async (d) => { dialogs.push(d.message()); await d.dismiss(); });
+await uiLogin(page);
+await page.getByPlaceholder(/Search text/).fill("onerror");
+await page.waitForTimeout(1500);
+await page.screenshot({ path: `${OUT}/21-desktop-xss-filename-escaped.png` });
+await page.getByText("<img src=x onerror=alert(1)>", { exact: true }).first().click().catch((e) => console.log("xss title click", e.message));
+await page.waitForTimeout(1500);
+console.log("JS dialogs fired:", dialogs.length);
+await page.keyboard.press("Escape");
+await page.getByRole("button", { name: "Sources", exact: true }).click();
+await page.waitForTimeout(1200);
+console.log("SOURCES:", (await page.locator("main").innerText()).slice(0, 900).replace(/\n+/g, " | "));
+await page.screenshot({ path: `${OUT}/22-desktop-sources.png` });
+// iso user on mobile: shared with me
+const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+const m = await mctx.newPage();
+const failed = [];
+m.on("response", (r) => { if (r.status() >= 400 && r.url().includes("/api/")) failed.push(`${r.status()} ${r.url().replace(BASE, "")}`); });
+await uiLogin(m, "judge3-iso", isoPw);
+const menu = m.getByRole("button", { name: /menu/i }).first();
+if (await menu.count()) { await menu.tap(); await m.waitForTimeout(400); }
+await m.getByRole("button", { name: "Shared with me", exact: true }).tap();
+await m.waitForTimeout(1500);
+await m.screenshot({ path: `${OUT}/23-mobile-member-shared-with-me.png` });
+await m.getByText("three-pages", { exact: true }).first().tap();
+await m.waitForTimeout(2000);
+await m.screenshot({ path: `${OUT}/24-mobile-member-shared-doc.png`, fullPage: false });
+console.log("member detail text:", (await m.locator('[role="dialog"]').first().innerText().catch(() => "")).slice(0, 600).replace(/\n+/g, " | "));
+console.log("member 4xx API responses:", failed);
+await browser.close();
+// clean up the share
+const acc = await j(await api.get(`/api/documents/${st.three}/access`));
+for (const g of acc.grants) console.log("unshare", (await api.del(`/api/documents/${st.three}/access/${g.id}`)).status());
+

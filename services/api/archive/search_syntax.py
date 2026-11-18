@@ -45,6 +45,17 @@ def _bound(text, end):
 
 
 def date_range(value):
+    try:
+        return _date_range(value)
+    except OverflowError as exc:
+        raise ValueError(DATE_HELP) from exc
+    except ValueError as exc:  # e.g. date:>9999 or date:<0001 run past the calendar: keep only our own messages
+        if str(exc) in (DATE_HELP, "The start of a date range must be before its end"):
+            raise
+        raise ValueError(DATE_HELP) from exc
+
+
+def _date_range(value):
     """(first, last) inclusive ISO dates for a date term; None stands for an open end."""
     for operator in (">=", "<=", ">", "<"):
         if value.startswith(operator):

@@ -28,7 +28,7 @@ test("related documents link from either side and can be unlinked", async ({ pag
   await upload(page, first);
   await upload(page, second);
   await page.getByRole("button", { name: first, exact: true }).click();
-  let dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  let dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   const links = dialog.locator(".document-links");
   await links.getByRole("textbox", { name: "Find a document to link" }).fill(second);
   await links.getByRole("button", { name: "Search" }).click();
@@ -37,7 +37,7 @@ test("related documents link from either side and can be unlinked", async ({ pag
   await expect(links.locator(".related-list")).toContainText(second);
   await links.screenshot({ path: testInfo.outputPath("related-documents.png") });
   await links.getByRole("button", { name: second, exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await expect(dialog.locator(".document-links .related-list")).toContainText(first);
   await dialog.getByRole("button", { name: `Unlink ${first}` }).click();
   await dialog.getByRole("button", { name: "Confirm unlink" }).click();

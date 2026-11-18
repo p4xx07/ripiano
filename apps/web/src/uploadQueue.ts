@@ -1,7 +1,8 @@
 /**
  * Uploads that could not reach Ripiano (offline, server restarting) wait here, in this browser's IndexedDB, and are
- * sent again when the connection returns. The server recognises an exact copy it already stored, so a retry of an
- * upload that did arrive never creates a duplicate. Entries belong to one signed-in person and are only sent for them.
+ * sent again when the connection returns. A file the server already received may be stored twice if the answer was lost;
+ * exact copies are flagged as duplicates for review. Entries belong to one signed-in person and are only sent while that
+ * person is signed in; signing out asks whether to keep or discard them.
  */
 
 const DB_NAME = "ripiano-uploads";
@@ -64,4 +65,14 @@ export async function forget(id: string): Promise<void> {
 /** Network failures (no answer, or the proxy says the server is down) are worth retrying; refusals are not. */
 export function isRetryable(status: number) {
   return status === 0 || status === 502 || status === 503 || status === 504;
+}
+
+/** Only a refusal of the file itself removes it from the queue; anything else (signed out, throttled, server error) keeps it. */
+export function isRefusal(status: number) {
+  return status === 400 || status === 409 || status === 413 || status === 415;
+}
+
+/** Remove every waiting file of one person (when they sign out and choose to discard them). */
+export async function forgetAll(owner: string): Promise<void> {
+  for (const item of await pending(owner)) await forget(item.id);
 }

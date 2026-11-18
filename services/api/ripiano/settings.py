@@ -146,6 +146,11 @@ RIPIANO_MAIL_OAUTH = {
 RIPIANO_MAIL_POLL_MINUTES = max(1, int(os.environ.get("RIPIANO_MAIL_POLL_MINUTES", "5")))
 # Paper workflows: separator sheets split scans, ASN labels number documents, TAG: codes add tags.
 RIPIANO_BARCODES = os.environ.get("RIPIANO_BARCODES", "1") == "1"
+# Read a document date from its text during processing; DMY (default), MDY, or YMD decides ambiguous numeric dates.
+RIPIANO_DATE_DETECTION = os.environ.get("RIPIANO_DATE_DETECTION", "1") == "1"
+RIPIANO_DATE_ORDER = os.environ.get("RIPIANO_DATE_ORDER", "DMY").strip().upper()
+if RIPIANO_DATE_ORDER not in {"DMY", "MDY", "YMD"}:
+    RIPIANO_DATE_ORDER = "DMY"
 RIPIANO_BARCODE_SEPARATOR = os.environ.get("RIPIANO_BARCODE_SEPARATOR", "PATCHT")
 RIPIANO_BARCODE_ASN_PREFIX = os.environ.get("RIPIANO_BARCODE_ASN_PREFIX", "ASN")
 RIPIANO_BARCODE_TAG_PREFIX = os.environ.get("RIPIANO_BARCODE_TAG_PREFIX", "TAG:")

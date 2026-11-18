@@ -268,6 +268,12 @@ export default function DocumentPanel({
     }
   }
 
+  // The inline "add" controls replace the button that opened them, so focus is placed explicitly
+  // once React has rendered the next control (otherwise it falls to <body>).
+  function focusSoon(id: string) {
+    requestAnimationFrame(() => document.getElementById(id)?.focus());
+  }
+
   async function createFilingItem(kind: "correspondent" | "document_type") {
     const name = kind === "correspondent" ? newCorrespondent.trim() : newDocumentType.trim();
     if (!name) return;
@@ -281,11 +287,13 @@ export default function DocumentPanel({
         setCorrespondentId(item.id);
         setNewCorrespondent("");
         setCreatingCorrespondent(false);
+        focusSoon("detail-correspondent");
       } else {
         setDocumentTypes((current) => [...current, item].sort((a, b) => a.name.localeCompare(b.name)));
         setDocumentTypeId(item.id);
         setNewDocumentType("");
         setCreatingDocumentType(false);
+        focusSoon("detail-document-type");
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.createFilingError);
@@ -413,9 +421,10 @@ export default function DocumentPanel({
         <div className="eyebrow">
           <span className="eyebrow-line" /> {m.eyebrow}
         </div>
-        <h2 id="detail-heading">{m.heading}</h2>
+        {/* The dialog is named by the document, so screen-reader users know which one is open. */}
+        <h2 id="detail-heading" className="detail-title">{current.title}</h2>
         <p className="detail-intro">
-          {m.intro}
+          <strong className="detail-tagline">{m.heading}</strong> {m.intro}
         </p>
         {current.duplicate_of && (
           <button
@@ -474,19 +483,19 @@ export default function DocumentPanel({
               {suggestedTags.map((item) => (
                 <button type="button" disabled={busy} key={`tag-${item.id}`} aria-label={m.addTag(item.name)} aria-describedby={`suggestion-tag-${item.id}`} onClick={() => void acceptSuggestion("tag", item)}>
                   <span className="suggestion-action"><TagIcon size={16} aria-hidden="true" /><span>{m.addTag(item.name)}</span></span>
-                  <small id={`suggestion-tag-${item.id}`}>{suggestionBasis(item)}</small>
+                  <small id={`suggestion-tag-${item.id}`}>{suggestionBasis(item, m)}</small>
                 </button>
               ))}
               {suggestedSenders.map((item) => (
                 <button type="button" disabled={busy} key={`sender-${item.id}`} aria-label={m.setSender(item.name)} aria-describedby={`suggestion-sender-${item.id}`} onClick={() => void acceptSuggestion("sender", item)}>
                   <span className="suggestion-action"><Building2 size={16} aria-hidden="true" /><span>{m.setSender(item.name)}</span></span>
-                  <small id={`suggestion-sender-${item.id}`}>{suggestionBasis(item)}</small>
+                  <small id={`suggestion-sender-${item.id}`}>{suggestionBasis(item, m)}</small>
                 </button>
               ))}
               {suggestedTypes.map((item) => (
                 <button type="button" disabled={busy} key={`type-${item.id}`} aria-label={m.setType(item.name)} aria-describedby={`suggestion-type-${item.id}`} onClick={() => void acceptSuggestion("type", item)}>
                   <span className="suggestion-action"><FileText size={16} aria-hidden="true" /><span>{m.setType(item.name)}</span></span>
-                  <small id={`suggestion-type-${item.id}`}>{suggestionBasis(item)}</small>
+                  <small id={`suggestion-type-${item.id}`}>{suggestionBasis(item, m)}</small>
                 </button>
               ))}
             </section>
@@ -500,11 +509,11 @@ export default function DocumentPanel({
           </Field>
           {creatingCorrespondent ? (
             <div className="filing-create">
-              <input aria-label={m.newSenderName} value={newCorrespondent} onChange={(event) => setNewCorrespondent(event.target.value)} maxLength={100} placeholder={m.senderPlaceholder} />
+              <input id="detail-new-sender" autoFocus aria-label={m.newSenderName} value={newCorrespondent} onChange={(event) => setNewCorrespondent(event.target.value)} maxLength={100} placeholder={m.senderPlaceholder} />
               <Button type="button" variant="secondary" disabled={busy || !newCorrespondent.trim()} onClick={() => void createFilingItem("correspondent")}>{m.addSender}</Button>
-              <button type="button" aria-label={m.cancelNewSender} onClick={() => setCreatingCorrespondent(false)}><X size={16} /></button>
+              <button type="button" aria-label={m.cancelNewSender} onClick={() => { setCreatingCorrespondent(false); focusSoon("detail-add-sender"); }}><X size={16} /></button>
             </div>
-          ) : <button type="button" className="text-action" onClick={() => setCreatingCorrespondent(true)}><Plus size={15} /> {m.addASender}</button>}
+          ) : <button type="button" id="detail-add-sender" className="text-action" onClick={() => setCreatingCorrespondent(true)}><Plus size={15} /> {m.addASender}</button>}
           <Field label={m.documentType} hint={current.document_type_origin === "rule" ? m.originRule : current.document_type_origin === "source" ? m.originSource : current.document_type_origin === "model" ? m.originModel : current.document_type_origin === "learned" ? m.originLearned : m.optional} className="detail-label">
             <select id="detail-document-type" value={documentTypeId} onChange={(event) => setDocumentTypeId(event.target.value)}>
               <option value="">{m.noType}</option>
@@ -513,11 +522,11 @@ export default function DocumentPanel({
           </Field>
           {creatingDocumentType ? (
             <div className="filing-create">
-              <input aria-label={m.newTypeName} value={newDocumentType} onChange={(event) => setNewDocumentType(event.target.value)} maxLength={100} placeholder={m.typePlaceholder} />
+              <input id="detail-new-type" autoFocus aria-label={m.newTypeName} value={newDocumentType} onChange={(event) => setNewDocumentType(event.target.value)} maxLength={100} placeholder={m.typePlaceholder} />
               <Button type="button" variant="secondary" disabled={busy || !newDocumentType.trim()} onClick={() => void createFilingItem("document_type")}>{m.addType}</Button>
-              <button type="button" aria-label={m.cancelNewType} onClick={() => setCreatingDocumentType(false)}><X size={16} /></button>
+              <button type="button" aria-label={m.cancelNewType} onClick={() => { setCreatingDocumentType(false); focusSoon("detail-add-type"); }}><X size={16} /></button>
             </div>
-          ) : <button type="button" className="text-action" onClick={() => setCreatingDocumentType(true)}><Plus size={15} /> {m.addAType}</button>}
+          ) : <button type="button" id="detail-add-type" className="text-action" onClick={() => setCreatingDocumentType(true)}><Plus size={15} /> {m.addAType}</button>}
           {storagePaths.length > 0 && (
             <Field label={m.storagePath} hint={m.storagePathHint} className="detail-label">
               <select value={storagePathId} onChange={(event) => setStoragePathId(event.target.value)}>
@@ -685,6 +694,7 @@ export default function DocumentPanel({
               </div>
               <div className="copy-move">
                 <select
+                  aria-label={m.moveCopyTo(copy.sticker_code)}
                   disabled={busy || Boolean(copy.missing_at)}
                   value={moveChoices[copy.id] ?? copy.location_id ?? ""}
                   onChange={(event) =>

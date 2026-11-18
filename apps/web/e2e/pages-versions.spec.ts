@@ -37,7 +37,7 @@ test("an archived document can become another document's new version", async ({ 
 
   await page.getByRole("textbox", { name: "Search documents" }).fill(targetName);
   await page.getByRole("button", { name: targetName, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await dialog.getByRole("button", { name: "Open pages & versions" }).click();
   const panel = dialog.locator(".pages-panel");
   await panel.getByRole("searchbox", { name: "Search ready documents" }).fill(sourceName);
@@ -93,7 +93,7 @@ test("page edits become a new version and the previous file stays available", as
 
   await page.getByRole("textbox", { name: "Search documents" }).fill(name);
   await page.getByRole("button", { name, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await dialog.getByRole("button", { name: "Open pages & versions" }).click();
   const panel = dialog.locator(".pages-panel");
   await expect(panel.getByRole("img", { name: "Page 3" })).toBeVisible();

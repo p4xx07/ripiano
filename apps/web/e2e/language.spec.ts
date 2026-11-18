@@ -3,17 +3,33 @@ import { expect, test } from "@playwright/test";
 const username = process.env.RIPIANO_E2E_USERNAME;
 const password = process.env.RIPIANO_E2E_PASSWORD;
 
-test("English is the default on an Italian device; device language remains opt-in", async ({ browser }) => {
+test("an Italian device starts in Italian; English can still be chosen and is remembered", async ({ browser }) => {
   const context = await browser.newContext({ locale: "it-IT" });
   try {
     const page = await context.newPage();
     await page.goto(process.env.RIPIANO_E2E_ORIGIN ?? "http://localhost:8080");
+    await expect(page.locator("html")).toHaveAttribute("lang", "it");
+    await expect(page.getByLabel("Lingua")).toHaveValue("system");
+    await expect(page.getByRole("heading", { name: "Bentornato." })).toBeVisible();
+    await expect(page.getByRole("option", { name: "Italiano", exact: true })).toHaveCount(1);
+    await expect(page.getByText("(preview)")).toHaveCount(0);
+    await page.getByLabel("Lingua").selectOption("en");
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await page.reload();
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.getByLabel("Language")).toHaveValue("en");
-    await page.getByLabel("Language").selectOption("system");
-    await expect(page.locator("html")).toHaveAttribute("lang", "it");
-    await page.reload();
-    await expect(page.locator("html")).toHaveAttribute("lang", "it");
+  } finally {
+    await context.close();
+  }
+});
+
+test("an English device starts in English", async ({ browser }) => {
+  const context = await browser.newContext({ locale: "en-GB" });
+  try {
+    const page = await context.newPage();
+    await page.goto(process.env.RIPIANO_E2E_ORIGIN ?? "http://localhost:8080");
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
   } finally {
     await context.close();
   }

@@ -172,10 +172,17 @@ export type FilingSuggestion = {
   probability?: number;
 };
 
-export function suggestionBasis(item: FilingSuggestion): string {
+export type SuggestionBasisText = {
+  suggestionLikely: (percent: number) => string;
+  suggestionLike: (title: string) => string;
+  suggestionShared: (terms: string) => string;
+};
+
+/** Why a filing suggestion is offered, in the interface language (texts come from the caller's locale). */
+export function suggestionBasis(item: FilingSuggestion, text: SuggestionBasisText): string {
   const parts: string[] = [];
-  if (item.probability !== undefined) parts.push(`${Math.round(item.probability * 100)}% likely, learned from your filing`);
-  if (item.example) parts.push(`Like “${item.example.title}”${item.shared_terms.length ? ` · shared: ${item.shared_terms.join(", ")}` : ""}`);
+  if (item.probability !== undefined) parts.push(text.suggestionLikely(Math.round(item.probability * 100)));
+  if (item.example) parts.push(text.suggestionLike(item.example.title) + (item.shared_terms.length ? ` · ${text.suggestionShared(item.shared_terms.join(", "))}` : ""));
   return parts.join(" · ");
 }
 

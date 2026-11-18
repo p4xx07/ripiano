@@ -27,7 +27,7 @@ test("a searchable PDF can be rebuilt from its preserved original", async ({ pag
   const originalBefore = await (await page.request.get(`/api/documents/${id}/original`)).body();
   await page.getByRole("textbox", { name: "Search documents" }).fill(`title:${name}`);
   await page.getByRole("button", { name, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   const files = dialog.locator(".detail-files").first();
   await expect(files.getByRole("link", { name: "Open searchable PDF" })).toBeVisible();
   await files.getByRole("button", { name: "Run OCR again" }).click();

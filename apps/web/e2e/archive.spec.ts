@@ -94,7 +94,7 @@ test("capture, find, tag, and locate a paper copy", async ({
   await page.getByRole("textbox", { name: "Search documents" }).fill("9473");
   await page.getByRole("button", { name, exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Keep it in place." }),
+    page.getByRole("dialog").filter({ hasText: "Keep it in place." }),
   ).toBeVisible();
   await page.locator(".new-copy select").selectOption({ label: locationName });
   await page.getByRole("button", { name: "Create sticker" }).click();
@@ -111,7 +111,7 @@ test("capture, find, tag, and locate a paper copy", async ({
     fullPage: true,
   });
 
-  await page.getByRole("dialog", { name: "Keep it in place." }).getByRole("button", { name: "Close" }).click();
+  await page.getByRole("dialog").filter({ hasText: "Keep it in place." }).getByRole("button", { name: "Close" }).click();
   await page.getByRole("button", { name: /Filters/ }).click();
   const paperFilter = page.getByRole("combobox", { name: "Paper copy" });
   await paperFilter.selectOption("paper");
@@ -129,7 +129,7 @@ test("capture, find, tag, and locate a paper copy", async ({
   await navigate(page, "All documents");
   await page.getByRole("textbox", { name: "Search documents" }).fill("9473");
   await page.getByRole("button", { name, exact: true }).click();
-  const detail = page.getByRole("dialog", { name: "Keep it in place." });
+  const detail = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await detail.getByRole("button", { name: "Mark missing" }).click();
   await expect(detail.getByText("Reported missing", { exact: true })).toBeVisible();
   await detail.getByRole("button", { name: "Close" }).click();

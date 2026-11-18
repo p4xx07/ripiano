@@ -32,7 +32,7 @@ test("move a filed document to Trash and restore it", async ({ page }, testInfo)
   await expect.poll(async () => (await (await page.request.get(`/api/documents/${id}`)).json()).status, { timeout: 60000 }).toBe("ready");
   await page.getByRole("textbox", { name: "Search documents" }).fill(`title:${name}`);
   await page.getByRole("button", { name, exact: true }).click();
-  const detail = page.getByRole("dialog", { name: "Keep it in place." });
+  const detail = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await detail.getByRole("button", { name: "Move to Trash", exact: true }).click();
   await expect(detail.getByText(`Move “${name}” to Trash?`)).toBeVisible();
   await detail.getByRole("button", { name: "Confirm move" }).click();
@@ -125,7 +125,7 @@ test("permanently delete a trashed document and finish live-file cleanup", async
   await expect.poll(async () => (await (await page.request.get(`/api/documents/${id}`)).json()).status, { timeout: 60000 }).toBe("ready");
   await page.getByRole("textbox", { name: "Search documents" }).fill(`title:${name}`);
   await page.getByRole("button", { name, exact: true }).click();
-  const detail = page.getByRole("dialog", { name: "Keep it in place." });
+  const detail = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await detail.getByRole("button", { name: "Move to Trash", exact: true }).click();
   await detail.getByRole("button", { name: "Confirm move" }).click();
   await expect(detail).toHaveCount(0);

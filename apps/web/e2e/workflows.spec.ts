@@ -68,5 +68,5 @@ test("a workflow tags matching new documents and records what it did", async ({ 
   const run = page.locator(".agent-events > div").filter({ hasText: `Tag ${suffix} ·` }).filter({ hasText: `receipt ${word}` });
   await expect(run).toContainText(`added tag ${tag}`);
   await run.getByRole("button", { name: `receipt ${word} ${suffix}` }).click();
-  await expect(page.getByRole("dialog", { name: "Keep it in place." })).toBeVisible();
+  await expect(page.getByRole("dialog").filter({ hasText: "Keep it in place." })).toBeVisible();
 });

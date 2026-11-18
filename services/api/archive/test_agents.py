@@ -162,3 +162,38 @@ def test_agent_only_if_empty_rejects_an_intervening_filing_choice(origin):
     assert _execute(grant, "set_document_filing", {
         "document_id": str(document.id), "correspondent_id": str(proposed.id), "only_if_empty": "yes",
     })[1]["error"] == "only_if_empty must be a boolean"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_semantic_tool_is_hidden_while_off_and_refused_documents_are_kept_in_the_audit():
+    from archive.mcp_server import _list_allowed
+    from archive.models import SemanticSettings
+
+    owner = get_user_model().objects.create_superuser("owner", password="secure-password-1")
+    bills = Tag.objects.create(owner=owner, name="Bills")
+    outside = Document.objects.create(owner=owner, title="Private", original_name="private.pdf", original_path="b",
+                                      original_mime="application/pdf", original_sha256="b" * 64, original_size=1)
+    grant = AgentGrant.objects.create(owner=owner, name="Reader", token_hash="c" * 64, filter_tag=bills,
+                                      scopes=["documents:search", "documents:text"], expires_at="2099-01-01T00:00:00Z")
+    with patch("archive.mcp_server._grant", return_value=grant):
+        assert "semantic_search" not in [tool.name for tool in async_to_sync(_list_allowed)()]
+        config = SemanticSettings.current()
+        config.mode = SemanticSettings.Mode.OLLAMA
+        config.save()
+        assert "semantic_search" in [tool.name for tool in async_to_sync(_list_allowed)()]
+        names = [tool.name for tool in async_to_sync(_list_allowed)()]
+        text_tool = next(name for name in names if "text" in name)
+        assert async_to_sync(_call)(text_tool, {"document_id": str(outside.id)}).is_error
+    entry = AgentAudit.objects.filter(grant=grant).latest("created_at")
+    assert entry.document_id == outside.id and entry.outcome == "error"  # the owner sees which document was probed
+
+
+def test_low_level_errors_become_readable_messages():
+    from archive.tasks import PROCESSING_ERRORS, readable_error
+
+    assert readable_error("InputFileError", "x") == "x"
+    assert readable_error("[Errno 13] Permission denied: '/backup/staging'", "x") == "x"
+    assert readable_error("ERROR: unexpected end of file", "x") == "x"
+    sentence = "This PDF is locked. Add its password to a workflow, then retry."
+    assert readable_error(sentence, "x") == sentence
+    assert all(text.endswith(".") for text in PROCESSING_ERRORS.values())

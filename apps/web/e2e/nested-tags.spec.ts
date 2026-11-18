@@ -42,7 +42,7 @@ test("create and reorganize nested tags", async ({ page, isMobile }, testInfo) =
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Tag", exact: true }).locator("option", { hasText: path })).toHaveCount(1);
   await page.locator(".document-row .document-title-button").first().click();
-  await expect(page.getByRole("dialog", { name: "Keep it in place." }).getByRole("checkbox", { name: path })).toHaveCount(1);
+  await expect(page.getByRole("dialog").filter({ hasText: "Keep it in place." }).getByRole("checkbox", { name: path })).toHaveCount(1);
   await page.keyboard.press("Escape");
   if (isMobile) await page.getByRole("button", { name: "Toggle menu" }).click();
   await page.getByRole("button", { name: "Tags & filing" }).click();

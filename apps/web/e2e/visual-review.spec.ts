@@ -51,7 +51,7 @@ test("review the main archive surfaces", async ({ page }, testInfo) => {
   await page.getByRole("textbox", { name: "Search documents" }).fill("");
   await expect(page.locator(".document-row .document-title-button").first()).toBeVisible();
   await page.locator(".document-row .document-title-button").first().click();
-  await expect(page.getByRole("dialog", { name: "Keep it in place." })).toBeVisible();
+  await expect(page.getByRole("dialog").filter({ hasText: "Keep it in place." })).toBeVisible();
   await shot("document-detail");
   await page.keyboard.press("Escape");
 

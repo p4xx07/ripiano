@@ -43,7 +43,11 @@ test("create a limited agent and revoke its access", async ({
     mask: [page.getByLabel("New agent token")],
     maskColor: "#dce8d8",
   });
-  await card.getByRole("button", { name: "Revoke" }).click();
+  // Revoking asks first: the first click only shows the confirmation.
+  await card.getByRole("button", { name: `Revoke ${name}` }).click();
+  await expect(card).not.toContainText("Revoked");
+  await expect(card.getByRole("button", { name: "Cancel" })).toBeVisible();
+  await card.getByRole("button", { name: "Yes, revoke" }).click();
   await expect(card).toContainText("Revoked");
   await expect(page.getByLabel("New agent token")).toHaveCount(0);
 });

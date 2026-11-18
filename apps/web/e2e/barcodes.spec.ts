@@ -49,10 +49,10 @@ test("a separator sheet splits a scan and an ASN barcode numbers the part", asyn
   await page.getByRole("textbox", { name: "Search documents" }).fill(`asn:${asn}`);
   await searched;
   await page.getByRole("button", { name: partTitle, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await expect(dialog.getByLabel(/Archive number \(ASN\)/)).toHaveValue(String(asn));
   await dialog.getByRole("button", { name: /Open full scan/ }).click();
-  await expect(page.getByRole("dialog", { name: "Keep it in place." })).toContainText("This full scan was split by barcodes");
+  await expect(page.getByRole("dialog").filter({ hasText: "Keep it in place." })).toContainText("This full scan was split by barcodes");
 });
 
 test("ASN barcodes start separate documents without separator sheets", async ({ page }, testInfo) => {
@@ -99,10 +99,10 @@ test("ASN barcodes start separate documents without separator sheets", async ({ 
   await page.getByRole("textbox", { name: "Search documents" }).fill(`asn:${secondAsn}`);
   await searched;
   await page.getByRole("button", { name: `${name} (2/2)`, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await expect(dialog.getByLabel(/Archive number \(ASN\)/)).toHaveValue(String(secondAsn));
   await expect(dialog.getByRole("button", { name: /Open full scan/ })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("asn-only-split.png"), animations: "disabled" });
   await dialog.getByRole("button", { name: /Open full scan/ }).click();
-  await expect(page.getByRole("dialog", { name: "Keep it in place." })).toContainText("This full scan was split by barcodes");
+  await expect(page.getByRole("dialog").filter({ hasText: "Keep it in place." })).toContainText("This full scan was split by barcodes");
 });

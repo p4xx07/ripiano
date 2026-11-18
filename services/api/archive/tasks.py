@@ -29,6 +29,24 @@ class LockedPdfError(Exception):
     """A password-protected PDF that no workflow password unlocked."""
 
 
+
+# Shown to people when a job fails with a low-level error; the details stay in the worker log.
+PROCESSING_ERRORS = {
+    "generic": "Text recognition failed for this file. Check that it opens correctly, then choose Retry OCR. Details are in the worker log.",
+    "backup": "The backup failed. Details are in the maintenance worker log.",
+    "backup_permission": "Ripiano cannot write to the backup folder. Check the permissions of the mounted backup folder on the NAS.",
+}
+
+
+def readable_error(text, fallback):
+    """Keep sentences written for people; replace raw exception names, errno strings, and tool output."""
+    import re
+
+    text = (text or "").strip()
+    if not text or " " not in text or re.match(r"^(\[Errno|\w+(Error|Exception)\b|Traceback|[A-Za-z_.]+:\s)", text):
+        return fallback
+    return text
+
 @shared_task(name="archive.tasks.process_document")
 def process_document(document_id):
     with transaction.atomic():
@@ -110,13 +128,21 @@ def process_document(document_id):
             logger.error("OCR diagnostic: %s", (exc.stderr or "")[-2000:])
         document.status = Document.Status.FAILED
         diagnostic = (exc.stderr or "").strip() if isinstance(exc, subprocess.CalledProcessError) else ""
-        document.error = (diagnostic.splitlines()[-1] if diagnostic else str(exc))[:500]
+        document.error = readable_error((diagnostic.splitlines()[-1] if diagnostic else str(exc)), PROCESSING_ERRORS["generic"])[:500]
         document.save(update_fields=["status", "error"])
         return
     try:
         apply_rules(document)
     except Exception:
         logger.exception("Automatic filing failed for document %s", document.id)
+    if not document.is_split_source:
+        try:
+            from .date_detection import apply_document_details
+
+            # After matching rules (a rule's sender wins), before learned filing and "added" workflows.
+            apply_document_details(document, first_run=first_run)
+        except Exception:
+            logger.exception("Date and sender detection failed for document %s", document.id)
     if first_run and not document.is_split_source:
         try:
             from .auto_filing import apply_learned_filing
@@ -181,7 +207,10 @@ def backup_archive(run_id=None):
         logger.exception("Backup failed: %s", run.id)
         run.status = BackupRun.Status.FAILED
         run.completed_at = timezone.now()
-        run.error = str(exc)[:500]
+        if isinstance(exc, PermissionError):
+            run.error = PROCESSING_ERRORS["backup_permission"]
+        else:
+            run.error = readable_error(str(exc), PROCESSING_ERRORS["backup"])[:500]
     run.save(update_fields=["status", "snapshot_name", "completed_at", "error"])
 
 

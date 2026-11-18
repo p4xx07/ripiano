@@ -141,6 +141,10 @@ services:
         condition: service_healthy
   web:
     build: ./apps/web
+    environment:
+      # Reverse proxies allowed to report the client address (e.g. the Raspberry Pi gateway's LAN IP). Docker networks
+      # and localhost are always trusted. Needed so failed sign-ins are throttled per person, not for the whole proxy.
+      RIPIANO_TRUSTED_PROXIES: ${RIPIANO_TRUSTED_PROXIES:-}
     ports:
       - "${RIPIANO_PORT:-8080}:8080"
     depends_on:

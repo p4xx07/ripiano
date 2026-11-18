@@ -53,6 +53,7 @@ export default function DocumentHistory({ documentId, refreshKey }: { documentId
     if (kind === "matching_rules") return m.matchingRules;
     if (kind === "learned_filing") return m.learnedFiling;
     if (kind === "barcodes") return m.barcodes;
+    if (kind === "detection") return m.detection;
     return user ?? m.removedPerson;
   }
 

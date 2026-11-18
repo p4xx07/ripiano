@@ -10,6 +10,8 @@ export default defineConfig({
     browserName: "chromium",
     channel: "chrome",
     headless: true,
+    // The interface follows the device language when none is saved; specs use English labels.
+    locale: "en-US",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },

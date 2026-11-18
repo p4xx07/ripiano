@@ -32,6 +32,18 @@ export default function AgentPanel() {
     "documents:tag": m.scopeTag,
     "documents:filing": m.scopeFiling,
   };
+  // Tool names and outcomes come from the MCP audit log; unknown tools fall back to their raw name.
+  const toolNames: Record<string, string> = {
+    search_documents: m.toolSearchDocuments,
+    get_document_text: m.toolGetDocumentText,
+    semantic_search: m.toolSemanticSearch,
+    list_tags: m.toolListTags,
+    change_document_tags: m.toolChangeDocumentTags,
+    list_filing_options: m.toolListFilingOptions,
+    set_document_filing: m.toolSetDocumentFiling,
+  };
+  const outcomeNames: Record<string, string> = { ok: m.outcomeOk, denied: m.outcomeDenied, error: m.outcomeError };
+  const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
   const [grants, setGrants] = useState<Grant[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -104,6 +116,7 @@ export default function AgentPanel() {
     setError("");
     try {
       await request(`/api/agents/${grant.id}`, { method: "DELETE" });
+      setConfirmRevoke(null);
       if (newToken) setNewToken("");
       await load();
     } catch (cause) {
@@ -213,15 +226,26 @@ export default function AgentPanel() {
                       </span>
                     )}
                   </div>
-                  {!grant.revoked_at && (
+                  {!grant.revoked_at && (confirmRevoke === grant.id ? (
+                    <div className="agent-revoke-confirm" role="group" aria-label={m.revokeConfirm(grant.name)}>
+                      <strong>{m.revokeConfirm(grant.name)}</strong>
+                      <Button variant="danger" disabled={busy} autoFocus onClick={() => void revoke(grant)}>
+                        {m.confirmRevoke}
+                      </Button>
+                      <Button variant="secondary" disabled={busy} onClick={() => setConfirmRevoke(null)}>
+                        {m.cancel}
+                      </Button>
+                    </div>
+                  ) : (
                     <Button
                       variant="secondary"
                       disabled={busy}
-                      onClick={() => void revoke(grant)}
+                      aria-label={m.revokeNamed(grant.name)}
+                      onClick={() => setConfirmRevoke(grant.id)}
                     >
                       {m.revoke}
                     </Button>
-                  )}
+                  ))}
                 </article>
               ))}
             </div>
@@ -245,9 +269,9 @@ export default function AgentPanel() {
               {events.map((event, index) => (
                 <div key={`${event.at}-${index}`}>
                   <span>{event.agent}</span>
-                  <strong>{event.action.replaceAll("_", " ")}</strong>
+                  <strong>{toolNames[event.action] ?? event.action.replaceAll("_", " ")}</strong>
                   <small>
-                    {event.outcome} · {formatDateTime(event.at)}
+                    {outcomeNames[event.outcome] ?? event.outcome} · {formatDateTime(event.at)}
                   </small>
                 </div>
               ))}

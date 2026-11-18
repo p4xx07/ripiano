@@ -30,7 +30,7 @@ test("a document can need action without filing, then be completed", async ({ pa
   await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
 
   await page.getByRole("button", { name, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await dialog.getByLabel("Follow-up").selectOption("open");
   await dialog.getByLabel("Due date").fill("2027-01-15");
   await dialog.getByLabel("What needs doing?").fill("Pay this invoice");

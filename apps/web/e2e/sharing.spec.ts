@@ -49,7 +49,7 @@ test("selected documents share as one revocable link, and a document can be emai
   await page.reload();
   await page.getByRole("textbox", { name: "Search documents" }).fill(`title:${prefix}-first`);
   await page.getByRole("button", { name: `${prefix}-first`, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await dialog.getByRole("button", { name: "Write an email" }).click();
   const form = dialog.getByRole("form", { name: "Email this document" });
   await form.getByLabel(/^To/).fill(`friend-${prefix}@ripiano.test`);

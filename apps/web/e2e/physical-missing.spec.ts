@@ -37,7 +37,7 @@ test("a missing paper copy keeps its sticker and last known location", async ({ 
   await upload;
   await page.getByRole("textbox", { name: "Search documents" }).fill(`title:${name}`);
   await page.getByRole("button", { name, exact: true }).click();
-  let detail = page.getByRole("dialog", { name: "Keep it in place." });
+  let detail = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await detail.locator(".new-copy select").selectOption({ label: location });
   await detail.getByRole("button", { name: "Create sticker" }).click();
   const card = detail.locator(".copy-card").first();
@@ -67,7 +67,7 @@ test("a missing paper copy keeps its sticker and last known location", async ({ 
   await expect(missingItem).toContainText(`Last known: ${location}`);
   await contents.screenshot({ path: testInfo.outputPath("missing-location-contents.png") });
   await missingItem.getByRole("button", { name }).click();
-  detail = page.getByRole("dialog", { name: "Keep it in place." });
+  detail = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await detail.locator(".copy-card").first().getByRole("button", { name: "Mark found" }).click();
   await expect(detail.getByRole("status")).toContainText("marked found");
   await expect(detail.locator(".copy-card").first()).not.toContainText("Reported missing");

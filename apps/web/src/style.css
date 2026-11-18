@@ -185,6 +185,31 @@ button:disabled {
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
+}
+/* Navigation, appearance and the note scroll inside the sidebar; the brand and the account
+   row stay put, so sign-out and the language picker are reachable on any screen height. */
+.sidebar-brand {
+  flex-shrink: 0;
+}
+.sidebar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-sidebar-border) transparent;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: var(--space-half) var(--space-2) 0;
+}
+.sidebar-scroll > * {
+  flex-shrink: 0;
+}
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
 }
 .sidebar-brand,
 .auth-brand {
@@ -287,17 +312,40 @@ button:disabled {
   color: var(--color-sidebar-muted);
 }
 .profile {
-  border: 0;
+  flex-shrink: 0;
   border-top: 1px solid var(--color-sidebar-border);
-  background: transparent;
   color: var(--color-sidebar-text);
   display: flex;
   align-items: center;
-  gap: var(--space-compact);
-  padding: var(--space-5) var(--space-tight) var(--space-half);
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-tight) var(--space-half);
   text-align: left;
+  min-width: 0;
+}
+.sign-out {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-sidebar-border);
+  border-radius: var(--radius-soft);
+  background: transparent;
+  color: var(--color-sidebar-text);
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.sign-out:hover {
+  background: var(--color-sidebar-active);
+}
+.sign-out:focus-visible,
+.nav-link:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 .avatar {
+  flex-shrink: 0;
   width: 33px;
   height: 33px;
   border-radius: 50%;
@@ -309,6 +357,8 @@ button:disabled {
 }
 .profile-name {
   flex: 1;
+  min-width: 0;
+  white-space: nowrap;
   font-size: var(--type-body);
   font-weight: 700;
   overflow: hidden;
@@ -1231,6 +1281,24 @@ button:disabled {
     background: transparent;
     color: var(--color-accent-strong);
     padding: var(--space-1);
+    min-width: 44px;
+    min-height: 44px;
+    margin-left: calc(-1 * var(--space-2));
+  }
+  .sidebar-close {
+    width: 44px;
+    height: 44px;
+  }
+  /* While a search is active on a small screen, results come first: drop the intro copy and
+     the counts that sit above the search box. */
+  .library-searching .page-heading .eyebrow,
+  .library-searching .page-heading p,
+  .library-searching .summary-row,
+  .library-searching .section-heading p {
+    display: none;
+  }
+  .library-searching .section-heading {
+    margin-top: var(--space-4);
   }
   .topbar-right {
     margin-left: auto;
@@ -1243,6 +1311,42 @@ button:disabled {
   }
   .page-heading h1 {
     font-size: var(--type-display-large);
+  }
+}
+/* Touch screens: text actions, disclosure summaries and row icons get a 44px target without
+   changing the desktop layout. */
+@media (pointer: coarse) {
+  .text-action,
+  .document-title-button,
+  .sign-out,
+  .nav-link,
+  .search-box button {
+    min-height: 44px;
+  }
+  .document-title-button {
+    display: inline-flex;
+    align-items: center;
+  }
+  .search-box button {
+    min-width: 44px;
+  }
+  .download-link {
+    min-width: 40px;
+    min-height: 44px;
+  }
+  .modal-close {
+    min-width: 44px;
+    min-height: 44px;
+    display: grid;
+    place-items: center;
+  }
+  summary {
+    min-height: 44px;
+    padding-block: var(--space-3);
+    box-sizing: border-box;
+  }
+  .search-box input {
+    min-height: 44px;
   }
 }
 @media (max-width: 570px) {
@@ -1919,6 +2023,13 @@ button:disabled {
   letter-spacing: -1px;
   color: var(--color-heading);
   margin: var(--space-4) 0 var(--space-tight);
+}
+.detail-title {
+  overflow-wrap: anywhere;
+}
+.detail-tagline {
+  color: var(--color-ink);
+  font-weight: 600;
 }
 .detail-intro {
   font-size: var(--type-body);
@@ -2764,6 +2875,18 @@ button:disabled {
 }
 .agent-activity-heading {
   margin-top: var(--space-9);
+}
+.agent-revoke-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 280px;
+}
+.agent-revoke-confirm strong {
+  flex-basis: 100%;
+  font-size: var(--type-small);
+  line-height: 1.5;
 }
 .agent-events {
   background: var(--color-surface);
@@ -4353,4 +4476,79 @@ button:disabled {
 }
 .saved-search-chip button:not(:first-child) {
   flex: none;
+}
+
+/* ---- Paper archive: location rename / move / delete (PhysicalPanel) ---- */
+.location-notice:empty {
+  display: none;
+}
+.location-notice {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-compact) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-tint);
+  color: var(--color-heading);
+  font-size: var(--type-small);
+}
+.location-list .location-edit-toggle {
+  min-height: 44px;
+  padding: 0 var(--space-2);
+}
+.location-row-editing {
+  border-color: var(--color-focus) !important;
+}
+.location-edit-form {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+.location-edit-form select,
+.location-edit-form input {
+  min-height: 44px;
+}
+.location-edit-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--type-caption);
+}
+.location-edit-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.location-edit-actions .button {
+  min-height: 44px;
+}
+.location-edit-actions .location-delete {
+  margin-left: auto;
+}
+@media (max-width: 560px) {
+  .location-edit-actions .button {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+  .location-edit-actions .location-delete {
+    margin-left: 0;
+  }
+}
+/* ---- end Paper archive location editing ---- */
+
+/* Sign-out with uploads still waiting on this device: keep, discard, or stay. */
+.sign-out-confirm {
+  display: grid;
+  gap: var(--space-2);
+  font-size: 0.85rem;
+}
+.sign-out-confirm p {
+  margin: 0;
+}
+.sign-out-confirm button {
+  min-height: 40px;
+  text-align: left;
 }

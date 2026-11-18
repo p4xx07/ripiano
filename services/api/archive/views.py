@@ -200,6 +200,7 @@ def _document_json(document, query="", access="owner"):
         "created_at": document.created_at.isoformat(),
         "trashed_at": document.trashed_at.isoformat() if document.trashed_at else None,
         "document_date": document.document_date.isoformat() if document.document_date else None,
+        "document_date_origin": document.document_date_origin,
         "correspondent": {"id": str(document.correspondent_id), "name": document.correspondent.name} if document.correspondent_id else None,
         "document_type": {"id": str(document.document_type_id), "name": document.document_type.name} if document.document_type_id else None,
         "correspondent_origin": document.correspondent_origin,
@@ -768,7 +769,8 @@ def bulk_document_date(request):
         if len(documents_to_change) != len(document_ids):
             return JsonResponse({"error": "Document not found"}, status=404)
         befores = {document.pk: history.snapshot(document) for document in documents_to_change}
-        Document.objects.filter(owner=request.user, trashed_at__isnull=True, pk__in=document_ids).update(document_date=document_date)
+        Document.objects.filter(owner=request.user, trashed_at__isnull=True, pk__in=document_ids).update(
+            document_date=document_date, document_date_origin=Document.DateOrigin.MANUAL)
         for document in documents_to_change:
             history.record(document, befores[document.pk], actor_user=request.user)
     return JsonResponse({"updated": len(document_ids), "document_date": document_date.isoformat() if document_date else None})
@@ -906,7 +908,9 @@ def document_detail(request, document_id):
                 document.document_date = date.fromisoformat(body["document_date"]) if body["document_date"] else None
             except (TypeError, ValueError):
                 return JsonResponse({"error": "Use an ISO date (YYYY-MM-DD)"}, status=400)
-            changes.append("document_date")
+            # Set or cleared by a person: date detection never replaces it.
+            document.document_date_origin = Document.DateOrigin.MANUAL
+            changes.extend(["document_date", "document_date_origin"])
         for field, model in (("correspondent", Correspondent), ("document_type", DocumentType)):
             key = f"{field}_id"
             if key not in body:

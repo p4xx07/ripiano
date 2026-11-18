@@ -23,7 +23,7 @@ test("a document note can be found, reopened, and deleted", async ({ page }, tes
   await page.getByRole("button", { name: /Browse files/ }).click();
   await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
   await page.getByRole("button", { name, exact: true }).click();
-  let dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  let dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await dialog.getByRole("textbox", { name: "New note" }).fill(note);
   await dialog.getByRole("button", { name: "Add note" }).click();
   await expect(dialog.locator(".note-list")).toContainText(note);
@@ -36,9 +36,9 @@ test("a document note can be found, reopened, and deleted", async ({ page }, tes
   await expect(row.locator(".document-snippet")).toContainText("Note:");
   await expect(row.locator(".document-snippet")).toContainText(note);
   await page.getByRole("button", { name, exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await expect(dialog.locator(".note-list")).toContainText(note);
-  await dialog.locator(".detail-notes").screenshot({ path: testInfo.outputPath("document-notes.png") });
+  await dialog.locator(".detail-notes").filter({ has: page.locator("#document-notes-heading") }).screenshot({ path: testInfo.outputPath("document-notes.png") });
   await dialog.getByRole("button", { name: /Delete note/ }).click();
   await dialog.getByRole("button", { name: "Confirm delete" }).click();
   await expect(dialog.getByRole("status")).toContainText("Note deleted.");

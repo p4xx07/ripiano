@@ -104,7 +104,7 @@ test("a mail rule imports matching attachments and leaves other mail alone", asy
   if (await menu.isVisible()) await menu.click();
   await page.getByRole("button", { name: "All documents" }).click();
   await page.getByRole("button", { name: subject, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await expect(dialog.locator(".email-origin")).toContainText(`From email · Shop <shop-${suffix}@example.test> · “${subject}”`);
   await dialog.locator(".email-origin").screenshot({ path: testInfo.outputPath("email-origin.png"), animations: "disabled" });
 });

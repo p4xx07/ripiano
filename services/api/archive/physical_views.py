@@ -101,18 +101,74 @@ def locations(request):
     return JsonResponse(location_json(location), status=201)
 
 
-@require_http_methods(["DELETE"])
+def _descendant_ids(owner, root_id):
+    children = {}
+    for child_id, parent_id in Location.objects.filter(owner=owner).values_list("id", "parent_id"):
+        children.setdefault(parent_id, []).append(child_id)
+    ids, pending = set(), [root_id]
+    while pending:
+        current = pending.pop()
+        if current not in ids:
+            ids.add(current)
+            pending.extend(children.get(current, []))
+    return ids
+
+
+def _update_location(request, location_id):
+    body = _body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    if "name" not in body and "parent_id" not in body:
+        return JsonResponse({"error": "Choose a new name or parent location"}, status=400)
+    name = body.get("name")
+    if "name" in body and (not isinstance(name, str) or not name.strip() or len(name.strip()) > 100):
+        return JsonResponse({"error": "Invalid location name or description"}, status=400)
+    with transaction.atomic():
+        # Lock every location of this owner so two concurrent moves cannot create a cycle.
+        list(Location.objects.select_for_update().filter(owner=request.user).values_list("id", flat=True))
+        location = Location.objects.filter(pk=location_id, owner=request.user).first()
+        if location is None:
+            return JsonResponse({"error": "Location not found"}, status=404)
+        parent = location.parent
+        if "parent_id" in body:
+            raw_parent = body["parent_id"]
+            parent = _location(request.user, raw_parent) if raw_parent not in (None, "") else None
+            if raw_parent not in (None, "") and parent is None:
+                return JsonResponse({"error": "Parent location not found"}, status=400)
+            if parent is not None and parent.id in _descendant_ids(request.user, location.id):
+                return JsonResponse({"error": "A location cannot go inside itself or a location it contains"}, status=400)
+        new_name = name.strip() if "name" in body else location.name
+        if Location.objects.filter(owner=request.user, parent=parent, name__iexact=new_name).exclude(pk=location.id).exists():
+            return JsonResponse({"error": "Location already exists here"}, status=409)
+        # Paper copies keep their location id and movement history; only the displayed path changes.
+        location.name = new_name
+        location.parent = parent
+        location.save(update_fields=["name", "parent"])
+    return JsonResponse(location_json(location))
+
+
+@require_http_methods(["PATCH", "DELETE"])
 def location_detail(request, location_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    location = Location.objects.filter(pk=location_id, owner=request.user).first()
-    if location is None:
-        return JsonResponse({"error": "Location not found"}, status=404)
-    try:
-        location.delete()
-    except ProtectedError:
-        return JsonResponse({"error": "Move copies or child locations first"}, status=409)
+    if request.method == "PATCH":
+        return _update_location(request, location_id)
+    with transaction.atomic():
+        location = Location.objects.select_for_update().filter(pk=location_id, owner=request.user).first()
+        if location is None:
+            return JsonResponse({"error": "Location not found"}, status=404)
+        if location.children.exists():
+            return JsonResponse({"error": "Move or delete the locations inside this one first"}, status=409)
+        stored = location.physical_copies.all()
+        if stored.filter(document__trashed_at__isnull=True).exists():
+            return JsonResponse({"error": "Move the paper copies stored here to another location first"}, status=409)
+        if stored.exists():
+            return JsonResponse({"error": "Paper copies of documents in Trash are still recorded here. Restore and move them, or empty Trash, first"}, status=409)
+        try:
+            location.delete()
+        except ProtectedError:
+            return JsonResponse({"error": "Move copies or child locations first"}, status=409)
     return JsonResponse({"deleted": True})
 
 
@@ -124,17 +180,7 @@ def location_lookup(request, sticker_code):
     location = Location.objects.filter(sticker_code__iexact=sticker_code, owner=request.user).select_related("parent__parent").first()
     if location is None:
         return JsonResponse({"error": "Location sticker not found"}, status=404)
-    children = {}
-    for child_id, parent_id in Location.objects.filter(owner=request.user).values_list("id", "parent_id"):
-        children.setdefault(parent_id, []).append(child_id)
-    ids = set()
-    pending = [location.id]
-    while pending:
-        current = pending.pop()
-        if current in ids:
-            continue
-        ids.add(current)
-        pending.extend(children.get(current, []))
+    ids = _descendant_ids(request.user, location.id)
     copies = PhysicalCopy.objects.filter(location_id__in=ids, document__owner=request.user, document__trashed_at__isnull=True)
     counts = copies.aggregate(
         total=Count("id", filter=Q(missing_at__isnull=True)),
@@ -164,6 +210,65 @@ def location_lookup(request, sticker_code):
     })
 
 
+LABEL_PATH_LIMIT = 60
+
+# Sticker sheet geometry: 70 x 40 mm, 3 mm padding, 30 mm QR code, 3 mm gap -> 31 mm wide text column.
+# The code never wraps: its font size is computed from Arial Bold advance widths so it fits the column.
+LABEL_CSS = (
+    "@page{size:70mm 40mm;margin:0}"
+    "body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#183e32}"
+    ".label{box-sizing:border-box;width:70mm;height:40mm;padding:3mm;display:flex;gap:3mm;border:1px solid #bbb;overflow:hidden}"
+    "svg{width:30mm;height:30mm;flex:none}"
+    ".text{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}"
+    ".brand{font-size:7pt;line-height:1.2;font-weight:bold}"
+    "h1{font-size:10pt;line-height:1.2;margin:1mm 0 .5mm;overflow:hidden;overflow-wrap:anywhere;"
+    "display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3}"
+    ".code{line-height:1.2;font-weight:bold;letter-spacing:.02em;white-space:nowrap;flex:none}"
+    ".path{font-size:7pt;line-height:1.25;margin-top:1.5mm;overflow:hidden;overflow-wrap:anywhere;"
+    "display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3}"
+    "@media print{.label{border:0}}"
+)
+
+
+# Arial/Helvetica Bold advance widths (1/1000 em) for sticker code characters; unknown characters count as "W".
+_CODE_WIDTHS = {"-": 333, **{digit: 556 for digit in "0123456789"}, **dict(zip(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    (722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611),
+))}
+LABEL_CODE_WIDTH_MM = 29.0  # 31 mm column minus a safety margin for font substitution
+
+
+def code_font_pt(code, width_mm=LABEL_CODE_WIDTH_MM, max_pt=12.0):
+    ems = sum(_CODE_WIDTHS.get(char, 944) for char in code.upper()) / 1000 + 0.02 * len(code)
+    return round(min(max_pt, width_mm / (ems * 0.3528)), 1) if ems else max_pt
+
+
+def label_path(names, limit=LABEL_PATH_LIMIT):
+    """Join a location path for a sticker, dropping outer locations first so the innermost stay readable."""
+    if not names:
+        return ""
+    kept = [names[-1]]
+    for name in reversed(names[:-1]):
+        if len(" / ".join([name, *kept])) + 4 > limit:
+            break
+        kept.insert(0, name)
+    text = " / ".join(kept)
+    if len(text) > limit:
+        text = text[-(limit - 1):]
+        return "…" + text
+    return ("… / " if len(kept) < len(names) else "") + text
+
+
+def _label_html(title, brand, svg, heading, code, path_names):
+    return (
+        f'<!doctype html><html lang="en"><meta charset="utf-8"><title>{escape(title)}</title>'
+        f"<style>{LABEL_CSS}</style>"
+        f'<div class="label">{svg}<div class="text"><div class="brand">{escape(brand)}</div>'
+        f'<h1>{escape(heading[:120])}</h1><div class="code" style="font-size:{code_font_pt(code)}pt">{escape(code)}</div>'
+        f'<div class="path">{escape(label_path(path_names))}</div></div></div></html>'
+    )
+
+
 @require_http_methods(["GET"])
 def location_label(request, location_id):
     unauthorized = _unauthorized(request)
@@ -177,12 +282,7 @@ def location_label(request, location_id):
     output = io.BytesIO()
     qr.save(output, kind="svg", scale=3, border=2, dark="#183e32")
     svg = output.getvalue().decode("utf-8")
-    name = escape(location.name[:70])
-    code = escape(location.sticker_code)
-    path = escape(" / ".join(location_path(location))[:100])
-    html = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>Ripiano location {code}</title>
-<style>@page{{size:70mm 40mm;margin:0}}body{{margin:0;font-family:Arial,sans-serif;color:#183e32}}.label{{box-sizing:border-box;width:70mm;height:40mm;padding:3mm;display:flex;gap:3mm;border:1px solid #bbb}}svg{{width:30mm;height:30mm;flex:none}}.text{{overflow:hidden}}.brand{{font-size:8pt;font-weight:bold}}h1{{font-size:11pt;margin:2mm 0 1mm;overflow:hidden}}.code{{font-size:13pt;font-weight:bold;letter-spacing:1px}}.path{{font-size:7pt;margin-top:2mm}}</style>
-<div class="label">{svg}<div class="text"><div class="brand">ripiano · location</div><h1>{name}</h1><div class="code">{code}</div><div class="path">{path}</div></div></div></html>"""
+    html = _label_html(f"Ripiano location {location.sticker_code}", "ripiano · location", svg, location.name, location.sticker_code, location_path(location))
     response = HttpResponse(html, content_type="text/html; charset=utf-8")
     response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     return response
@@ -317,12 +417,7 @@ def printable_label(request, copy_id):
     output = io.BytesIO()
     qr.save(output, kind="svg", scale=3, border=2, dark="#183e32")
     svg = output.getvalue().decode("utf-8")
-    title = escape(copy.document.title[:70])
-    code = escape(copy.sticker_code)
-    location = escape(" / ".join(location_path(copy.location)) or "Location not assigned")
-    html = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>Ripiano sticker {code}</title>
-<style>@page{{size:70mm 40mm;margin:0}}body{{margin:0;font-family:Arial,sans-serif;color:#183e32}}.label{{box-sizing:border-box;width:70mm;height:40mm;padding:3mm;display:flex;gap:3mm;border:1px solid #bbb}}svg{{width:30mm;height:30mm;flex:none}}.text{{overflow:hidden}}.brand{{font-size:8pt;font-weight:bold}}h1{{font-size:11pt;margin:2mm 0 1mm;overflow:hidden}}.code{{font-size:13pt;font-weight:bold;letter-spacing:1px}}.location{{font-size:7pt;margin-top:2mm}}</style>
-<div class="label">{svg}<div class="text"><div class="brand">ripiano</div><h1>{title}</h1><div class="code">{code}</div><div class="location">{location}</div></div></div></html>"""
+    html = _label_html(f"Ripiano sticker {copy.sticker_code}", "ripiano", svg, copy.document.title, copy.sticker_code, location_path(copy.location) or ["Location not assigned"])
     response = HttpResponse(html, content_type="text/html; charset=utf-8")
     response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     return response

@@ -24,6 +24,12 @@ test("a printed tag code files a scanned document", async ({ page }, testInfo) =
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
+  // The code is printed in the fixture PDF, so it is the same every run: remove a tag left by an earlier run on this account.
+  const existing = (await (await page.request.get("/api/tags")).json()).tags as { id: string; barcode_value?: string }[];
+  for (const tag of existing.filter((item) => item.barcode_value === code)) {
+    const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "csrftoken")?.value ?? "";
+    await page.request.delete(`/api/tags/${tag.id}`, { headers: { "X-CSRFToken": csrf, Referer: page.url() } });
+  }
   await navigate(page, "Tags & filing");
   await page.getByPlaceholder("e.g. Bills").fill(tagName);
   await page.getByPlaceholder("e.g. ARCHIVE-BILLS").fill(code);

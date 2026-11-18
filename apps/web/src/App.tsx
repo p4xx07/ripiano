@@ -95,7 +95,7 @@ function AppearanceControl({ preference, onChange }: {
       <select value={languagePreference} onChange={(event) => setLanguagePreference(event.target.value as LanguagePreference)}>
         <option value="system">{m.languageSystem}</option>
         <option value="en">English</option>
-        <option value="it">{m.italianPreview}</option>
+        <option value="it">{m.italian}</option>
       </select>
     </label>
     </>
@@ -517,6 +517,15 @@ function BackupPanel() {
   );
 }
 
+function viewLabelsFor(m: typeof appMessages.en) {
+  return {
+    documents: m.allDocuments, inbox: m.inbox, actions: m.needsAction, tags: m.tags,
+    physical: m.physical, backups: m.backups, agents: m.agents, trash: m.trash,
+    integrations: m.email, sources: m.sources, workflows: m.workflows, security: m.security,
+    overview: m.overview, shared: m.shared, people: m.people,
+  };
+}
+
 const GO_TO_VIEWS: Record<string, "documents" | "inbox" | "actions" | "tags" | "overview" | "shared" | "workflows" | "sources"> = {
   l: "documents", i: "inbox", a: "actions", t: "tags", o: "overview", s: "shared", w: "workflows", r: "sources",
 };
@@ -564,6 +573,8 @@ function App() {
   const [uploadReport, setUploadReport] = useState<{ total: number; failures: string[] } | null>(null);
   const [waitingUploads, setWaitingUploads] = useState(0);
   const sendingWaiting = useRef(false);
+  const signedInAs = useRef<string | null>(null);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [nativeScanner] = useState(() => Boolean(window.RipianoAndroid));
   const [dropActive, setDropActive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -630,6 +641,31 @@ function App() {
     }
   }, [view]);
 
+  // Moving between screens from the menu or a "g" shortcut puts focus on the new screen's heading,
+  // so keyboard and screen-reader users land at the top of what they asked for (not on first load).
+  const focusHeadingOnView = useRef(false);
+  function goTo(target: typeof view) {
+    setMenuOpen(false);
+    if (target === view) return;
+    focusHeadingOnView.current = true;
+    setView(target);
+  }
+  useEffect(() => {
+    if (!focusHeadingOnView.current) return;
+    focusHeadingOnView.current = false;
+    const frame = requestAnimationFrame(() => {
+      const heading = document.querySelector<HTMLElement>("#main-content h1");
+      if (heading && !heading.hasAttribute("tabindex")) heading.tabIndex = -1;
+      (heading ?? document.getElementById("main-content"))?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [view]);
+
+  // The browser tab names the current screen, in the interface language.
+  useEffect(() => {
+    document.title = session?.authenticated ? m.pageTitle(viewLabelsFor(m)[view]) : m.documentTitle;
+  }, [view, session?.authenticated, m]);
+
   useEffect(() => {
     if (!session?.authenticated) return;
     function shortcut(event: KeyboardEvent) {
@@ -654,8 +690,7 @@ function App() {
         // "g" then a letter: go to a screen.
         event.preventDefault();
         goPending.current = 0;
-        setMenuOpen(false);
-        setView(GO_TO_VIEWS[event.key.toLowerCase()]);
+        goTo(GO_TO_VIEWS[event.key.toLowerCase()]);
       } else if (event.key.toLowerCase() === "g") {
         goPending.current = Date.now();
       } else if (event.key.toLowerCase() === "n") {
@@ -667,6 +702,8 @@ function App() {
         setActiveRow((row) => event.key === "j" ? Math.min(documents.length - 1, row + 1) : Math.max(0, row - 1));
       } else if (view === "documents" && event.key === "Enter" && activeRow >= 0 && documents[activeRow]) {
         event.preventDefault();
+        // The dialog returns focus to whatever had it when it opened: make that the row's title.
+        document.querySelector<HTMLElement>(".document-row.keyboard-active .document-title-button")?.focus({ preventScroll: true });
         setSelectedDocument(documents[activeRow]);
       }
     }
@@ -676,7 +713,12 @@ function App() {
 
   useEffect(() => { setActiveRow(-1); }, [documents, view]);
   useEffect(() => {
-    if (activeRow >= 0) document.querySelector(".document-row.keyboard-active")?.scrollIntoView({ block: "nearest" });
+    if (activeRow < 0) return;
+    // j / k move real focus to the row's title, so screen readers announce it and closing the
+    // document returns focus to that row instead of the page.
+    const row = document.querySelector(".document-row.keyboard-active");
+    row?.querySelector<HTMLElement>(".document-title-button")?.focus({ preventScroll: true });
+    row?.scrollIntoView({ block: "nearest" });
   }, [activeRow]);
 
   const loadFilterOptions = useCallback(async () => {
@@ -982,13 +1024,15 @@ function App() {
       for (const item of await uploadQueue.pending(owner)) {
         const form = new FormData();
         form.append("document", new File([item.blob], item.name, { type: item.type }));
+        if (signedInAs.current !== owner) break; // someone else signed in meanwhile: never send into their account
         try {
           await request<Document>("/api/documents", { method: "POST", body: form });
           sent += 1;
           await uploadQueue.forget(item.id);
         } catch (cause) {
-          if (cause instanceof ApiError && uploadQueue.isRetryable(cause.status)) break;
-          failures.push(`${item.name}: ${cause instanceof Error ? cause.message : l.uploadFailed}`);
+          // Keep the file unless the server refused the file itself (signed out, throttled, or server errors keep it).
+          if (!(cause instanceof ApiError) || !uploadQueue.isRefusal(cause.status)) break;
+          failures.push(`${item.name}: ${cause.message}`);
           await uploadQueue.forget(item.id);
         }
       }
@@ -1001,6 +1045,7 @@ function App() {
   }
 
   useEffect(() => {
+    signedInAs.current = session?.authenticated ? session.username : null;
     if (!session?.authenticated) return;
     void sendWaiting();
     const retry = () => void sendWaiting();
@@ -1071,6 +1116,18 @@ function App() {
     window.RipianoAndroid.postMessage("scan");
   }
 
+  /** With files still waiting on this device, ask first: keep them for the next sign-in here, or discard them. */
+  async function requestSignOut(discardWaiting = false) {
+    if (waitingUploads > 0 && !confirmSignOut) {
+      setConfirmSignOut(true);
+      return;
+    }
+    if (discardWaiting && session?.username) await uploadQueue.forgetAll(session.username);
+    setConfirmSignOut(false);
+    signedInAs.current = null;
+    await signOut();
+  }
+
   async function signOut() {
     try {
       await request("/api/session", { method: "DELETE" });
@@ -1115,12 +1172,16 @@ function App() {
   const tagById = new Map(filterOptions.tags.map((tag) => [tag.id, tag]));
   const tagOptions = [...filterOptions.tags].sort((a, b) =>
     tagPathLabel(a, tagById).localeCompare(tagPathLabel(b, tagById)));
-  const viewLabels = {
-    documents: m.allDocuments, inbox: m.inbox, actions: m.needsAction, tags: m.tags,
-    physical: m.physical, backups: m.backups, agents: m.agents, trash: m.trash,
-    integrations: m.email, sources: m.sources, workflows: m.workflows, security: m.security,
-    overview: m.overview, shared: m.shared, people: m.people,
-  };
+  const viewLabels = viewLabelsFor(m);
+
+  type View = typeof view;
+  const navItems: [View, typeof Inbox, string][] = [
+    ["inbox", Inbox, m.inbox], ["documents", FolderOpen, m.allDocuments], ["actions", ClipboardList, m.needsAction],
+    ["tags", TagIcon, m.tags], ["physical", MapPin, m.physical], ["overview", BarChart3, m.overview],
+    ["workflows", Workflow, m.workflows], ["security", ShieldCheck, m.security], ["integrations", Mail, m.email],
+    ["sources", Cloud, m.sources], ["shared", Users, m.shared], ["trash", Trash2, m.trash],
+    ...(session.owner ? [["agents", Bot, m.agents], ["people", UserCog, m.people], ["backups", DatabaseBackup, m.backups]] as [View, typeof Inbox, string][] : []),
+  ];
 
   return (
     <div
@@ -1147,115 +1208,57 @@ function App() {
             <X size={19} />
           </button>
         </div>
-        <div className="sidebar-label">{m.yourSpace}</div>
-        <button
-          className={`nav-link ${view === "inbox" ? "active" : ""}`}
-          onClick={() => { setView("inbox"); setMenuOpen(false); }}
-        >
-          <Inbox size={18} /> {m.inbox}
-        </button>
-        <button
-          className={`nav-link ${view === "documents" ? "active" : ""}`}
-          onClick={() => {
-            setView("documents");
-            setQuery("");
-            setFilters({ ...emptyLibraryFilters });
-            setMenuOpen(false);
-          }}
-        >
-          <FolderOpen size={18} /> {m.allDocuments}
-        </button>
-        <button
-          className={`nav-link ${view === "actions" ? "active" : ""}`}
-          onClick={() => { setView("actions"); setMenuOpen(false); }}
-        >
-          <ClipboardList size={18} /> {m.needsAction}
-        </button>
-        <button
-          className={`nav-link ${view === "tags" ? "active" : ""}`}
-          onClick={() => {
-            setView("tags");
-            setMenuOpen(false);
-          }}
-        >
-          <TagIcon size={18} /> {m.tags}
-        </button>
-        <button
-          className={`nav-link ${view === "physical" ? "active" : ""}`}
-          onClick={() => {
-            setView("physical");
-            setMenuOpen(false);
-          }}
-        >
-          <MapPin size={18} /> {m.physical}
-        </button>
-        <button className={`nav-link ${view === "overview" ? "active" : ""}`} onClick={() => { setView("overview"); setMenuOpen(false); }}>
-          <BarChart3 size={18} /> {m.overview}
-        </button>
-        <button className={`nav-link ${view === "workflows" ? "active" : ""}`} onClick={() => { setView("workflows"); setMenuOpen(false); }}>
-          <Workflow size={18} /> {m.workflows}
-        </button>
-        <button className={`nav-link ${view === "security" ? "active" : ""}`} onClick={() => { setView("security"); setMenuOpen(false); }}>
-          <ShieldCheck size={18} /> {m.security}
-        </button>
-        <button className={`nav-link ${view === "integrations" ? "active" : ""}`} onClick={() => { setView("integrations"); setMenuOpen(false); }}>
-          <Mail size={18} /> {m.email}
-        </button>
-        <button className={`nav-link ${view === "sources" ? "active" : ""}`} onClick={() => { setView("sources"); setMenuOpen(false); }}>
-          <Cloud size={18} /> {m.sources}
-        </button>
-        <button className={`nav-link ${view === "shared" ? "active" : ""}`} onClick={() => { setView("shared"); setMenuOpen(false); }}>
-          <Users size={18} /> {m.shared}
-        </button>
-        <button className={`nav-link ${view === "trash" ? "active" : ""}`} onClick={() => { setView("trash"); setMenuOpen(false); }}>
-          <Trash2 size={18} /> {m.trash}
-        </button>
-        {session.owner && (
-          <button
-            className={`nav-link ${view === "agents" ? "active" : ""}`}
-            onClick={() => {
-              setView("agents");
-              setMenuOpen(false);
-            }}
-          >
-            <Bot size={18} /> {m.agents}
-          </button>
-        )}
-        {session.owner && (
-          <button className={`nav-link ${view === "people" ? "active" : ""}`} onClick={() => { setView("people"); setMenuOpen(false); }}>
-            <UserCog size={18} /> {m.people}
-          </button>
-        )}
-        {session.owner && (
-          <button
-            className={`nav-link ${view === "backups" ? "active" : ""}`}
-            onClick={() => {
-              setView("backups");
-              setMenuOpen(false);
-            }}
-          >
-            <DatabaseBackup size={18} /> {m.backups}
-          </button>
-        )}
-        <div className="sidebar-spacer" />
-        <AppearanceControl preference={appearance} onChange={changeAppearance} />
-        <div className="sidebar-note">
-          <div className="sidebar-note-icon">
-            <LockKeyhole size={17} />
+        <div className="sidebar-scroll">
+          <nav className="sidebar-nav" aria-label={m.mainNavigation}>
+            <div className="sidebar-label">{m.yourSpace}</div>
+            {navItems.map(([target, Icon, label]) => (
+              <button
+                key={target}
+                className={`nav-link ${view === target ? "active" : ""}`}
+                aria-current={view === target ? "page" : undefined}
+                onClick={() => {
+                  if (target === "documents") {
+                    setQuery("");
+                    setFilters({ ...emptyLibraryFilters });
+                  }
+                  goTo(target);
+                }}
+              >
+                <Icon size={18} aria-hidden="true" /> {label}
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-spacer" />
+          <AppearanceControl preference={appearance} onChange={changeAppearance} />
+          <div className="sidebar-note">
+            <div className="sidebar-note-icon">
+              <LockKeyhole size={17} />
+            </div>
+            <strong>{m.sidebarNoteTitle}</strong>
+            <span>{m.sidebarNoteText}</span>
           </div>
-          <strong>{m.sidebarNoteTitle}</strong>
-          <span>{m.sidebarNoteText}</span>
         </div>
-        <button className="profile" onClick={signOut} title={m.signOut}>
-          <span className="avatar">
+        <div className="profile">
+          <span className="avatar" aria-hidden="true">
             {session.username?.slice(0, 1).toUpperCase()}
           </span>
           <span className="profile-name">
             {session.username}
             <small>{session.owner ? m.admin : m.yourArchive}</small>
           </span>
-          <LogOut size={16} />
-        </button>
+          {confirmSignOut ? (
+            <div className="sign-out-confirm" role="alert">
+              <p>{m.signOutWaiting(waitingUploads)}</p>
+              <button type="button" onClick={() => void requestSignOut(false)}>{m.signOutKeep}</button>
+              <button type="button" onClick={() => void requestSignOut(true)}>{m.signOutDiscard}</button>
+              <button type="button" onClick={() => setConfirmSignOut(false)}>{m.cancelSignOut}</button>
+            </div>
+          ) : (
+            <button type="button" className="sign-out" onClick={() => void requestSignOut()} title={m.signOut}>
+              <LogOut size={16} aria-hidden="true" /> {m.signOut}
+            </button>
+          )}
+        </div>
       </aside>
 
       <main className="main-content" id="main-content" tabIndex={-1}>
@@ -1274,7 +1277,7 @@ function App() {
             <span className="private-dot" /> {m.privateAndYours}
           </div>
         </header>
-        <section className="page-content">
+        <section className={`page-content${view === "documents" && query.trim() ? " library-searching" : ""}`}>
           {view === "backups" ? (
             <BackupPanel />
           ) : view === "shared" ? (
@@ -1737,6 +1740,8 @@ function App() {
               ref={cameraRef}
               className="visually-hidden"
               tabIndex={-1}
+              aria-hidden="true"
+              aria-label={l.takePhoto}
               type="file"
               accept="image/*"
               capture="environment"
@@ -1746,6 +1751,8 @@ function App() {
               ref={galleryRef}
               className="visually-hidden"
               tabIndex={-1}
+              aria-hidden="true"
+              aria-label={l.choosePhotos}
               type="file"
               accept="image/*"
               multiple
@@ -1755,6 +1762,8 @@ function App() {
               ref={fileRef}
               className="visually-hidden"
               tabIndex={-1}
+              aria-hidden="true"
+              aria-label={l.browseFiles}
               type="file"
               accept="application/pdf,image/jpeg,image/png,.eml,.msg,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.odt,.ods,.odp,.rtf"
               multiple

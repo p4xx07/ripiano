@@ -1,4 +1,5 @@
 import json
+import re
 from unittest.mock import patch
 
 import segno
@@ -145,3 +146,135 @@ def test_location_lookup_pages_more_than_fifty_copies():
     assert missing_second["missing_next_cursor"] is None
     assert client.get(f"/api/locations/lookup/{location.sticker_code}", {"cursor": "../../outside"}).status_code == 400
     assert client.get(f"/api/locations/lookup/{location.sticker_code}", {"missing_cursor": "../../outside"}).status_code == 400
+
+
+def _json(client, method, url, body):
+    return getattr(client, method)(url, json.dumps(body), content_type="application/json")
+
+
+@pytest.mark.django_db
+def test_location_rename_move_and_validation_keep_copy_history():
+    owner = get_user_model().objects.create_user("mover", password="secure-password-1")
+    other = get_user_model().objects.create_user("intruder", password="secure-password-2")
+    document = Document.objects.create(
+        owner=owner, title="Lease", original_name="lease.pdf", original_path="originals/lease.pdf",
+        original_mime="application/pdf", original_sha256="c" * 64, original_size=10,
+    )
+    client = Client()
+    client.force_login(owner)
+    shelf = _json(client, "post", "/api/locations", {"name": "Shelf"}).json()
+    box = _json(client, "post", "/api/locations", {"name": "Box", "parent_id": shelf["id"]}).json()
+    folder = _json(client, "post", "/api/locations", {"name": "Folder", "parent_id": box["id"]}).json()
+    cabinet = _json(client, "post", "/api/locations", {"name": "Cabinet"}).json()
+    copy = _json(client, "post", f"/api/documents/{document.id}/copies", {"location_id": folder["id"]}).json()
+
+    renamed = _json(client, "patch", f"/api/locations/{box['id']}", {"name": "  Blue box  "})
+    assert renamed.status_code == 200
+    assert renamed.json()["path"] == ["Shelf", "Blue box"]
+    assert renamed.json()["sticker_code"] == box["sticker_code"]
+    assert client.get(f"/api/stickers/{copy['sticker_code']}").json()["copy"]["location_path"] == ["Shelf", "Blue box", "Folder"]
+
+    moved = _json(client, "patch", f"/api/locations/{box['id']}", {"parent_id": cabinet["id"]})
+    assert moved.status_code == 200
+    assert moved.json()["path"] == ["Cabinet", "Blue box"]
+    assert moved.json()["parent_id"] == cabinet["id"]
+    history = client.get(f"/api/copies/{copy['id']}/history").json()["movements"]
+    assert len(history) == 1 and history[0]["to"] == ["Cabinet", "Blue box", "Folder"]
+    assert Movement.objects.filter(physical_copy_id=copy["id"]).count() == 1
+    assert PhysicalCopy.objects.get(pk=copy["id"]).location_id.hex == folder["id"].replace("-", "")
+
+    top = _json(client, "patch", f"/api/locations/{box['id']}", {"parent_id": None})
+    assert top.status_code == 200 and top.json()["path"] == ["Blue box"]
+
+    # Cycles: into itself and into a descendant.
+    assert _json(client, "patch", f"/api/locations/{box['id']}", {"parent_id": box["id"]}).status_code == 400
+    cycle = _json(client, "patch", f"/api/locations/{box['id']}", {"parent_id": folder["id"]})
+    assert cycle.status_code == 400
+    assert "inside itself" in cycle.json()["error"]
+    assert Location.objects.get(pk=box["id"]).parent_id is None
+
+    # Duplicate names among siblings are refused, case-insensitively, for rename and move.
+    assert _json(client, "patch", f"/api/locations/{box['id']}", {"name": "shelf"}).status_code == 409
+    _json(client, "post", "/api/locations", {"name": "Blue Box", "parent_id": shelf["id"]})
+    assert _json(client, "patch", f"/api/locations/{box['id']}", {"parent_id": shelf["id"]}).status_code == 409
+    assert _json(client, "patch", f"/api/locations/{box['id']}", {"name": "BLUE BOX"}).status_code == 200
+
+    # Bad input.
+    assert _json(client, "patch", f"/api/locations/{box['id']}", {}).status_code == 400
+    assert _json(client, "patch", f"/api/locations/{box['id']}", {"name": "   "}).status_code == 400
+    assert _json(client, "patch", f"/api/locations/{box['id']}", {"name": "x" * 101}).status_code == 400
+    assert _json(client, "patch", f"/api/locations/{box['id']}", {"parent_id": "not-a-uuid"}).status_code == 400
+
+    # Another owner can neither see nor move these locations, nor use them as a parent.
+    other_client = Client()
+    other_client.force_login(other)
+    assert _json(other_client, "patch", f"/api/locations/{box['id']}", {"name": "Mine"}).status_code == 404
+    assert other_client.delete(f"/api/locations/{cabinet['id']}").status_code == 404
+    theirs = _json(other_client, "post", "/api/locations", {"name": "Their shelf"}).json()
+    assert _json(client, "patch", f"/api/locations/{box['id']}", {"parent_id": theirs["id"]}).status_code == 400
+    assert Location.objects.get(pk=box["id"]).name == "BLUE BOX"
+
+
+@pytest.mark.django_db
+def test_location_delete_only_when_empty():
+    owner = get_user_model().objects.create_user("deleter", password="secure-password-1")
+    document = Document.objects.create(
+        owner=owner, title="Receipt", original_name="r.pdf", original_path="originals/r.pdf",
+        original_mime="application/pdf", original_sha256="d" * 64, original_size=10,
+    )
+    client = Client()
+    client.force_login(owner)
+    shelf = _json(client, "post", "/api/locations", {"name": "Shelf"}).json()
+    box = _json(client, "post", "/api/locations", {"name": "Box", "parent_id": shelf["id"]}).json()
+    copy = _json(client, "post", f"/api/documents/{document.id}/copies", {"location_id": box["id"]}).json()
+
+    nested = client.delete(f"/api/locations/{shelf['id']}")
+    assert nested.status_code == 409 and "locations inside" in nested.json()["error"]
+    stored = client.delete(f"/api/locations/{box['id']}")
+    assert stored.status_code == 409 and "paper copies" in stored.json()["error"]
+
+    Document.objects.filter(pk=document.id).update(trashed_at=timezone.now())
+    trashed = client.delete(f"/api/locations/{box['id']}")
+    assert trashed.status_code == 409 and "Trash" in trashed.json()["error"]
+    Document.objects.filter(pk=document.id).update(trashed_at=None)
+
+    _json(client, "patch", f"/api/copies/{copy['id']}", {"location_id": shelf["id"]})
+    assert client.delete(f"/api/locations/{box['id']}").json() == {"deleted": True}
+    assert not Location.objects.filter(pk=box["id"]).exists()
+    # History rows survive; the deleted location just drops out of their path.
+    assert Movement.objects.filter(physical_copy_id=copy["id"]).count() == 2
+    assert client.delete(f"/api/locations/{shelf['id']}").status_code == 409
+
+
+def test_label_path_keeps_innermost_locations():
+    from archive.physical_views import label_path
+    assert label_path(["Shelf", "Box"]) == "Shelf / Box"
+    long = ["Studio scaffale grande", "Armadio in fondo al corridoio", "Scatola 2026", "Cartella blu"]
+    text = label_path(long)
+    assert text.startswith("… / ") and text.endswith("Scatola 2026 / Cartella blu") and len(text) <= 60
+    assert label_path(["x" * 80]).startswith("…") and len(label_path(["x" * 80])) == 60
+    assert label_path([]) == ""
+
+
+@pytest.mark.django_db
+def test_sticker_label_never_breaks_code_and_clamps_text():
+    owner = get_user_model().objects.create_user("printer", password="secure-password-1")
+    document = Document.objects.create(
+        owner=owner, title="Avviso condominio mirtillo " * 4, original_name="a.pdf", original_path="originals/a.pdf",
+        original_mime="application/pdf", original_sha256="e" * 64, original_size=10,
+    )
+    client = Client()
+    client.force_login(owner)
+    parent = None
+    for name in ["Studio scaffale", "Scatola 2026 con nome lungo", "Cartella condominio"]:
+        parent = _json(client, "post", "/api/locations", {"name": name, "parent_id": parent and parent["id"]}).json()
+    copy = _json(client, "post", f"/api/documents/{document.id}/copies", {"location_id": parent["id"]}).json()
+    html = client.get(f"/api/copies/{copy['id']}/label").content.decode()
+    assert "white-space:nowrap" in html and "-webkit-line-clamp:3" in html
+    assert re.search(r'<div class="code" style="font-size:(\d+(\.\d)?)pt">' + copy["sticker_code"] + "</div>", html)
+    assert "Cartella condominio</div>" in html
+    location_html = client.get(f"/api/locations/{parent['id']}/label").content.decode()
+    assert f'>{parent["sticker_code"]}</div>' in location_html
+    from archive.physical_views import code_font_pt
+    assert code_font_pt("R-7JVVQTRH") == 12.0
+    assert 9 <= code_font_pt("R-WWWWWWWW") < 10

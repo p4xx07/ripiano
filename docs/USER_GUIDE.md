@@ -231,6 +231,10 @@ In **Senders** and **Document types**, add a matching phrase to a name to file n
 
 Tags can be grouped under other tags. Create a nested tag from the **Under** picker or move an existing tag from its card. Filtering the Library by a parent finds documents tagged with any nested child, including deeper levels; documents tagged with both parent and child appear once. Agent grants that use a tag filter continue to require the exact granted tag.
 
+### Document dates
+
+When a document is processed and has no date yet, Ripiano looks for the first date near the start of its text (for example "Milano, 10 novembre 2026" or "10/11/2026", read as day/month) and uses it as the document date; emails use the date they were sent. If an email's sender has the same name, address, or domain as one of your senders, the email is filed under that sender (Ripiano never creates senders by itself). A date you enter or clear yourself is always kept, even if you retry text recognition, and the document's Changes list shows "Date and sender detection" for anything Ripiano filled in. Ambiguous numeric dates are read day-first; set `RIPIANO_DATE_ORDER=MDY` or `YMD` to change that, or `RIPIANO_DATE_DETECTION=0` to stop reading dates from text.
+
 ### Matching rules
 
 Tag, sender, and document-type rules are under **Tags & filing**. Each rule can match in one of five ways:
@@ -334,6 +338,10 @@ If a paper copy is missing, mark its sticker **Missing** from the document panel
 Each shelf or box also has a stable `L-` code and a printable QR label. Scan it to see the paper copies stored there, including copies in nested locations, or type the code in **Your paper archive**. Large locations load their contents in pages of 50. Missing copies remain listed at their last known location with a warning.
 
 <img src="../qa-artifacts/20261111-showcase/desktop/paper-contents.png" alt="Desktop paper archive showing two documents in a binder" width="640">
+
+### Editing locations
+
+In **Paper archive → Add a location**, the button tells you where the new location goes ("Add location at top level" or "Add location inside Shelf / Box"). After you add a location, "Inside" goes back to the top level. To fix a mistake, choose **Edit** next to a location. You can rename it or choose a new "Inside" location. Paper copies, stickers, printed labels, and their history stay attached, and any locations inside it move with it. **Delete location** asks you to confirm first. It works only when the location is empty, so move its paper copies and any locations inside it somewhere else first. Printed stickers keep the code on one line and show the innermost locations when the full path is too long.
 
 ## Sharing
 

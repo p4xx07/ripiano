@@ -21,7 +21,7 @@ test("a document can be downloaded as a portable ZIP", async ({ page }, testInfo
   await page.getByRole("button", { name: /Browse files/ }).click();
   await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
   await page.getByRole("button", { name, exact: true }).click();
-  const files = page.getByRole("dialog", { name: "Keep it in place." }).locator(".detail-files").first();
+  const files = page.getByRole("dialog").filter({ hasText: "Keep it in place." }).locator(".detail-files").first();
   const downloadPromise = page.waitForEvent("download");
   await files.getByRole("link", { name: "Export document ZIP" }).click();
   const download = await downloadPromise;

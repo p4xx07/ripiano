@@ -1,5 +1,5 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { ArrowRight, Boxes, MapPin, Plus, Printer, ScanLine, X } from "lucide-react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ArrowRight, Boxes, MapPin, Pencil, Plus, Printer, ScanLine, Trash2, X } from "lucide-react";
 import { Location, PhysicalCopy, request } from "./api";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
@@ -35,6 +35,29 @@ export default function PhysicalPanel({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [loadingContents, setLoadingContents] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editParent, setEditParent] = useState("");
+  const editButtons = useRef(new Map<string, HTMLButtonElement>());
+
+  const pathOf = (id: string) => locations.find((item) => item.id === id)?.path.join(" / ") ?? "";
+  const parentPath = parent ? pathOf(parent) : "";
+
+  function descendantsOf(id: string) {
+    const ids = new Set([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const item of locations) {
+        if (item.parent_id && ids.has(item.parent_id) && !ids.has(item.id)) {
+          ids.add(item.id);
+          grew = true;
+        }
+      }
+    }
+    return ids;
+  }
 
   const load = useCallback(async () => {
     try {
@@ -74,17 +97,98 @@ export default function PhysicalPanel({
     event.preventDefault();
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      await request("/api/locations", {
+      const created = await request<Location>("/api/locations", {
         method: "POST",
         body: JSON.stringify({ name, parent_id: parent || null }),
       });
       setName("");
+      // Reset "Inside" so the next location is not silently nested under the previous parent.
+      setParent("");
+      setNotice(parentPath ? m.addedInside(created.name, parentPath) : m.addedTop(created.name));
       await load();
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : m.createError,
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEdit(location: Location) {
+    setEditing(location.id);
+    setEditName(location.name);
+    setEditParent(location.parent_id ?? "");
+    setError("");
+    setNotice("");
+  }
+
+  function stopEdit(id: string | null = editing) {
+    setEditing(null);
+    if (id) requestAnimationFrame(() => editButtons.current.get(id)?.focus());
+  }
+
+  function editKeys(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      stopEdit();
+    }
+  }
+
+  async function refreshFound(id: string, deleted = false) {
+    if (foundLocation?.location.id !== id) return;
+    if (deleted) setFoundLocation(null);
+    else await findSticker(foundLocation.location.sticker_code);
+  }
+
+  async function saveLocation(event: FormEvent, location: Location) {
+    event.preventDefault();
+    const body: { name?: string; parent_id?: string | null } = {};
+    if (editName.trim() !== location.name) body.name = editName;
+    if ((editParent || null) !== location.parent_id) body.parent_id = editParent || null;
+    if (!Object.keys(body).length) {
+      stopEdit(location.id);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const saved = await request<Location>(`/api/locations/${location.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      setNotice(m.saved(saved.path.join(" / ")));
+      stopEdit(location.id);
+      await load();
+      await refreshFound(location.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.saveError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteLocation(location: Location) {
+    const path = location.path.join(" / ");
+    setError("");
+    setNotice("");
+    if (locations.some((item) => item.parent_id === location.id)) {
+      setError(m.deleteHasChildren(path));
+      return;
+    }
+    if (!window.confirm(m.confirmDelete(path))) return;
+    setBusy(true);
+    try {
+      await request(`/api/locations/${location.id}`, { method: "DELETE" });
+      setNotice(m.deleted(path));
+      setEditing(null);
+      await load();
+      await refreshFound(location.id, true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.deleteError);
     } finally {
       setBusy(false);
     }
@@ -136,6 +240,7 @@ export default function PhysicalPanel({
           </button>
         </div>
       )}
+      <div className="location-notice" role="status" aria-live="polite">{notice}</div>
       <div className="physical-layout">
         <section className="physical-main">
           <div className="sticker-search-card">
@@ -208,16 +313,67 @@ export default function PhysicalPanel({
           </div>
           {locations.length ? (
             <div className="location-list">
-              {locations.map((location) => (
-                <div key={location.id}>
+              {locations.map((location) => {
+                const excluded = editing === location.id ? descendantsOf(location.id) : null;
+                return (
+                <div key={location.id} className={editing === location.id ? "location-row-editing" : undefined}>
                   <span className="location-marker">
                     <Boxes size={18} />
                   </span>
                   <span className="location-path">{location.path.join(" / ")}</span>
                   <button type="button" className="text-action" onClick={() => { setCode(location.sticker_code); void findSticker(location.sticker_code); }}>{m.viewContents}</button>
                   <a className="text-action" href={`/api/locations/${location.id}/label`} target="_blank" rel="noreferrer"><Printer size={15} /> {m.printLabel}</a>
+                  <button
+                    type="button"
+                    className="text-action location-edit-toggle"
+                    ref={(node) => { if (node) editButtons.current.set(location.id, node); else editButtons.current.delete(location.id); }}
+                    aria-expanded={editing === location.id}
+                    aria-controls={`location-edit-${location.id}`}
+                    aria-label={m.editLabel(location.path.join(" / "))}
+                    onClick={() => editing === location.id ? stopEdit(location.id) : startEdit(location)}
+                  >
+                    <Pencil size={15} /> {m.edit}
+                  </button>
+                  {excluded && (
+                    <form
+                      id={`location-edit-${location.id}`}
+                      className="location-edit-form"
+                      aria-label={m.editLabel(location.path.join(" / "))}
+                      onSubmit={(event) => void saveLocation(event, location)}
+                      onKeyDown={editKeys}
+                    >
+                      <label className="detail-label">
+                        {m.name}
+                        <input
+                          value={editName}
+                          onChange={(event) => setEditName(event.target.value)}
+                          maxLength={100}
+                          required
+                          autoFocus
+                        />
+                      </label>
+                      <label className="detail-label">
+                        {m.moveInside}
+                        <select value={editParent} onChange={(event) => setEditParent(event.target.value)}>
+                          <option value="">{m.topLevel}</option>
+                          {locations.filter((item) => !excluded.has(item.id)).map((item) => (
+                            <option key={item.id} value={item.id}>{item.path.join(" / ")}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <p className="location-edit-hint">{m.editHint}</p>
+                      <div className="location-edit-actions">
+                        <Button disabled={busy}>{busy ? m.saving : m.save}</Button>
+                        <Button type="button" variant="secondary" onClick={() => stopEdit(location.id)}>{m.cancel}</Button>
+                        <Button type="button" variant="danger" className="location-delete" disabled={busy} onClick={() => void deleteLocation(location)}>
+                          <Trash2 size={16} /> {m.deleteLocation}
+                        </Button>
+                      </div>
+                    </form>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="tag-empty">
@@ -259,7 +415,7 @@ export default function PhysicalPanel({
               </select>
             </label>
             <Button disabled={busy}>
-              <Plus size={17} /> {busy ? m.adding : m.addLocation}
+              <Plus size={17} /> {busy ? m.adding : parentPath ? m.addLocationInside(parentPath) : m.addLocationTop}
             </Button>
           </form>
           <div className="tag-tip">

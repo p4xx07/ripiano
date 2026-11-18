@@ -54,6 +54,9 @@ def extract(root=None):
             continue
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
+            if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+                    and any(isinstance(target, ast.Name) and target.id.isupper() for target in node.targets)):
+                collect(node.value)  # module constants used as messages, e.g. storage.UNSUPPORTED
             if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict)
                     and any(isinstance(target, ast.Name) and target.id.endswith("_ERRORS") for target in node.targets)):
                 for value in node.value.values:  # module-level message tables, e.g. FILTER_ERRORS

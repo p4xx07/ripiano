@@ -45,7 +45,7 @@ test("one-tap filing suggestions use a manually filed example", async ({ page },
 
   const sourceId = await upload(source);
   await page.getByRole("button", { name: source, exact: true }).click();
-  let dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  let dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await dialog.getByRole("checkbox", { name: tag }).check();
   await dialog.getByRole("button", { name: "Add a sender" }).click();
   await dialog.getByRole("textbox", { name: "New sender name" }).fill(sender);
@@ -58,7 +58,7 @@ test("one-tap filing suggestions use a manually filed example", async ({ page },
 
   const targetId = await upload(target);
   await page.getByRole("button", { name: target, exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   const suggestion = dialog.getByRole("button", { name: `Add tag: ${tag}`, exact: true });
   await expect(suggestion).toBeVisible();
   await expect(suggestion).toContainText(source);

@@ -278,7 +278,10 @@ def _list_allowed():
     grant = _grant()
     if grant is None:
         return []
-    return [tool for scope, tool in TOOLS.values() if scope in grant.scopes]
+    from . import semantic
+
+    # semantic_search is only offered while the optional semantic search is on (docs/AGENT_ACCESS.md).
+    return [tool for name, (scope, tool) in TOOLS.items() if scope in grant.scopes and (name != "semantic_search" or semantic.enabled())]
 
 
 @sync_to_async
@@ -292,6 +295,12 @@ def _call(name, args):
         return _result({"error": "Tool is not permitted for this agent"}, error=True)
     document, payload = _execute(grant, name, args)
     failure = "error" in payload
+    if document is None and isinstance(args, dict) and args.get("document_id"):
+        # Keep the probed document in the owner's audit log even when the agent was refused it (the agent learns nothing).
+        try:
+            document = Document.objects.filter(pk=UUID(str(args["document_id"])), owner=grant.owner).first()
+        except (TypeError, ValueError, AttributeError):
+            document = None
     AgentAudit.objects.create(grant=grant, action=name, document=document, outcome="error" if failure else "ok")
     return _result(payload, error=failure)
 

@@ -44,6 +44,12 @@ class Document(models.Model):
         MANUAL = "manual", "Set by user"
         SOURCE = "source", "Input rule"
 
+    class DateOrigin(models.TextChoices):
+        NONE = "none", "Unassigned"
+        DETECTED = "detected", "Found in the text"
+        SOURCE = "source", "Email date"
+        MANUAL = "manual", "Set by user"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="documents")
     source = models.CharField(max_length=30, choices=Source.choices, default=Source.WEB)
@@ -65,6 +71,8 @@ class Document(models.Model):
     processed_at = models.DateTimeField(null=True, blank=True)
     trashed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     document_date = models.DateField(null=True, blank=True)
+    # Detection fills an empty date only; a date set or cleared by hand (manual) is never replaced.
+    document_date_origin = models.CharField(max_length=10, choices=DateOrigin.choices, default=DateOrigin.NONE)
     correspondent = models.ForeignKey("Correspondent", null=True, blank=True, on_delete=models.PROTECT, related_name="documents")
     document_type = models.ForeignKey("DocumentType", null=True, blank=True, on_delete=models.PROTECT, related_name="documents")
     correspondent_origin = models.CharField(max_length=10, choices=FilingOrigin.choices, default=FilingOrigin.NONE)
@@ -633,6 +641,7 @@ class DocumentEvent(models.Model):
         MATCHING_RULES = "matching_rules", "Matching rules"
         LEARNED_FILING = "learned_filing", "Local learned filing"
         BARCODES = "barcodes", "Barcodes"
+        DETECTION = "detection", "Date and sender detection"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="events")

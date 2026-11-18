@@ -23,7 +23,7 @@ test("review invalid values, convert a custom detail, and search it as a number"
   await page.getByRole("button", { name: /Browse files/ }).click();
   await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
   await page.getByRole("button", { name, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   const custom = dialog.locator(".custom-fields");
   await custom.getByText("Add a custom field").click();
   await custom.getByRole("textbox", { name: "Field name" }).fill(field);

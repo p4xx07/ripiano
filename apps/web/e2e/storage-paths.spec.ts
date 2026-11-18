@@ -42,7 +42,7 @@ test("a storage path can be defined and chosen for a document", async ({ page },
   await expect.poll(async () => (await (await page.request.get(`/api/documents/${id}`)).json()).status, { timeout: 90000 }).toBe("ready");
   await page.getByRole("textbox", { name: "Search documents" }).fill(`title:${title}`);
   await page.getByRole("button", { name: title, exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Keep it in place." });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await dialog.getByLabel(/Storage path/).selectOption({ label: pathName });
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await expect(dialog).toBeHidden();

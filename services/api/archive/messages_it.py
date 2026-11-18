@@ -2,6 +2,11 @@
 
 EXACT = {
     "Invalid credentials": "Credenziali non valide",
+    "Text recognition failed for this file. Check that it opens correctly, then choose Retry OCR. Details are in the worker log.": "Il riconoscimento del testo non è riuscito per questo file. Verifica che si apra correttamente, poi scegli Riprova l'OCR. I dettagli sono nel log del worker.",
+    "The backup failed. Details are in the maintenance worker log.": "Il backup non è riuscito. I dettagli sono nel log del worker di manutenzione.",
+    "Ripiano cannot write to the backup folder. Check the permissions of the mounted backup folder on the NAS.": "Ripiano non può scrivere nella cartella dei backup. Controlla i permessi della cartella di backup montata sul NAS.",
+    "Use PDF, JPEG, PNG, an email (.eml or .msg), or an Office/OpenDocument/RTF file": "Usa un file PDF, JPEG, PNG, un'email (.eml o .msg) oppure un file Office/OpenDocument/RTF",
+    "Processing was cancelled. Choose Retry OCR to process it again.": "L'elaborazione è stata annullata. Scegli Riprova l'OCR per elaborarlo di nuovo.",
     "A backup is already queued or running": "Un backup è già in coda o in corso",
     "API tokens cannot send documents out of Ripiano or change mail, sources, workflows, or backups": "I token API non possono inviare documenti fuori da Ripiano né modificare posta, sorgenti, flussi di lavoro o backup",
     "Sign in required": "Devi accedere",
@@ -324,6 +329,11 @@ EXACT = {
     "Members must be a list of person IDs": "I membri devono essere un elenco di ID di persone",
     "Missing document file": "File del documento mancante",
     "Move copies or child locations first": "Sposta prima le copie o le posizioni contenute",
+    "Move or delete the locations inside this one first": "Sposta o elimina prima le posizioni contenute in questa",
+    "Move the paper copies stored here to another location first": "Sposta prima in un'altra posizione le copie cartacee conservate qui",
+    "Paper copies of documents in Trash are still recorded here. Restore and move them, or empty Trash, first": "Qui risultano ancora copie cartacee di documenti nel Cestino. Ripristinali e spostali, oppure svuota prima il Cestino",
+    "A location cannot go inside itself or a location it contains": "Una posizione non può stare dentro se stessa o dentro una posizione che contiene",
+    "Choose a new name or parent location": "Scegli un nuovo nome o una nuova posizione superiore",
     "Move or delete child tags first": "Prima sposta o elimina le sottoetichette",
     "Movement note is too long": "La nota di spostamento è troppo lunga",
     "NAS browse copy checksum or manifest verification failed": "Verifica del checksum o del manifest della copia di consultazione sul NAS non riuscita",

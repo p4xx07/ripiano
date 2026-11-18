@@ -49,6 +49,28 @@ def to_italian(message):
     return message
 
 
+def _translate_errors(value):
+    """Translate user-facing error fields, including failed jobs nested in list responses.
+
+    Titles, notes, document text, and other user data remain byte-for-byte unchanged.
+    """
+    changed = False
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "error" and isinstance(item, str):
+                translated = to_italian(item)
+                if translated != item:
+                    value[key] = translated
+                    changed = True
+            elif isinstance(item, (dict, list)):
+                changed = _translate_errors(item) or changed
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, (dict, list)):
+                changed = _translate_errors(item) or changed
+    return changed
+
+
 def wants_italian(request):
     return translation.get_language_from_request(request).split("-")[0] == "it"
 
@@ -79,12 +101,9 @@ class ApiLanguageMiddleware:
                 payload = json.loads(response.content)
             except (ValueError, UnicodeDecodeError):
                 return response
-            if isinstance(payload, dict) and isinstance(payload.get("error"), str):
-                translated = to_italian(payload["error"])
-                if translated != payload["error"]:
-                    payload["error"] = translated
-                    response.content = json.dumps(payload, ensure_ascii=False).encode()
-                    response["Content-Length"] = str(len(response.content))
+            if _translate_errors(payload):
+                response.content = json.dumps(payload, ensure_ascii=False).encode()
+                response["Content-Length"] = str(len(response.content))
         response["Content-Language"] = "it"
         patch_vary_headers(response, ("Accept-Language",))
         return response

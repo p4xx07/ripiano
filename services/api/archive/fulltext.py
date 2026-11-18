@@ -3,7 +3,7 @@
 Archives mix Italian and English, so each document keeps one stored `tsvector` (column
 `archive_document.search_tsv`, filled by the trigger in migration 0055 and, for documents older than
 that migration, by the background `backfill`) holding the words three ways:
-as written ('simple'), Italian stems and English stems. A search word matches when any of the three
+as written ('simple'), Italian stems, English stems, and common accents folded to plain vowels. A search word matches when any of the three
 forms matches, so "rifiuto" finds "rifiuti" and "invoice" finds "invoices", while an exact word still
 matches as before and ranks higher (it hits more than one form).
 
@@ -18,6 +18,14 @@ from django.db.models import Expression
 
 CONFIGS = ("simple", "italian", "english")
 MAX_QUERY_WORDS = 32
+FOLD_FROM = "àáâäèéêëìíîïòóôöùúûüÀÁÂÄÈÉÊËÌÍÎÏÒÓÔÖÙÚÛÜ"
+FOLD_TO = "aaaaeeeeiiiioooouuuuAAAAEEEEIIIIOOOOUUUU"
+FOLD_TABLE = str.maketrans(FOLD_FROM, FOLD_TO)
+
+
+def fold_accents(text):
+    """Match the one-character folding in migration 0056 without changing snippet offsets."""
+    return text.translate(FOLD_TABLE)
 
 
 class StoredSearchVector(Expression):
@@ -43,10 +51,11 @@ class StoredSearchVector(Expression):
 
     def as_sql(self, compiler, connection):
         table = compiler.quote_name_unless_alias(self.alias)
-        # Rows that existed before migration 0055 have no stored vector until the background backfill reaches them
-        # (see `backfill`); compute theirs on the fly so they never drop out of search.
-        column = {name: f"{table}.{connection.ops.quote_name(name)}" for name in ("search_tsv", "title", "extracted_text", "action_note")}
-        sql = "coalesce(%(search_tsv)s, ripiano_document_search_tsv(%(title)s, %(extracted_text)s, %(action_note)s))" % column
+        # Rows from before migration 0056 have an older stored vector; compute the new form on the fly
+        # until small-batch backfill reaches them. Null vectors from before 0055 are handled too.
+        column = {name: f"{table}.{connection.ops.quote_name(name)}" for name in ("search_tsv", "search_tsv_version", "title", "extracted_text", "action_note")}
+        sql = ("CASE WHEN %(search_tsv_version)s >= 2 AND %(search_tsv)s IS NOT NULL THEN %(search_tsv)s "
+               "ELSE ripiano_document_search_tsv(%(title)s, %(extracted_text)s, %(action_note)s) END") % column
         return sql, []
 
     def get_group_by_cols(self):
@@ -77,7 +86,7 @@ def search_query(text):
 
 
 def backfill(limit=200):
-    """Store the vector for up to `limit` documents that have none yet. Returns (indexed, more_remain).
+    """Store the current vector for up to `limit` old or unindexed documents. Returns (indexed, more_remain).
 
     Small batches with short row locks, so a large archive is indexed in the background without blocking
     uploads or edits. Rows being edited right now are skipped and picked up by the next batch.
@@ -89,9 +98,9 @@ def backfill(limit=200):
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            UPDATE archive_document SET search_tsv = ripiano_document_search_tsv(title, extracted_text, action_note)
-            WHERE id IN (SELECT id FROM archive_document WHERE search_tsv IS NULL LIMIT %s FOR UPDATE SKIP LOCKED)
+            UPDATE archive_document SET search_tsv = ripiano_document_search_tsv(title, extracted_text, action_note), search_tsv_version = 2
+            WHERE id IN (SELECT id FROM archive_document WHERE search_tsv_version < 2 OR search_tsv IS NULL LIMIT %s FOR UPDATE SKIP LOCKED)
             """, [limit])
         indexed = cursor.rowcount
-        cursor.execute("SELECT EXISTS (SELECT 1 FROM archive_document WHERE search_tsv IS NULL)")
+        cursor.execute("SELECT EXISTS (SELECT 1 FROM archive_document WHERE search_tsv_version < 2 OR search_tsv IS NULL)")
         return indexed, bool(cursor.fetchone()[0])

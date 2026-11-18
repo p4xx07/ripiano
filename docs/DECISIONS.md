@@ -4,13 +4,13 @@ Decisions agreed with the project owner that are not yet fully implemented. Read
 
 Status keys: **Agreed** (decided, not started), **In progress**, **Done** (link the commit).
 
-## Status snapshot — 2026-11-17
+## Status snapshot — 2026-11-18
 
-- Branch `codex/initial-implementation` (draft PR #1), at `76774b3` before this handoff update. The five items in "Remaining work that needs no further decision" are implemented; their rows and individual decision statuses below are the source of truth. This snapshot does not claim R4 parity or a release score.
+- Branch `codex/initial-implementation` (draft PR #1), baseline `d8724ff` before the current judge follow-up. The five items in "Remaining work that needs no further decision" are implemented; their rows and individual decision statuses below are the source of truth. This snapshot does not claim R4 parity or a release score.
 - Sources are configured in the app: S3-compatible storage, WebDAV, NAS folders, the built-in consume folder, Google Drive, OneDrive, Dropbox, and Telegram. Cloud connections and Telegram still need real-account validation; the consume folder needs deployment validation on the NAS.
 - Semantic search is optional and off by default. Plain-language Library searches now merge keyword and meaning hits into one ranking when semantic search is on; field searches and other sorts stay keyword-based. The NAS embedder's measured memory cost is about 780 MB with its model loaded, so the owner must opt in.
-- The latest slices after `bbe32e3` added Sources and cloud drives, optional semantic search, object sharing, API v1 body contracts, full English/Italian screen coverage, keyboard shortcuts, and an accessibility pass. They need the independent review described in [HANDOFF_2026-11-17.md](HANDOFF_2026-11-17.md).
-- Release gates remain: independent review and fixes, real-device and NAS checks, published images, and row-by-row R4 parity verification under [QUALITY_JUDGES.md](QUALITY_JUDGES.md). Do not merge into `main` until those gates are met.
+- The latest slices after `bbe32e3` added Sources and cloud drives, optional semantic search, object sharing, API v1 body contracts, full English/Italian screen coverage, keyboard shortcuts, and an accessibility pass. Claude's round-three Judge 2 and Judge 3 reports score 8.48 and 8.67 on `d8724ff`; Judge 1's report is missing. The follow-up fixes and independent scoped reviews are described in [HANDOFF_2026-11-18.md](HANDOFF_2026-11-18.md).
+- Release gates remain: three fresh judges on one candidate, clean-stack restore with locations and revoked grants, row-by-row R4 parity verification, and the owner-side checks in D7. Do not merge into `main` until [QUALITY_JUDGES.md](QUALITY_JUDGES.md) is satisfied.
 
 ## D1 — AI goes through MCP only (2026-11-17) — Agreed
 
@@ -109,6 +109,17 @@ The owner wants external storage to work like Synology Hyper Backup destinations
 - Done (cloud drives): `services/api/archive/cloud_sources.py` with Google Drive (Drive v3; Docs/Sheets/Slides exported to PDF; full `drive` scope for move/trash), OneDrive (Microsoft Graph; download via the pre-authenticated redirect without the token; rotated refresh tokens saved), and Dropbox (list_folder with cursor pagination; move_v2 with autorename). "Delete" uses each provider's trash. OAuth apps are stored by the archive owner under Sources → Sign-in apps (`CloudApp`, secret encrypted), with the Gmail/Outlook environment clients as fallback. Verified with fake provider APIs in tests and in the browser up to the Google consent redirect; not yet verified against real accounts (needs the owner's app registrations).
 - Done (consume folder, owner request 2026-11-17): mounting `RIPIANO_CONSUME_PATH` at `/consume` is enough; a built-in folder source (`StorageSource.builtin`) is created automatically for the first archive owner by the every-minute source poll. It imports recursively and removes each file after it is stored (files must be unchanged for 60 s first). It can be paused or edited but not deleted, and its kind is fixed.
 - Was "next": Google Drive / OneDrive / Dropbox (need OAuth app registration by the owner).
+
+## D7 — Judging scope and release path (2026-11-18) — Agreed
+
+- The quality judges (docs/QUALITY_JUDGES.md) score what a local stack and browser emulation can show. By owner decision the following are **out of scope for the judging rounds** and must not lower a score: installed iOS/Android PWA and native Android capture on real phones, real Telegram and cloud-drive accounts, and DS923+ checks (performance, Synology ACLs, a restore on the NAS). They stay listed as open owner-side checks; they are not claimed as demonstrated.
+- Published images: once the judges reach an acceptable score, merge to `main`, create a **pre-release**, let the GitHub workflow build the images, and test those images. Do not merge or tag before that.
+- Rounds so far (weighted mean of three judges): round 1 on `901d491` 7.12; round 2 on `f2b9416` 7.29. Reports are in `.omo/evidence/judge-*-report.md`.
+- Round 3 on `d8724ff` has two reports so far: Judge 2 scored 8.48 and Judge 3 scored 8.67. Judge 1's report is absent, so there is no three-judge round score. Follow-up fixes in the working tree need a fresh candidate run; the earlier scores do not transfer.
+
+## D8 — Search index languages (2026-11-18) — Agreed
+
+Full-text search stores Italian and English stems plus the words as written (migration 0055, `archive/fulltext.py`). The owner accepted the disk cost (about 130 MB per 10,000 typical documents); do not drop English to save space.
 
 ## Remaining work that needs no further decision
 

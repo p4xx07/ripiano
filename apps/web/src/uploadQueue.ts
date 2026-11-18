@@ -73,9 +73,9 @@ export async function forget(id: string): Promise<void> {
   }
 }
 
-/** Network failures (no answer, or the proxy says the server is down) are worth retrying; refusals are not. */
+/** Network failures, a temporarily unavailable server, and an ended session keep the file for its owner. */
 export function isRetryable(status: number) {
-  return status === 0 || status === 502 || status === 503 || status === 504;
+  return status === 0 || status === 401 || status === 502 || status === 503 || status === 504;
 }
 
 /** Only a refusal of the file itself removes it from the queue; anything else (signed out, throttled, server error) keeps it. */

@@ -58,6 +58,21 @@ def test_full_text_matches_italian_and_english_word_forms_and_ranks_exact_words_
 
 @pytest.mark.django_db
 @postgres_only
+def test_library_search_finds_italian_words_without_typed_accents_and_shows_the_phrase():
+    owner, client = signed_in()
+    make(owner, "Avviso città", "Perché la città richiede più qualità.")
+    assert titles(client, "perche") == ["Avviso città"]
+    assert titles(client, "citta qualita") == ["Avviso città"]
+    assert titles(client, "perché") == ["Avviso città"]
+    result = client.get("/api/documents", {"q": "perche"}).json()["documents"][0]
+    assert "Perché" in result["snippet"]
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT search_tsv_version FROM archive_document WHERE id = %s", [result["id"]])
+        assert cursor.fetchone()[0] == 2
+
+
+@pytest.mark.django_db
+@postgres_only
 def test_stored_vector_follows_text_edits_and_works_inside_subqueries():
     from archive.fulltext import StoredSearchVector, search_query
 
@@ -195,8 +210,17 @@ def test_documents_older_than_the_search_index_stay_searchable_and_are_indexed_i
         call_command("migrate", "archive", "0054", verbosity=0)  # the schema before the stored search index
         owner, client = signed_in()
         old = [make(owner, f"Vecchia bolletta {index}", "tassa sui rifiuti del comune") for index in range(3)]
-        call_command("migrate", "archive", "0055", verbosity=0)  # the upgrade
-        assert not any(stored(item) for item in old)  # the migration itself indexes nothing (no long lock on a NAS)
+        call_command("migrate", "archive", "0057", verbosity=0)  # the current upgrade
+        assert not any(stored(item) for item in old)  # migrations index nothing (no long lock on a NAS)
+        # The concurrent index step can be retried after a process is interrupted between
+        # index creation and Django recording the migration as applied.
+        from importlib import import_module
+        retry_index = import_module("archive.migrations.0057_accent_backfill_index").forward
+        with connection.schema_editor(atomic=False) as schema_editor:
+            retry_index(None, schema_editor)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT indisvalid FROM pg_index WHERE indexrelid = 'archive_document_search_tsv_old'::regclass")
+            assert cursor.fetchone() == (True,)
         # Not indexed yet, but found all the same, including by another word form.
         assert sorted(titles(client, "rifiuto")) == sorted(item.title for item in old)
         new = make(owner, "Nuova bolletta", "tassa sui rifiuti")

@@ -74,3 +74,28 @@ def test_library_filter_errors_are_sentences():
     assert english == "Invalid tag filter"
     italian = client.get("/api/documents", {"date_from": "nope"}, HTTP_ACCEPT_LANGUAGE="it").json()["error"]
     assert italian == EXACT["Invalid start date"]
+
+
+@pytest.mark.django_db
+def test_stored_processing_errors_are_localized_without_changing_document_data():
+    from archive.models import Document
+    from archive.tasks import PROCESSING_ERRORS
+
+    owner = get_user_model().objects.create_user("italian-errors", password="secure-password-1")
+    original = PROCESSING_ERRORS["generic"]
+    document = Document.objects.create(
+        owner=owner, title="Document not found", original_name="scan.pdf", original_path="originals/scan.pdf",
+        original_mime="application/pdf", original_sha256="0" * 64, original_size=1,
+        status=Document.Status.FAILED, error=original,
+    )
+    client = Client()
+    client.force_login(owner)
+    english = client.get("/api/documents").json()["documents"][0]
+    assert english["error"] == original and english["title"] == "Document not found"
+    italian = client.get("/api/documents", HTTP_ACCEPT_LANGUAGE="it").json()["documents"][0]
+    assert italian["error"] == EXACT[original]
+    assert italian["title"] == "Document not found"
+    detail = client.get(f"/api/documents/{document.id}", HTTP_ACCEPT_LANGUAGE="it").json()
+    assert detail["error"] == EXACT[original]
+    jobs = client.get("/api/jobs", HTTP_ACCEPT_LANGUAGE="it").json()
+    assert jobs["documents_failed"]["items"][0]["error"] == EXACT[original]

@@ -1498,6 +1498,7 @@ button:disabled {
 }
 .backup-summary > div {
   display: grid;
+  min-width: 0;
   gap: var(--space-2);
   padding: var(--space-5);
   background: var(--color-surface);
@@ -1507,10 +1508,12 @@ button:disabled {
 .backup-summary strong {
   font-size: var(--type-body);
   color: var(--color-heading);
+  overflow-wrap: anywhere;
 }
 .backup-summary span {
   font-size: var(--type-body);
   color: var(--color-muted);
+  overflow-wrap: anywhere;
 }
 .backup-list {
   margin-top: var(--space-5);
@@ -2697,7 +2700,7 @@ button:disabled {
     justify-self: start;
   }
   .backup-summary {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     margin: var(--space-7) 0 var(--space-8);
   }
   .detail-panel {
@@ -2801,6 +2804,7 @@ button:disabled {
 }
 .agent-card {
   display: flex;
+  min-width: 0;
   gap: var(--space-3);
   align-items: flex-start;
   padding: var(--space-4);
@@ -2847,6 +2851,8 @@ button:disabled {
 .agent-card > button {
   padding: var(--space-tight) var(--space-compact);
   font-size: var(--type-small);
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .agent-create-card fieldset {
   border: 0;
@@ -2921,7 +2927,7 @@ button:disabled {
 }
 @media (max-width: 1050px) {
   .agent-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 570px) {
@@ -3023,6 +3029,7 @@ button:disabled {
 }
 .location-list > div {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: var(--space-compact);
   border: 1px solid var(--color-border);
@@ -3194,7 +3201,7 @@ button:disabled {
 }
 @media (max-width: 900px) {
   .physical-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 700px) {
@@ -4065,10 +4072,12 @@ button:disabled {
   margin: 0 0 var(--space-6);
   padding: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
 }
 .people-list > li {
   display: grid;
+  min-width: 0;
   gap: var(--space-3);
   padding: var(--space-4);
   border: 1px solid var(--color-border);
@@ -4081,6 +4090,8 @@ button:disabled {
 .person-head {
   display: grid;
   gap: var(--space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .person-head strong {
   color: var(--color-heading);
@@ -4399,7 +4410,7 @@ button:disabled {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-soft);
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   text-decoration: none;
 }
 .skip-link:focus {
@@ -4612,6 +4623,24 @@ button:disabled {
   .agent-revoke-confirm .button {
     min-height: 44px;
   }
+  .filing-vocabulary-row > button,
+  .filing-vocabulary-list form > button:last-child,
+  .filing-create > button:last-child {
+    flex: 0 0 44px;
+    min-width: 44px;
+    min-height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-soft);
+  }
+  .detail-files a,
+  .copy-actions a,
+  .copy-actions button {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .copy-actions { flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
 }
 
 /* The Add sheet's close button sits in the top corner: keep the heading clear of it. */

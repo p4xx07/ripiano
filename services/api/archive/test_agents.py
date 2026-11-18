@@ -1,3 +1,4 @@
+import hashlib
 import json
 from asgiref.sync import async_to_sync
 from unittest.mock import patch
@@ -250,3 +251,26 @@ def test_members_connect_agents_to_their_own_archive_only():
     assert client.delete(f"/api/agents/{owners_grant.id}").status_code == 404
     owners_grant.refresh_from_db()
     assert owners_grant.revoked_at is None
+
+
+@pytest.mark.django_db
+def test_revoked_agent_filter_does_not_trap_tag_and_active_filter_has_clear_error():
+    owner = get_user_model().objects.create_superuser("owner-filter", password="secure-password-1")
+    client = Client()
+    client.force_login(owner)
+    tag = Tag.objects.create(owner=owner, name="Temporary agent filter")
+    grant = AgentGrant.objects.create(
+        owner=owner, name="Reader", token_hash=hashlib.sha256(b"revoked-filter-test").hexdigest(),
+        scopes=["documents:search"], filter_tag=tag,
+    )
+    response = client.delete(f"/api/tags/{tag.id}")
+    assert response.status_code == 409
+    assert response.json()["error"] == "Revoke agents using this tag before deleting it"
+    assert Tag.objects.filter(pk=tag.pk).exists()
+
+    assert client.delete(f"/api/agents/{grant.id}").status_code == 200
+    response = client.delete(f"/api/tags/{tag.id}")
+    assert response.status_code == 200
+    grant.refresh_from_db()
+    assert grant.filter_tag_id is None
+    assert not Tag.objects.filter(pk=tag.pk).exists()

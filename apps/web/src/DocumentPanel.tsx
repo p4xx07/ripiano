@@ -378,12 +378,14 @@ export default function DocumentPanel({
   async function moveCopy(copy: PhysicalCopy) {
     setBusy(true);
     setError("");
+    setCopyNotice("");
     try {
       await request(`/api/copies/${copy.id}`, {
         method: "PATCH",
         body: JSON.stringify({ location_id: moveChoices[copy.id] || null }),
       });
       await refreshCopies();
+      setCopyNotice(m.copyMoved(copy.sticker_code));
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : m.moveCopyError,
@@ -580,7 +582,7 @@ export default function DocumentPanel({
           </Field>
           {creatingCorrespondent ? (
             <div className="filing-create">
-              <input id="detail-new-sender" autoFocus aria-label={m.newSenderName} value={newCorrespondent} onChange={(event) => setNewCorrespondent(event.target.value)} maxLength={100} placeholder={m.senderPlaceholder} />
+              <input id="detail-new-sender" autoFocus aria-label={m.newSenderName} value={newCorrespondent} onChange={(event) => setNewCorrespondent(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (!busy && newCorrespondent.trim()) void createFilingItem("correspondent"); } }} maxLength={100} placeholder={m.senderPlaceholder} />
               <Button type="button" variant="secondary" disabled={busy || !newCorrespondent.trim()} onClick={() => void createFilingItem("correspondent")}>{m.addSender}</Button>
               <button type="button" aria-label={m.cancelNewSender} onClick={() => { setCreatingCorrespondent(false); focusSoon("detail-add-sender"); }}><X size={16} /></button>
             </div>
@@ -593,7 +595,7 @@ export default function DocumentPanel({
           </Field>
           {creatingDocumentType ? (
             <div className="filing-create">
-              <input id="detail-new-type" autoFocus aria-label={m.newTypeName} value={newDocumentType} onChange={(event) => setNewDocumentType(event.target.value)} maxLength={100} placeholder={m.typePlaceholder} />
+              <input id="detail-new-type" autoFocus aria-label={m.newTypeName} value={newDocumentType} onChange={(event) => setNewDocumentType(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (!busy && newDocumentType.trim()) void createFilingItem("document_type"); } }} maxLength={100} placeholder={m.typePlaceholder} />
               <Button type="button" variant="secondary" disabled={busy || !newDocumentType.trim()} onClick={() => void createFilingItem("document_type")}>{m.addType}</Button>
               <button type="button" aria-label={m.cancelNewType} onClick={() => { setCreatingDocumentType(false); focusSoon("detail-add-type"); }}><X size={16} /></button>
             </div>

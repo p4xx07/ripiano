@@ -428,8 +428,15 @@ def tag_detail(request, tag_id):
         try:
             with transaction.atomic():
                 get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+                if tag.agent_grants.filter(revoked_at__isnull=True).exists():
+                    return JsonResponse({"error": "Revoke agents using this tag before deleting it"}, status=409)
+                # Revoked grants cannot read again. Clear their historical filter before deleting the tag;
+                # the PROTECT relation still blocks an active grant, including one created concurrently.
+                tag.agent_grants.filter(revoked_at__isnull=False).update(filter_tag=None)
                 tag.delete()
         except ProtectedError:
+            if tag.agent_grants.filter(revoked_at__isnull=True).exists():
+                return JsonResponse({"error": "Revoke agents using this tag before deleting it"}, status=409)
             return JsonResponse({"error": "Move or delete child tags first"}, status=409)
         return JsonResponse({"deleted": True})
     body = _body(request)

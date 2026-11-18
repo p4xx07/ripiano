@@ -14,11 +14,12 @@ Ripiano is an independent alternative to Paperless-ngx (v3.4.2 is the feature ba
 
 **Capture**
 - Add documents from the phone camera, gallery, or files: PDF, images, Word/Excel/PowerPoint, OpenDocument, RTF, and emails (`.eml`, `.msg`). The original is always kept unchanged.
+- If a session expires while a file is being added, the file waits on that device and resumes after the same person signs in.
 - Background OCR turns every document into a searchable PDF. Barcodes on scans can split documents, set an archive number (ASN), or add tags.
 - Optional inputs, off until you enable them: a consume folder, watched NAS folders, S3/WebDAV/Google Drive/OneDrive/Dropbox, a Telegram bot, and IMAP mailboxes.
 
 **Find**
-- Full-text search with field filters (`tag:`, `sender:`, `date:2026-01..2026-03`, …), saved searches, and matching passages in the results.
+- Full-text search with field filters (`tag:`, `sender:`, `date:2026-01..2026-03`, …), saved searches, and matching passages in the results. Common Italian accents can be omitted when typing a search; older indexes update in small background batches.
 - Optional semantic ("search by meaning") search, off by default, using Ollama on another computer or a small model on the NAS.
 
 **File**
@@ -26,7 +27,7 @@ Ripiano is an independent alternative to Paperless-ngx (v3.4.2 is the feature ba
 - An exception-only Inbox (failed OCR, duplicates) and a separate Needs-action list for follow-ups.
 
 **Paper copies**
-- Give each paper original a QR sticker, place it in nested shelves and boxes, and scan the sticker or shelf label to find it again.
+- Give each paper original a QR sticker, place it in nested shelves and boxes, and scan the sticker or shelf label to find it again. Moving a copy confirms the change in the document panel.
 
 **Sharing and people**
 - Multiple accounts with private archives, groups, per-document view/edit sharing, expiring public links, and optional email sending.

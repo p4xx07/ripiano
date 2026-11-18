@@ -1333,7 +1333,7 @@ function App() {
           });
           added.push(created.id);
         } catch (cause) {
-          // Offline or the server is restarting: keep the file and send it later instead of losing it.
+          // Offline, server unavailable, or session ended: keep the file for this person to retry after sign-in.
           if (cause instanceof ApiError && uploadQueue.isRetryable(cause.status) && session?.username && await uploadQueue.keep(session.username, file, scanId)) {
             continue; // shown in the "waiting to upload" banner, not as a rejected file
           } else {
@@ -1675,7 +1675,7 @@ function App() {
                   <h2>{l.yourDocuments}</h2>
                   <p>{l.searchIntro}</p>
                   {/* Phones show the counts as one line instead of the three cards above. */}
-                  {countsKnown && <p className="library-counts">{l.compactCounts(counts.total, counts.waiting, Boolean(query || activeFilterCount))}</p>}
+                  {countsKnown && <p className="library-counts" role="status" aria-live="polite" aria-atomic="true">{l.compactCounts(counts.total, counts.waiting, Boolean(query || activeFilterCount))}</p>}
                 </div>
                 <Button type="button" variant="secondary" aria-label={l.refresh} title={l.refreshTitle} onClick={() => void loadDocuments(query)}>
                   <RotateCcw size={16} /> <span className="refresh-label">{l.refresh}</span>

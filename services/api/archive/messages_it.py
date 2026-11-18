@@ -336,6 +336,7 @@ EXACT = {
     "A location cannot go inside itself or a location it contains": "Una posizione non può stare dentro se stessa o dentro una posizione che contiene",
     "Choose a new name or parent location": "Scegli un nuovo nome o una nuova posizione superiore",
     "Move or delete child tags first": "Prima sposta o elimina le sottoetichette",
+    "Revoke agents using this tag before deleting it": "Revoca gli agenti che usano questa etichetta prima di eliminarla",
     "Movement note is too long": "La nota di spostamento è troppo lunga",
     "NAS browse copy checksum or manifest verification failed": "Verifica del checksum o del manifest della copia di consultazione sul NAS non riuscita",
     "NAS browse copy contains an unsafe path": "La copia per la navigazione sul NAS contiene un percorso non sicuro",

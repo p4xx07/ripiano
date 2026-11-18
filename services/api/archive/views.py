@@ -145,12 +145,15 @@ def _excerpt(text, query):
     if not text or not query:
         return ""
     match = re.search(re.escape(query), text, re.IGNORECASE)
+    folded = fulltext.fold_accents(text)
     if match is None:
-        terms = sorted(set(re.findall(r"\w+", query)), key=lambda value: (-len(value), value.casefold()))
+        match = re.search(re.escape(fulltext.fold_accents(query)), folded, re.IGNORECASE)
+    if match is None:
+        terms = sorted(set(re.findall(r"\w+", fulltext.fold_accents(query))), key=lambda value: (-len(value), value.casefold()))
         for term in terms:
             if len(term) < 2:
                 continue
-            match = re.search(re.escape(term), text, re.IGNORECASE)
+            match = re.search(re.escape(term), folded, re.IGNORECASE)
             if match:
                 break
         else:
@@ -158,7 +161,7 @@ def _excerpt(text, query):
             for term in terms:
                 if len(term) < 5:
                     continue
-                match = re.search(r"\b" + re.escape(term[:max(4, len(term) - 2)]) + r"\w*", text, re.IGNORECASE)
+                match = re.search(r"\b" + re.escape(term[:max(4, len(term) - 2)]) + r"\w*", folded, re.IGNORECASE)
                 if match:
                     break
     if match is None:

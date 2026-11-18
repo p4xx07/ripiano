@@ -256,7 +256,9 @@ export default defineMessages({
   dateTo: "Data a",
   clearFilters: "Cancella filtri",
   dismissError: "Chiudi errore",
-  rejectedFiles: (failed: number, total: number) => `${failed} file su ${total} non sono stati aggiunti.`,
+  rejectedFiles: (failed: number, total: number) => failed === 1
+    ? `1 file su ${total} non è stato aggiunto.`
+    : `${failed} file su ${total} non sono stati aggiunti.`,
   reviewRejected: "Mostra i file rifiutati",
   dismissReport: "Chiudi il resoconto del caricamento",
   retry: "Riprova",

@@ -3,9 +3,9 @@
 **A self-hosted document archive for your NAS: snap or upload a document, let Ripiano read and file it, find it again in seconds — and know which shelf the paper original is on.**
 
 <p align="center">
-  <img src="qa-artifacts/20261111-showcase/desktop/library-full.png" alt="Ripiano Library on desktop with three filed documents and paper locations" width="640">
+  <img src="qa-artifacts/20261118-readme/desktop-document.png" alt="A filed bill open in Ripiano on desktop: first-page preview beside its title, date, sender, type, and tags" width="640">
   &nbsp;
-  <img src="qa-artifacts/20261111-showcase/mobile/library-full.png" alt="Ripiano Library on mobile" width="200">
+  <img src="qa-artifacts/20261118-readme/mobile-library.png" alt="The Ripiano Library on a phone: filed documents with dates, senders, tags, and the shelf where each paper copy is kept" width="200">
 </p>
 
 Ripiano is an independent alternative to Paperless-ngx (v3.4.2 is the feature baseline, no code is shared). It runs as a Docker Compose stack — Django API, OCR workers, PostgreSQL — with an installable web app (PWA) for iOS and Android and an Android client with a native scanner. Everything stays on your server; no cloud AI provider is ever called.

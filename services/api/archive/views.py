@@ -592,11 +592,17 @@ def documents(request):
         if snippet_query:
             prefetch_related_objects(visible, Prefetch("notes", queryset=DocumentNote.objects.filter(body__icontains=snippet_query), to_attr="matching_notes"))
             prefetch_related_objects(visible, Prefetch("custom_values", queryset=CustomFieldValue.objects.filter(field__owner=request.user, value__icontains=snippet_query).select_related("field"), to_attr="matching_custom_fields"))
-        return JsonResponse({
+        payload = {
             "documents": [_document_json(doc, query=snippet_query, access=("edit" if doc.can_edit else "view") if shared else "owner") for doc in visible],
             "next_cursor": _next_page_cursor(visible[-1], request.user, query, view, filters, sort, counts, hybrid, semantic_ids) if len(page) > 50 else None,
             "counts": counts,
-        })
+        }
+        if not visible and free_query and not cursor_raw and not shared:
+            from .spelling import suggest
+
+            # Nothing found: offer a close spelling from the person's own titles, tags, senders, and types.
+            payload["suggestion"] = suggest(request.user, query)
+        return JsonResponse(payload)
 
     upload = request.FILES.get("document")
     if upload is None:

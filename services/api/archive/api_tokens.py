@@ -42,12 +42,21 @@ def _blocked(request):
 
 
 def revoke_tokens_on_password_change(sender, instance, **kwargs):
-    """A new password ends every API token, like it ends other sessions."""
+    """A new password ends every API token and agent grant, like it ends other sessions."""
     if not instance.pk:
+        return
+    # Only a password someone set (set_password keeps the raw value in `_password` until save). Django also re-saves
+    # the hash after a successful check when its hasher settings change (e.g. a Django upgrade); that is the same
+    # password and must not revoke anything.
+    if getattr(instance, "_password", None) is None:
         return
     previous = sender.objects.filter(pk=instance.pk).values_list("password", flat=True).first()
     if previous is not None and previous != instance.password:
         ApiToken.objects.filter(user_id=instance.pk, revoked_at__isnull=True).update(revoked_at=timezone.now())
+        # Agent grants too: a stolen session or password must not leave a year-long agent token behind.
+        from .models import AgentGrant
+
+        AgentGrant.objects.filter(owner_id=instance.pk, revoked_at__isnull=True).update(revoked_at=timezone.now())
 
 
 def _hash(token):

@@ -1,22 +1,26 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Bell, Clock, KeyRound, Plus, Tag as TagIcon, Workflow as WorkflowIcon, X } from "lucide-react";
-import { FilingItem, request, Tag } from "./api";
+import { Bell, Clock, KeyRound, PenLine, Plus, Tag as TagIcon, Workflow as WorkflowIcon, X } from "lucide-react";
+import { CustomField, FilingItem, People, request, Session, Tag } from "./api";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/WorkflowsPanel";
 
 type Trigger = "added" | "updated" | "scheduled";
 type DateField = "created" | "document_date" | "action_due_date";
+type FieldValue = { field_id: string; value: string | boolean };
+type Share = { kind: "person" | "group"; id: number; level: "view" | "edit" };
 type Flow = {
   id: string; name: string; enabled: boolean; order: number; trigger: Trigger; schedule_field: DateField; schedule_days: number;
   filter_sources: string[]; filter_filename: string; filter_text: string; filter_tag_id: string | null;
   filter_correspondent_id: string | null; filter_document_type_id: string | null; add_tag_ids: string[]; remove_tag_ids: string[];
   set_correspondent_id: string | null; set_document_type_id: string | null; set_needs_action: boolean; action_note: string;
   add_note: string; webhook_url: string; email_to: string; email_attach: boolean; pdf_password_count: number;
+  title_template: string; set_storage_path_id: string | null; set_custom_fields: FieldValue[]; share_with: Share[];
 };
 type Run = { id: string; workflow: string; document: { id: string; title: string }; trigger: Trigger; status: "applied" | "failed"; detail: string; created_at: string };
-type Draft = Omit<Flow, "id" | "filter_tag_id" | "filter_correspondent_id" | "filter_document_type_id" | "set_correspondent_id" | "set_document_type_id"> & {
+type Draft = Omit<Flow, "id" | "filter_tag_id" | "filter_correspondent_id" | "filter_document_type_id" | "set_correspondent_id" | "set_document_type_id" | "set_storage_path_id"> & {
   filter_tag_id: string; filter_correspondent_id: string; filter_document_type_id: string; set_correspondent_id: string; set_document_type_id: string;
+  set_storage_path_id: string;
   // Write-only: typed passwords are sent once and never shown again.
   pdf_passwords_text: string; clear_pdf_passwords: boolean;
 };
@@ -26,7 +30,11 @@ const empty: Draft = {
   filter_text: "", filter_tag_id: "", filter_correspondent_id: "", filter_document_type_id: "", add_tag_ids: [], remove_tag_ids: [],
   set_correspondent_id: "", set_document_type_id: "", set_needs_action: false, action_note: "", add_note: "", webhook_url: "", email_to: "", email_attach: false,
   pdf_password_count: 0, pdf_passwords_text: "", clear_pdf_passwords: false,
+  title_template: "", set_storage_path_id: "", set_custom_fields: [], share_with: [],
 };
+// Kept in step with archive/storage_paths.py TITLE_PLACEHOLDERS.
+const TITLE_PLACEHOLDERS = ["{correspondent}", "{document_type}", "{date}", "{year}", "{month}", "{day}", "{added_date}", "{added_year}",
+  "{added_month}", "{added_day}", "{original_filename}", "{title}", "{asn}", "{tag}", "{source}"];
 type M = typeof messages.en;
 const sourcesFor = (m: M): Record<string, string> => ({ web: m.sourceWeb, android: m.sourceAndroid, telegram: m.sourceTelegram, folder: m.sourceFolder, email: m.sourceEmail, s3: m.sourceS3 });
 const triggersFor = (m: M): Record<Trigger, string> => ({ added: m.triggerAdded, updated: m.triggerUpdated, scheduled: m.triggerScheduled });
@@ -36,9 +44,19 @@ const recipesFor = (m: M): { label: string; icon: typeof TagIcon; draft: Partial
   { label: m.recipeReminder, icon: Clock, draft: { name: m.recipeReminderName, trigger: "scheduled", schedule_field: "document_date", schedule_days: 30, set_needs_action: true, action_note: m.recipeReminderNote } },
   { label: m.recipeNotify, icon: Bell, draft: { name: m.recipeNotifyName, trigger: "added", webhook_url: "https://" } },
   { label: m.recipeUnlock, icon: KeyRound, draft: { name: m.recipeUnlockName, trigger: "added" } },
+  { label: m.recipeTitle, icon: PenLine, draft: { name: m.recipeTitleName, trigger: "added", title_template: "{correspondent} {document_type} {date}" } },
 ];
 
-function describe(flow: Flow, names: Map<string, string>, m: M) {
+type Names = { items: Map<string, string>; fields: Map<string, CustomField>; people: Map<number, string>; groups: Map<number, string> };
+
+function fieldValueText(entry: FieldValue, names: Names, m: M) {
+  const field = names.fields.get(entry.field_id);
+  if (typeof entry.value === "boolean" || field?.kind === "boolean") return entry.value === true || entry.value === "true" ? m.yes : m.no;
+  return String(entry.value);
+}
+
+function describe(flow: Flow, all: Names, m: M) {
+  const names = all.items;
   const sources = sourcesFor(m);
   const when = flow.trigger === "scheduled"
     ? m.whenScheduled(Math.abs(flow.schedule_days), flow.schedule_days < 0, dateFieldsFor(m)[flow.schedule_field])
@@ -56,8 +74,13 @@ function describe(flow: Flow, names: Map<string, string>, m: M) {
     flow.remove_tag_ids.length ? m.actRemove(flow.remove_tag_ids.map((id) => names.get(id) ?? "…").join(", ")) : "",
     flow.set_correspondent_id ? m.actSetSender(names.get(flow.set_correspondent_id) ?? "…") : "",
     flow.set_document_type_id ? m.actSetType(names.get(flow.set_document_type_id) ?? "…") : "",
+    flow.set_storage_path_id ? m.actSetPath(names.get(flow.set_storage_path_id) ?? "…") : "",
+    ...flow.set_custom_fields.map((entry) => m.actSetField(all.fields.get(entry.field_id)?.name ?? "…", fieldValueText(entry, all, m))),
+    flow.title_template ? m.actSetTitle(flow.title_template) : "",
     flow.set_needs_action ? m.actNeedsAction : "",
     flow.add_note ? m.actAddNote : "",
+    flow.share_with.length ? m.actShare(flow.share_with.map((entry) =>
+      m.shareTarget((entry.kind === "person" ? all.people.get(entry.id) : all.groups.get(entry.id)) ?? "…", entry.level === "edit"))) : "",
     flow.webhook_url ? m.actWebhook : "",
     flow.email_to ? m.actEmail(flow.email_to) : "",
     flow.pdf_password_count ? m.actUnlock(flow.pdf_password_count) : "",
@@ -76,6 +99,10 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
   const [tags, setTags] = useState<Tag[]>([]);
   const [senders, setSenders] = useState<FilingItem[]>([]);
   const [types, setTypes] = useState<FilingItem[]>([]);
+  const [paths, setPaths] = useState<FilingItem[]>([]);
+  const [fields, setFields] = useState<CustomField[]>([]);
+  const [directory, setDirectory] = useState<People>({ people: [], groups: [], admin: false });
+  const [me, setMe] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(empty);
   const [editing, setEditing] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -100,10 +127,27 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.loadError);
     }
+    // Optional choices: the editor still works for the other actions if one of these cannot load.
+    const [pathResponse, fieldResponse, people, session] = await Promise.all([
+      request<{ storage_paths: FilingItem[] }>("/api/storage-paths").catch(() => null),
+      request<{ fields: CustomField[] }>("/api/custom-fields").catch(() => null),
+      request<People>("/api/people").catch(() => null),
+      request<Session>("/api/session").catch(() => null),
+    ]);
+    if (pathResponse) setPaths(pathResponse.storage_paths);
+    if (fieldResponse) setFields(fieldResponse.fields);
+    if (people) setDirectory(people);
+    if (session) setMe(session.username);
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const names = new Map<string, string>([...tags, ...senders, ...types].map((item) => [item.id, item.name]));
+  const names: Names = {
+    items: new Map<string, string>([...tags, ...senders, ...types, ...paths].map((item) => [item.id, item.name])),
+    fields: new Map(fields.map((field) => [field.id, field])),
+    people: new Map(directory.people.map((person) => [person.id, person.username])),
+    groups: new Map(directory.groups.map((group) => [group.id, group.name])),
+  };
+  const shareablePeople = directory.people.filter((person) => person.username !== me);
 
   function focusForm() {
     requestAnimationFrame(() => {
@@ -126,7 +170,8 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
     setDraft({
       ...flow, filter_tag_id: flow.filter_tag_id ?? "", filter_correspondent_id: flow.filter_correspondent_id ?? "",
       filter_document_type_id: flow.filter_document_type_id ?? "", set_correspondent_id: flow.set_correspondent_id ?? "",
-      set_document_type_id: flow.set_document_type_id ?? "", pdf_passwords_text: "", clear_pdf_passwords: false,
+      set_document_type_id: flow.set_document_type_id ?? "", set_storage_path_id: flow.set_storage_path_id ?? "",
+      pdf_passwords_text: "", clear_pdf_passwords: false,
     });
     focusForm();
   }
@@ -155,7 +200,7 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
         ...fields,
         ...(passwords ? { pdf_passwords: passwords } : {}),
         webhook_url: draft.webhook_url === "https://" ? "" : draft.webhook_url,
-        ...Object.fromEntries(["filter_tag_id", "filter_correspondent_id", "filter_document_type_id", "set_correspondent_id", "set_document_type_id"]
+        ...Object.fromEntries(["filter_tag_id", "filter_correspondent_id", "filter_document_type_id", "set_correspondent_id", "set_document_type_id", "set_storage_path_id"]
           .map((key) => [key, draft[key as keyof Draft] || null])),
       });
       if (editing) await request(`/api/workflows/${editing}`, { method: "PATCH", body });
@@ -184,6 +229,21 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
   }
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const fieldEntry = (id: string) => draft.set_custom_fields.find((entry) => entry.field_id === id);
+  const toggleField = (field: CustomField) => setDraft((current) => ({
+    ...current,
+    set_custom_fields: current.set_custom_fields.some((entry) => entry.field_id === field.id)
+      ? current.set_custom_fields.filter((entry) => entry.field_id !== field.id)
+      : [...current.set_custom_fields, { field_id: field.id, value: field.kind === "boolean" ? true : "" }],
+  }));
+  const setFieldValue = (id: string, value: string | boolean) => setDraft((current) => ({
+    ...current, set_custom_fields: current.set_custom_fields.map((entry) => (entry.field_id === id ? { ...entry, value } : entry)),
+  }));
+  const shareLevel = (kind: Share["kind"], id: number) => draft.share_with.find((entry) => entry.kind === kind && entry.id === id)?.level ?? "";
+  const setShare = (kind: Share["kind"], id: number, level: string) => setDraft((current) => {
+    const others = current.share_with.filter((entry) => !(entry.kind === kind && entry.id === id));
+    return { ...current, share_with: level ? [...others, { kind, id, level: level as Share["level"] }] : others };
+  });
   const toggleIn = (key: "add_tag_ids" | "remove_tag_ids" | "filter_sources", value: string) =>
     setDraft((current) => ({ ...current, [key]: current[key].includes(value) ? current[key].filter((item) => item !== value) : [...current[key], value] }));
 
@@ -336,9 +396,64 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                     <option value="">{m.dontChange}</option>{types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
+                {paths.length > 0 && (
+                  <label>{m.setPath}
+                    <select value={draft.set_storage_path_id} onChange={(event) => set("set_storage_path_id", event.target.value)}>
+                      <option value="">{m.dontChange}</option>{paths.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                  </label>
+                )}
+                <label>{m.setTitle} <small id="workflow-title-hint">{m.titleHint(TITLE_PLACEHOLDERS.join(" "))}</small>
+                  <input value={draft.title_template} onChange={(event) => set("title_template", event.target.value)} maxLength={200}
+                    placeholder={m.titlePlaceholder} aria-describedby="workflow-title-hint" autoCapitalize="none" spellCheck={false} />
+                </label>
+                {fields.length > 0 && (
+                  <details className="workflow-remove" open={draft.set_custom_fields.length > 0}>
+                    <summary>{m.setFields}{draft.set_custom_fields.length ? ` (${draft.set_custom_fields.length})` : ""}</summary>
+                    <div className="workflow-choices" role="group" aria-label={m.setFields}>
+                      <small>{m.fieldsHint}</small>
+                      {fields.map((field) => {
+                        const entry = fieldEntry(field.id);
+                        return (
+                          <div className="workflow-choices" key={field.id}>
+                            <label className="agent-scope-choice"><input type="checkbox" checked={Boolean(entry)} onChange={() => toggleField(field)} />{field.name}</label>
+                            {entry && (field.kind === "boolean" ? (
+                              <label>{m.fieldValue(field.name)}
+                                <select value={entry.value === true || entry.value === "true" ? "true" : "false"} onChange={(event) => setFieldValue(field.id, event.target.value === "true")}>
+                                  <option value="true">{m.yes}</option><option value="false">{m.no}</option>
+                                </select>
+                              </label>
+                            ) : (
+                              <label>{m.fieldValue(field.name)}
+                                <input type={field.kind === "date" ? "date" : "text"} inputMode={field.kind === "number" ? "decimal" : undefined}
+                                  value={String(entry.value)} onChange={(event) => setFieldValue(field.id, event.target.value)} maxLength={500} required />
+                              </label>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </details>
+                )}
                 <label className="agent-scope-choice"><input type="checkbox" checked={draft.set_needs_action} onChange={(event) => set("set_needs_action", event.target.checked)} />{m.markNeedsAction}</label>
                 {draft.set_needs_action && <label>{m.whatNeedsDoing}<input value={draft.action_note} onChange={(event) => set("action_note", event.target.value)} maxLength={500} /></label>}
                 <label>{m.addNote}<textarea value={draft.add_note} onChange={(event) => set("add_note", event.target.value)} maxLength={2000} rows={2} /></label>
+                {(shareablePeople.length > 0 || directory.groups.length > 0) && (
+                  <details className="workflow-remove" open={draft.share_with.length > 0}>
+                    <summary>{m.shareWith}{draft.share_with.length ? ` (${draft.share_with.length})` : ""}</summary>
+                    <div className="workflow-choices" role="group" aria-label={m.shareWith}>
+                      <small>{m.shareHint}</small>
+                      {[...shareablePeople.map((person) => ({ kind: "person" as const, id: person.id, name: person.name || person.username })),
+                        ...directory.groups.map((group) => ({ kind: "group" as const, id: group.id, name: m.groupName(group.name) }))].map((target) => (
+                        <label key={`${target.kind}-${target.id}`}>{target.name}
+                          <select value={shareLevel(target.kind, target.id)} onChange={(event) => setShare(target.kind, target.id, event.target.value)}>
+                            <option value="">{m.dontShare}</option><option value="view">{m.canView}</option><option value="edit">{m.canEdit}</option>
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                )}
                 <label>{m.callWebhook} <small>{m.webhookHint}</small>
                   <input type="url" value={draft.webhook_url} onChange={(event) => set("webhook_url", event.target.value)} maxLength={500} placeholder="https://" />
                 </label>

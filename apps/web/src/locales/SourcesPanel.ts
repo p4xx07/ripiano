@@ -11,7 +11,7 @@ export default defineMessages({
   describeExternal: (where: string, recursive: boolean, include: string, after: After, processed: string, retention: number, minutes: number) =>
     `${where} · ${recursive ? "including subfolders" : "this folder only"}${include ? `, names like ${include}` : ""}; ${after === "move"
       ? `then moved to ${processed}${retention ? ` and deleted after ${retention} days` : ""}`
-      : after === "delete" ? "then deleted from the storage" : "left in place"}. Checked every ${minutes} minutes.`,
+      : after === "delete" ? "then deleted from the storage" : "left in place"}. Checked ${minutes === 1 ? "every minute" : `every ${minutes} minutes`}.`,
   fileType: (value: string) => ({ pdf: "PDF", image: "Images", office: "Office documents", email: "Emails (.eml, .msg)" } as Record<string, string>)[value] ?? value,
   afterLabel: (value: After) => ({
     keep: "Leave the file and remember it",
@@ -163,7 +163,7 @@ export default defineMessages({
   describeExternal: (where: string, recursive: boolean, include: string, after: After, processed: string, retention: number, minutes: number) =>
     `${where} · ${recursive ? "sottocartelle incluse" : "solo questa cartella"}${include ? `, nomi come ${include}` : ""}; ${after === "move"
       ? `poi spostati in ${processed}${retention ? ` ed eliminati dopo ${retention} giorni` : ""}`
-      : after === "delete" ? "poi eliminati dallo spazio di archiviazione" : "lasciati al loro posto"}. Controllo ogni ${minutes} minuti.`,
+      : after === "delete" ? "poi eliminati dallo spazio di archiviazione" : "lasciati al loro posto"}. Controllo ${minutes === 1 ? "ogni minuto" : `ogni ${minutes} minuti`}.`,
   fileType: (value: string) => ({ pdf: "PDF", image: "Immagini", office: "Documenti Office", email: "Email (.eml, .msg)" } as Record<string, string>)[value] ?? value,
   afterLabel: (value: After) => ({
     keep: "Lascia il file e ricordalo",

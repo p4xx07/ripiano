@@ -4,7 +4,7 @@ import { formatDate, formatDateTime, request } from "./api";
 import { useMessages } from "./i18n";
 import messages from "./locales/DocumentHistory";
 
-type Change = { field: string; name?: string; from: string | string[] | null; to: string | string[] | null };
+type Change = { field: string; name?: string; kind?: string; from: string | string[] | null; to: string | string[] | null };
 export type DocumentEvent = {
   id: string;
   created_at: string;
@@ -70,6 +70,7 @@ export default function DocumentHistory({ documentId, refreshKey }: { documentId
       title: m.fieldTitle, document_date: m.fieldDate, correspondent: m.fieldSender, document_type: m.fieldType,
       storage_path: m.fieldStoragePath, asn: m.fieldAsn, tags: m.fieldTags, version: m.fieldVersion, source: m.fieldSource,
     };
+    if (change.field === "access") return m.fieldAccess(change.name ?? "", change.kind === "group");
     return change.field === "custom_field" ? change.name ?? "" : labels[change.field] ?? change.field;
   }
 
@@ -78,6 +79,7 @@ export default function DocumentHistory({ documentId, refreshKey }: { documentId
     if (Array.isArray(raw)) return raw.join(", ");
     if (change.field === "document_date") return formatDate(raw);
     if (change.field === "source") return sourceLabel(raw);
+    if (change.field === "access") return raw === "edit" ? m.accessEdit : raw === "view" ? m.accessView : raw;
     return raw;
   }
 

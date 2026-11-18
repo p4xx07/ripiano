@@ -134,6 +134,7 @@ test("creating and revoking an agent token keeps focus and announces the result"
   await expect(page.getByRole("heading", { name: "Agents." })).toBeVisible();
   const name = `Focus agent ${Date.now()} ${testInfo.project.name}`;
   await page.getByPlaceholder("e.g. Local Mac classifier").fill(name);
+  await page.getByLabel("Your password (to create an agent token)").fill(password!);
   await page.getByRole("button", { name: "Create agent token" }).click();
   const card = page.getByRole("region", { name: "Copy this token now" });
   await expect(card).toBeFocused();

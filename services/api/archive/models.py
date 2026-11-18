@@ -698,6 +698,14 @@ class Workflow(models.Model):
     webhook_url = models.URLField(max_length=500, blank=True)
     email_to = models.CharField(max_length=500, blank=True)
     email_attach = models.BooleanField(default=False)
+    # Assignment actions. The title template uses storage-path style placeholders (archive/storage_paths.py).
+    # Title, storage path, and custom field values a person chose by hand are never overwritten.
+    title_template = models.CharField(max_length=200, blank=True)
+    set_storage_path = models.ForeignKey("StoragePath", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    # [{"field_id": "<uuid>", "value": "<normalized value>"}]; fields the owner deleted are skipped.
+    set_custom_fields = models.JSONField(default=list, blank=True)
+    # [{"kind": "person"|"group", "id": <int>, "level": "view"|"edit"}]; grants are only added or raised, never removed.
+    share_with = models.JSONField(default=list, blank=True)
     # Encrypted JSON list of passwords tried on locked PDFs before OCR ("added" workflows only). Never returned by the API.
     pdf_passwords = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

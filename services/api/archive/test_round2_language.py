@@ -146,7 +146,7 @@ def test_display_text_follows_the_request_language():
     history = client.get(f"/api/copies/{copy['id']}/history", HTTP_ACCEPT_LANGUAGE="it").json()["movements"]
     assert history[0] == {**history[0], "kind": "placement", "note": "Prima collocazione"}
     client.patch(f"/api/copies/{copy['id']}/status", json.dumps({"missing": True}), content_type="application/json")
-    assert client.get(f"/api/copies/{copy['id']}/history", HTTP_ACCEPT_LANGUAGE="it").json()["movements"][0]["note"] == "Segnata come mancante"
+    assert client.get(f"/api/copies/{copy['id']}/history", HTTP_ACCEPT_LANGUAGE="it").json()["movements"][0]["note"] == "Segnalata come mancante"
     client.patch(f"/api/copies/{copy['id']}/status", json.dumps({"missing": False, "note": "Move"}), content_type="application/json")
 
     label = client.get(f"/api/copies/{copy['id']}/label", HTTP_ACCEPT_LANGUAGE="it-IT").content.decode()
@@ -167,7 +167,7 @@ def test_active_agent_names_are_unique_until_revoked():
     client.force_login(owner)
 
     def create(name):
-        return client.post("/api/agents", json.dumps({"name": name, "scopes": ["documents:search"]}), content_type="application/json",
+        return client.post("/api/agents", json.dumps({"name": name, "scopes": ["documents:search"], "password": "secure-password-1"}), content_type="application/json",
                            HTTP_ACCEPT_LANGUAGE="it")
 
     first = create("Mac locale")

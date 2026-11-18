@@ -23,6 +23,7 @@ def test_named_grants_are_hashed_scoped_and_revocable():
     client.force_login(owner)
     tag = Tag.objects.create(owner=owner, name="Bills")
     response = client.post("/api/agents", json.dumps({
+        "password": "secure-password-1",
         "name": "Local Mac", "scopes": ["documents:search", "documents:tag"],
         "filter_tag_id": str(tag.id), "expires_in_days": 30,
     }), content_type="application/json")
@@ -91,7 +92,7 @@ def test_agent_filing_permission_is_separate_and_preserves_human_choices():
 
     client = Client()
     client.force_login(owner)
-    created = client.post("/api/agents", json.dumps({"name": "Another filer", "scopes": ["documents:filing"], "expires_in_days": 1}), content_type="application/json")
+    created = client.post("/api/agents", json.dumps({"name": "Another filer", "scopes": ["documents:filing"], "expires_in_days": 1, "password": "secure-password-1"}), content_type="application/json")
     assert created.status_code == 201
     assert created.json()["scopes"] == ["documents:filing"]
 
@@ -240,7 +241,7 @@ def test_members_connect_agents_to_their_own_archive_only():
                                              expires_at="2099-01-01T00:00:00Z")
     client = Client()
     client.force_login(member)
-    created = client.post("/api/agents", json.dumps({"name": "My agent", "scopes": ["documents:search"], "expires_in_days": 7}),
+    created = client.post("/api/agents", json.dumps({"name": "My agent", "scopes": ["documents:search"], "expires_in_days": 7, "password": "secure-password-2"}),
                           content_type="application/json")
     assert created.status_code == 201
     grant = AgentGrant.objects.get(owner=member)
@@ -274,3 +275,47 @@ def test_revoked_agent_filter_does_not_trap_tag_and_active_filter_has_clear_erro
     grant.refresh_from_db()
     assert grant.filter_tag_id is None
     assert not Tag.objects.filter(pk=tag.pk).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_agent_tokens_need_the_password_and_end_when_it_changes():
+    """Judge 3 round 4 (M2): a stolen session could mint a year-long agent token, and a password change left it working."""
+    owner = get_user_model().objects.create_superuser("owner", password="secure-password-1")
+    client = Client()
+    client.force_login(owner)
+    body = {"name": "Reader", "scopes": ["documents:search", "documents:text"], "expires_in_days": 365}
+    assert client.post("/api/agents", json.dumps(body), content_type="application/json").status_code == 400
+    assert client.post("/api/agents", json.dumps({**body, "password": "wrong-password"}), content_type="application/json").status_code == 400
+    created = client.post("/api/agents", json.dumps({**body, "password": "secure-password-1"}), content_type="application/json")
+    assert created.status_code == 201
+    token = created.json()["token"]
+    assert async_to_sync(GrantVerifier().verify_token)(token) is not None
+    changed = client.post("/api/account/password", json.dumps({"current_password": "secure-password-1", "new_password": "another-secure-password-9"}),
+                          content_type="application/json")
+    assert changed.status_code == 200, changed.content
+    assert async_to_sync(GrantVerifier().verify_token)(token) is None
+    assert AgentGrant.objects.get().revoked_at is not None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_password_rehash_keeps_agents_but_a_new_password_revokes_them():
+    """Review finding: a Django hasher upgrade re-saves the hash on sign-in; that must not revoke anything."""
+    from django.contrib.auth.hashers import PBKDF2PasswordHasher
+
+    owner = get_user_model().objects.create_superuser("owner", password="secure-password-1")
+    grant = AgentGrant.objects.create(owner=owner, name="Mac", token_hash="9" * 64, scopes=["documents:search"],
+                                      expires_at="2099-01-01T00:00:00Z")
+    # A hash with fewer iterations than the current default: check_password upgrades and saves it.
+    weak = PBKDF2PasswordHasher().encode("secure-password-1", "saltsalt", iterations=1000)
+    get_user_model().objects.filter(pk=owner.pk).update(password=weak)
+    owner.refresh_from_db()
+    old_hash = owner.password
+    assert owner.check_password("secure-password-1")
+    owner.refresh_from_db()
+    assert owner.password != old_hash  # the hash was upgraded and saved
+    grant.refresh_from_db()
+    assert grant.revoked_at is None
+    owner.set_password("a-brand-new-password-7")
+    owner.save()
+    grant.refresh_from_db()
+    assert grant.revoked_at is not None

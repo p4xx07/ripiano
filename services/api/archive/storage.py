@@ -1,6 +1,7 @@
 import hashlib
 import os
 import uuid
+import warnings
 from pathlib import Path
 
 from django.conf import settings
@@ -12,6 +13,26 @@ from .office import CONVERTIBLE_EXTENSIONS, inspect_office
 # Every input channel accepts exactly these file name extensions.
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", EML_TYPE[0], MSG_TYPE[0], *CONVERTIBLE_EXTENSIONS}
 UNSUPPORTED = "Use PDF, JPEG, PNG, an email (.eml or .msg), or an Office/OpenDocument/RTF file"
+# A supported name whose contents do not match: say the file is damaged, not that its type is wrong.
+DAMAGED_PDF = "This file could not be read as a PDF. It may be damaged, or it is not really a PDF."
+DAMAGED_IMAGE = "This file could not be read as a JPEG or PNG image. It may be damaged, or it is not really an image."
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+# Decoding and OCR of one image must fit a 4 GB NAS: 50 megapixels (an A4 page scanned at 600 dpi is
+# about 35) is roughly 150 MB as RGB before OCR copies. Larger images are refused at upload, and Pillow
+# itself refuses anything over twice this anywhere in the process (tasks, barcodes).
+MAX_IMAGE_PIXELS = 50_000_000
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+TOO_LARGE_IMAGE = "This image is too large to process (over 50 megapixels). Scan at a lower resolution or upload a PDF."
+
+
+def _unreadable(filename):
+    """The error for contents no reader accepted: damaged when the name promised a PDF or image."""
+    extension = Path(filename or "").suffix.lower()
+    if extension == ".pdf":
+        return DAMAGED_PDF
+    if extension in IMAGE_EXTENSIONS:
+        return DAMAGED_IMAGE
+    return UNSUPPORTED
 
 
 class InvalidDocument(ValueError):
@@ -52,17 +73,26 @@ def save_original(upload):
                 extension, mime = office
             else:
                 try:
-                    with Image.open(temp_path) as image:
-                        image.verify()
-                        image_format = image.format
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("error", Image.DecompressionBombWarning)
+                        with Image.open(temp_path) as image:
+                            # The header gives the size without decoding: refuse before verify() or OCR.
+                            if image.width * image.height > MAX_IMAGE_PIXELS:
+                                raise InvalidDocument(TOO_LARGE_IMAGE)
+                            image.verify()
+                            image_format = image.format
+                except InvalidDocument:
+                    raise
+                except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+                    raise InvalidDocument(TOO_LARGE_IMAGE) from exc
                 except (UnidentifiedImageError, OSError, ValueError) as exc:
-                    raise InvalidDocument(UNSUPPORTED) from exc
+                    raise InvalidDocument(_unreadable(upload.name)) from exc
                 if image_format == "JPEG":
                     extension, mime = ".jpg", "image/jpeg"
                 elif image_format == "PNG":
                     extension, mime = ".png", "image/png"
                 else:
-                    raise InvalidDocument(UNSUPPORTED)
+                    raise InvalidDocument(_unreadable(upload.name))
 
         file_id = uuid.uuid4()
         relative = Path("originals") / str(file_id)[:2] / f"{file_id}{extension}"

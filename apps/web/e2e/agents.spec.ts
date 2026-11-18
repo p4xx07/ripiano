@@ -29,6 +29,7 @@ test("create a limited agent and revoke its access", async ({
   await expect(page.getByLabel("Add or remove tags")).not.toBeChecked();
   await expect(page.getByLabel("Set sender and document type")).not.toBeChecked();
   await page.getByLabel("Set sender and document type").check();
+  await page.getByLabel("Your password (to create an agent token)").fill(password!);
   await page.getByRole("button", { name: "Create agent token" }).click();
   await expect(page.getByText("Copy this token now")).toBeVisible();
   const token = await page.getByLabel("New agent token").inputValue();

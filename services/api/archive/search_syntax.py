@@ -106,6 +106,20 @@ def _term(token):
     return field, value
 
 
+def _bare_date(token):
+    """ISO date for a plain YYYY-MM-DD or day-first DD/MM/YYYY or DD.MM.YYYY word, else None."""
+    match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", token) or None
+    try:
+        if match:
+            return date(int(match[1]), int(match[2]), int(match[3])).isoformat()
+        match = re.fullmatch(r"(\d{1,2})[/.](\d{1,2})[/.](\d{4})", token)
+        if match:
+            return date(int(match[3]), int(match[2]), int(match[1])).isoformat()
+    except ValueError:
+        return None
+    return None
+
+
 def parse(query):
     try:
         tokens = shlex.split(query)
@@ -119,7 +133,11 @@ def parse(query):
         negate = token.startswith("-") and len(token) > 1
         body = token[1:] if negate else token
         clause = _term(body)
-        if clause is None:
+        day = None if clause is not None or negate else _bare_date(body)
+        if day:
+            # A date typed on its own ("2026-10-14", "14/10/2026") finds that document date as well as the text.
+            items.append(("or", [("any", body), ("date", (day, day))]))
+        elif clause is None:
             items.append(("-any", body) if negate else ("word", body))
         else:
             items.append(("-" + clause[0], clause[1]) if negate else clause)

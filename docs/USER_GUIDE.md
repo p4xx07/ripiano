@@ -281,11 +281,23 @@ Open **Workflows** to automate routine filing. A workflow runs:
 **Actions** can:
 - add or remove tags;
 - set a sender or type, but never over one you chose yourself;
+- set the title from a pattern (see below);
+- set a storage path;
+- set one or more custom fields to a value (checked against the field's type when you save, and again when the workflow runs);
+- share the document with people or groups, who can view it or also edit its details;
 - mark the document as needing action;
 - add a note;
 - call a webhook;
 - send an email;
 - unlock password-protected PDFs ("when a document is added" workflows only).
+
+**Title patterns** use the same placeholders as storage paths, plus whole dates and the file name: `{correspondent}`, `{document_type}`, `{date}` (document date, or the added date if there is none, as YYYY-MM-DD), `{year}`, `{month}`, `{day}`, `{added_date}`, `{added_year}`, `{added_month}`, `{added_day}`, `{original_filename}` (without extension), `{title}`, `{asn}`, `{tag}` (first tag alphabetically), and `{source}`. For example `{correspondent} {document_type} {date}`. Unknown placeholders are refused when you save. The result is one line of at most 300 characters; a pattern that comes out empty leaves the title unchanged. The sender and type a workflow sets are applied first, so the pattern can use them.
+
+**Your own choices win:** a workflow never replaces a sender or type you chose, and never replaces a title, storage path, or custom field value that a person changed by hand. Ripiano tells these apart through the document's change history: an edit made by a person (you, or someone you shared the document with for editing) marks that detail as yours. Changes made by an import, matching rules, an agent, or another workflow do not, so a later workflow can still set them.
+
+**Sharing** only adds access: a workflow gives each chosen person or group access if they do not have it yet, and can raise "can view" to "can edit details". It never lowers or removes access, including access you gave by hand. People who are turned off or groups that were deleted after the workflow was saved are skipped. A document can be shared with up to 200 people or groups.
+
+Every change a workflow makes (title, storage path, custom fields, sharing, tags, sender, type) appears in the document's **Changes** history under the workflow's name, and in the run list as, for example, "set title …", "set storage path …", "set field … to …", or "shared with … (view)".
 
 **Unlocking PDFs:** a locked PDF cannot be read for text. Before text recognition, Ripiano tries the saved passwords of each matching "added" workflow, in order. The first one that works produces an unlocked copy, which is used for the searchable PDF, barcodes, and page splits. The original file is kept exactly as uploaded, still locked. Passwords are stored encrypted with the mailbox key (`RIPIANO_MAIL_KEY`, or one derived from the server secret) and are never shown again; the workflow shows only how many are saved. If no password works, the document is marked unreadable with a message saying so. Add the password to a workflow and choose **Retry OCR** on the document. Conditions are checked before text recognition, so a word condition can only match the title at that point.
 
@@ -310,7 +322,7 @@ Under **Custom details**, create a text, number, date, or yes/no field once and 
 
 The document panel keeps dated notes separate from follow-ups. Notes can be added or deleted, found through Library search (including `note:`), and retrieved in older pages when the history grows.
 
-Each document also keeps an audit history, shown as **Changes** in the document panel (newest first, the latest five with a "Show all" button) and available at `GET /api/documents/<id>/history` in pages of 50. An entry records when it happened, who or what made it (the person, an agent by its grant name, a workflow, an email rule, a source, matching rules, local learned filing, or barcodes), and each changed detail as "field: old → new" for the title, document date, sender, document type, storage path, ASN, tags, and custom field values. Uploads, new file versions, Trash, and restore are recorded too. Values are stored as readable names and dates, so entries stay understandable after a tag or sender is renamed or deleted; document text, OCR output, and notes are never copied into the history. Saving without a real change records nothing. Anyone who can open the document can read its history; people it is shared with do not see owner-only details (storage path, ASN, custom fields). History is part of portable exports.
+Each document also keeps an audit history, shown as **Changes** in the document panel (newest first, the latest five with a "Show all" button) and available at `GET /api/documents/<id>/history` in pages of 50. An entry records when it happened, who or what made it (the person, an agent by its grant name, a workflow, an email rule, a source, matching rules, local learned filing, or barcodes), and each changed detail as "field: old → new" for the title, document date, sender, document type, storage path, ASN, tags, and custom field values. Uploads, new file versions, Trash, restore, and sharing done by a workflow are recorded too. Values are stored as readable names and dates, so entries stay understandable after a tag or sender is renamed or deleted; document text, OCR output, and notes are never copied into the history. Saving without a real change records nothing. Anyone who can open the document can read its history; people it is shared with do not see owner-only details (storage path, ASN, custom fields, and who else a workflow shared it with). History is part of portable exports.
 
 ### Related documents
 
@@ -335,6 +347,8 @@ Document exports include every older version. Only permanent deletion removes ve
 Use **Export document ZIP** under Files to download the preserved original, the searchable PDF and OCR text when available, and a readable `manifest.json` with tags, notes, related documents, and paper-copy history. Each file has a SHA-256 checksum in the manifest. In the Library, select up to 20 documents and open **Export selected** to download one collection ZIP. Its root manifest identifies each document and gives checksums for files in stable ID-based folders. To move the whole archive, see `export_archive` and `import_archive` in [Move to a new server](#move-to-a-new-server).
 
 ### Trash
+
+Moving a document to Trash from its panel confirms first, then says "Moved “title” to Trash" with an **Undo** button that restores it straight away.
 
 Move a completed document to **Trash** from its detail panel and restore it later with its original, notes, tags, and sticker history intact. Trashed documents disappear from Library search, Needs action, downloads, and agent tools. A sticker scan explains that its document is in Trash. Processing must finish before a document can be moved. Select documents in the Library to move a batch to Trash after confirmation, and select documents in Trash to restore them together. These actions reject the whole batch if any document is inaccessible or in the wrong state. A confirmed **Delete permanently** action removes the record and paper-copy sticker history, then the maintenance worker removes its live original and archive files after any active backup finishes. Trash shows cleanup status and lets you retry a failed cleanup. Previously completed snapshots may still contain the document until their configured retention expires. Automatic cleanup is off by default. In Trash, choose 30–3650 days and review the current eligible count before enabling a daily 03:00 Europe/Rome cleanup. Disabling it stops future automatic deletions; cleanup already requested still completes.
 
@@ -396,6 +410,10 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 - Failed workflow runs are listed for information; workflows never retry a run by themselves.
 - Backups and NAS browse copies keep their own cancel and retry controls under **Backups**.
 
+### Offline
+
+Without a connection Ripiano keeps what it already shows. Files you add while offline wait on this device and are sent automatically when the connection returns, without creating duplicates if an earlier attempt did arrive. If you reload the app while offline, it shows who was last signed in and how many files are waiting, and it reconnects by itself. Signing out with files still waiting asks whether to keep them for the next sign-in on this device or discard them.
+
 ## Security
 
 ### Two-step sign-in
@@ -412,7 +430,7 @@ Open **Security**, confirm your password, and scan the QR code with any authenti
 ### API tokens
 
 Under **Security → API tokens**, create a personal token for your scripts. It is shown once, and you choose an expiry of 7–365 days. Send it as `Authorization: Token rip_…` on `/api/` requests.
-- **Access:** the token acts with your access, needs no CSRF token, and cannot use sign-in or account-security endpoints.
+- **Access:** the token acts with your access to read, upload, and file documents, and needs no CSRF token. To limit the damage of a leaked token, it cannot: sign in or change account security, other tokens, or agents; manage people or groups; share documents, tags, senders, types, or saved views with other people, or create public links; or send documents out of Ripiano or change what does (document email, mail accounts and rules, Sources, workflows, backups, semantic-search and Trash-retention settings). Those requests get 403 with an explanation; do them in the app.
 - **Revoking:** revoke a token at any time. Last use is shown next to each token.
 - **Reference:** `/api/schema.json` is OpenAPI 3.1 for every route. The 40 most-used operations (documents, upload, notes, tags, senders, types, saved views, sharing, workflows, sources, jobs, overview, tokens, and others) include request and response body schemas and are marked `x-ripiano-contract: v1`.
 - **Compatibility promise (API version 1):** for contract operations, fields may be added but existing fields never disappear or gain a new type (including `null`), and routes never disappear, without a new API version. `services/api/archive/test_api_contract.py` enforces this on every test run against the recorded `archive/api_contract_v1.json`; after an intended, compatible change, regenerate it with `RIPIANO_WRITE_CONTRACT=1 RIPIANO_DEBUG=1 .venv/bin/pytest -q archive/test_api_contract.py`.

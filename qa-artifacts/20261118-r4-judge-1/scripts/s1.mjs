@@ -1,0 +1,10 @@
+import { launch, login, shot, text, PW } from "./lib.mjs";
+console.log("pw loaded:", !!PW);
+const { browser, page } = await launch(false);
+await page.goto("/"); await shot(page, "01-login-desktop");
+console.log(await text(page, 800));
+await login(page);
+await shot(page, "02-home-desktop");
+console.log("---HOME---\n", await text(page, 3000));
+const btns = await page.getByRole("button").allInnerTexts(); console.log("BUTTONS:", btns.map(b=>b.trim()).filter(Boolean).slice(0,80).join(" | "));
+await browser.close();

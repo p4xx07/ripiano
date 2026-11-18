@@ -52,6 +52,16 @@ def grants(request):
         body = None
     if not isinstance(body, dict):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
+    # An agent token can read document text for up to a year: confirm it is really the account's owner asking,
+    # as for personal API tokens (judge 3 round 4, M2). Failed attempts count towards the sign-in limit.
+    from .throttle import record_sign_in_failure, sign_in_blocked, sign_in_throttle_key
+
+    keys = sign_in_throttle_key(request, request.user.get_username())
+    if sign_in_blocked(keys):
+        return JsonResponse({"error": "Too many attempts. Wait a few minutes and try again."}, status=429)
+    if not request.user.check_password(str(body.get("password", ""))):
+        record_sign_in_failure(keys)
+        return JsonResponse({"error": "Your password is not correct"}, status=400)
     name = body.get("name")
     scopes = body.get("scopes")
     days = body.get("expires_in_days", 30)

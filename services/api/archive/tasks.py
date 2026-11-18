@@ -32,7 +32,7 @@ class LockedPdfError(Exception):
 
 # Shown to people when a job fails with a low-level error; the details stay in the worker log.
 PROCESSING_ERRORS = {
-    "generic": "Text recognition failed for this file. Check that it opens correctly, then choose Retry OCR. Details are in the worker log.",
+    "generic": "Text recognition failed for this file. Choose Retry OCR. If it fails again, the file may be damaged: open it on your computer, and re-scan it or save it again as PDF before uploading.",
     "backup": "The backup failed. Details are in the maintenance worker log.",
     "backup_permission": "Ripiano cannot write to the backup folder. Check the permissions of the mounted backup folder on the NAS.",
 }

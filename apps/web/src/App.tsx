@@ -557,6 +557,25 @@ const GO_TO_VIEWS: Record<string, View> = {
   l: "documents", i: "inbox", a: "actions", t: "tags", o: "overview", s: "shared", w: "workflows", r: "sources",
 };
 
+// The last person signed in on this device (username only, never a secret), so a reload while
+// offline can say whose queued uploads are waiting instead of showing a bare connection error.
+const LAST_USER_KEY = "ripiano.lastSignedIn";
+function rememberSignedIn(username: string | null) {
+  try {
+    if (username) localStorage.setItem(LAST_USER_KEY, username);
+    else localStorage.removeItem(LAST_USER_KEY);
+  } catch {
+    // Storage blocked: the offline screen simply does not name anyone.
+  }
+}
+function lastSignedIn(): string | null {
+  try {
+    return localStorage.getItem(LAST_USER_KEY);
+  } catch {
+    return null;
+  }
+}
+
 function App() {
   const m = useMessages(appMessages);
   const l = useMessages(libraryMessages);
@@ -606,6 +625,11 @@ function App() {
   const [uploadDone, setUploadDone] = useState<{ count: number; firstId: string } | null>(null);
   const [revealDocument, setRevealDocument] = useState<string | null>(null);
   const [appAnnouncement, setAppAnnouncement] = useState("");
+  // A document just moved to the Trash from its dialog: said politely, with Undo (restore).
+  const [trashedNotice, setTrashedNotice] = useState<{ id: string; title: string; state: "trashed" | "restoring" | "restored" | "failed" } | null>(null);
+  // Where focus goes once the list has reloaded after Trash or Undo: the row now in the trashed
+  // document's place, the restored row, or the screen heading.
+  const [pendingFocus, setPendingFocus] = useState<{ index?: number; id?: string } | null>(null);
   const [waitingUploads, setWaitingUploads] = useState(0);
   const sendingWaiting = useRef(false);
   const signedInAs = useRef<string | null>(null);
@@ -811,7 +835,28 @@ function App() {
       (sidebar?.querySelector<HTMLElement>(".nav-link[aria-current=page]") ?? sidebar?.querySelector<HTMLElement>(".nav-link"))?.focus();
     });
     function escape(event: KeyboardEvent) {
-      if (event.key !== "Escape" || event.defaultPrevented || document.querySelector('[role="dialog"]')) return;
+      if (event.defaultPrevented || document.querySelector('[role="dialog"]')) return;
+      if (event.key === "Tab") {
+        // The page behind the open drawer is inert; keep Tab cycling inside the drawer.
+        const sidebar = sidebarRef.current;
+        if (!sidebar) return;
+        const items = Array.from(sidebar.querySelectorAll<HTMLElement>(
+          "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        )).filter((item) => item.tabIndex >= 0 && item.getClientRects().length > 0);
+        if (!items.length) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        const inside = sidebar.contains(document.activeElement);
+        if (event.shiftKey && (!inside || document.activeElement === first)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (!inside || document.activeElement === last)) {
+          event.preventDefault();
+          first.focus();
+        }
+        return;
+      }
+      if (event.key !== "Escape") return;
       event.preventDefault();
       closeMenu();
     }
@@ -821,10 +866,19 @@ function App() {
       document.removeEventListener("keydown", escape);
     };
   }, [menuOpen, narrowLayout]);
+  // The menu button sits in the page that is inert while the drawer is open: focus it once the
+  // drawer has closed and the page is interactive again.
+  const focusMenuButton = useRef(false);
   function closeMenu() {
+    focusMenuButton.current = true;
     setMenuOpen(false);
-    menuButtonRef.current?.focus();
   }
+  useEffect(() => {
+    if (menuOpen || !focusMenuButton.current) return;
+    focusMenuButton.current = false;
+    menuButtonRef.current?.focus();
+  }, [menuOpen]);
+  const drawerCoversPage = narrowLayout && menuOpen;
 
   // The browser tab names the current screen, in the interface language.
   useEffect(() => {
@@ -895,6 +949,60 @@ function App() {
     row.scrollIntoView({ block: "center" });
     row.querySelector<HTMLElement>(".document-title-button")?.focus({ preventScroll: true });
   }, [revealDocument, documents, view]);
+
+  useEffect(() => {
+    // Wait until the document dialog has closed: while it is open the page behind it is inert.
+    if (!pendingFocus || selectedDocument) return;
+    const frame = requestAnimationFrame(() => {
+      setPendingFocus(null);
+      const titles = Array.from(document.querySelectorAll<HTMLElement>("#main-content .document-row .document-title-button"));
+      let target: HTMLElement | undefined;
+      if (pendingFocus.id) {
+        target = document.querySelector<HTMLElement>(`#main-content .document-row[data-document-id="${CSS.escape(pendingFocus.id)}"] .document-title-button`) ?? undefined;
+      } else if (pendingFocus.index !== undefined && pendingFocus.index >= 0 && titles.length) {
+        target = titles[Math.min(pendingFocus.index, titles.length - 1)];
+      }
+      if (!target) {
+        const heading = document.querySelector<HTMLElement>("#main-content h1");
+        if (heading && !heading.hasAttribute("tabindex")) heading.tabIndex = -1;
+        target = heading ?? document.getElementById("main-content") ?? undefined;
+      }
+      target?.closest(".document-row")?.scrollIntoView({ block: "nearest" });
+      target?.focus({ preventScroll: Boolean(target.closest(".document-row")) });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingFocus, selectedDocument]);
+  useEffect(() => { setTrashedNotice(null); }, [view]);
+
+  function refreshAfterTrashChange() {
+    setTrashRefresh((value) => value + 1);
+    setActionRefresh((value) => value + 1);
+    setInboxRefresh((value) => value + 1);
+  }
+
+  async function documentTrashed(trashed: Document) {
+    const index = view === "documents" ? documents.findIndex((doc) => doc.id === trashed.id) : -1;
+    setTrashedNotice({ id: trashed.id, title: trashed.title, state: "trashed" });
+    refreshAfterTrashChange();
+    await loadDocuments(query);
+    setPendingFocus({ index });
+  }
+
+  async function undoTrash() {
+    if (!trashedNotice || trashedNotice.state !== "trashed") return;
+    const { id, title } = trashedNotice;
+    setTrashedNotice({ id, title, state: "restoring" });
+    try {
+      await request(`/api/documents/${id}/restore`, { method: "POST" });
+      setTrashedNotice({ id, title, state: "restored" });
+      refreshAfterTrashChange();
+      await loadDocuments(query);
+      setPendingFocus(view === "documents" ? { id } : {});
+    } catch {
+      setTrashedNotice({ id, title, state: "failed" });
+      setPendingFocus({});
+    }
+  }
 
   const loadFilterOptions = useCallback(async () => {
     try {
@@ -1085,6 +1193,7 @@ function App() {
 
   const listLoadedRef = useRef(false);
   const lastLoadedAt = useRef<Date | null>(null);
+  const [suggestion, setSuggestion] = useState(""); // "Did you mean …?" when a search found nothing
   const lastLoadedView = useRef(""); // search + filters + sort of the list on screen
   const loadDocuments = useCallback(async (search: string, cursor: string | null = null) => {
     if (cursor && loadingMoreRef.current) return;
@@ -1100,11 +1209,12 @@ function App() {
       if (sort) params.set("sort", sort);
       viewKey = params.toString();
       if (cursor) params.set("cursor", cursor);
-      const result = await request<{ documents: Document[]; counts: typeof counts; next_cursor: string | null }>(
+      const result = await request<{ documents: Document[]; counts: typeof counts; next_cursor: string | null; suggestion?: string | null }>(
         `/api/documents?${params}`,
       );
       if (requestNumber === latestSearch.current) {
         setDocuments((current) => cursor ? [...current, ...result.documents] : result.documents);
+        if (!cursor) setSuggestion(result.suggestion ?? "");
         setCounts(result.counts);
         setCountsKnown(true);
         listLoadedRef.current = true;
@@ -1141,12 +1251,47 @@ function App() {
     }
   }, [filters, sort, l]);
 
-  useEffect(() => {
-    request<Session>("/api/session")
-      .then(setSession)
-      .catch((cause) => setError(cause.message))
-      .finally(() => setLoading(false));
+  // Opening Ripiano without a connection (or while the server restarts) shows an offline screen
+  // that keeps trying, with the files still waiting on this device, rather than a sign-in form.
+  const [offline, setOffline] = useState<{ username: string | null; waiting: number } | null>(null);
+  const checkSession = useCallback(async () => {
+    try {
+      const value = await request<Session>("/api/session");
+      setOffline(null);
+      setError("");
+      setSession(value);
+    } catch (cause) {
+      const unreachable = cause instanceof ApiError && (cause.status === 0 || (cause.status >= 502 && cause.status <= 504));
+      if (!unreachable) {
+        setError(cause instanceof Error ? cause.message : "");
+        return;
+      }
+      const username = lastSignedIn();
+      setOffline((current) => ({ username, waiting: current?.username === username ? current.waiting : 0 }));
+      if (username) {
+        try {
+          const waiting = (await uploadQueue.pending(username)).length;
+          setOffline((current) => current && current.username === username ? { ...current, waiting } : current);
+        } catch {
+          // The queue cannot be read here: show the screen without a count.
+        }
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
+  useEffect(() => { void checkSession(); }, [checkSession]);
+  const isOffline = offline !== null;
+  useEffect(() => {
+    if (!isOffline) return;
+    const retry = () => void checkSession();
+    window.addEventListener("online", retry);
+    const timer = window.setInterval(retry, 15000);
+    return () => { window.removeEventListener("online", retry); window.clearInterval(timer); };
+  }, [isOffline, checkSession]);
+  useEffect(() => {
+    if (session) rememberSignedIn(session.authenticated ? session.username : null);
+  }, [session]);
 
   // A 401 on any request while signed in (signed out elsewhere, session expired, account disabled):
   // go back to the sign-in screen with a short notice instead of showing an empty archive. The screen
@@ -1418,6 +1563,21 @@ function App() {
   }
 
   if (loading) return <div className="loading-screen">{m.opening}</div>;
+  if (!session && offline)
+    return (
+      <main className="offline-screen">
+        <div className="offline-card">
+          <WifiOff size={30} aria-hidden="true" />
+          <h1>{m.offlineTitle}</h1>
+          <p role="status">{m.offlineText}</p>
+          {offline.username && <p>{m.offlineSignedInAs(offline.username)}</p>}
+          {offline.username && offline.waiting > 0 && (
+            <p className="offline-waiting"><UploadCloud size={19} aria-hidden="true" /> {m.offlineWaiting(offline.waiting)}</p>
+          )}
+          <button type="button" onClick={() => void checkSession()}>{m.tryAgain}</button>
+        </div>
+      </main>
+    );
   if (!session)
     return (
       <div className="loading-screen error-screen">
@@ -1472,7 +1632,7 @@ function App() {
       }}
       onDrop={drop}
     >
-      <a className="skip-link" href="#main-content">{m.skipToContent}</a>
+      <a className="skip-link" href="#main-content" inert={drawerCoversPage}>{m.skipToContent}</a>
       <p className="visually-hidden" aria-live="polite" aria-atomic="true">{appAnnouncement}</p>
       {showShortcuts && <KeyboardHelp onClose={() => setShowShortcuts(false)} />}
       <aside id="app-sidebar" ref={sidebarRef} className={`sidebar ${menuOpen ? "sidebar-open" : ""}`}
@@ -1541,7 +1701,7 @@ function App() {
       {/* Tapping anywhere outside the open phone menu closes it (Esc does the same on a keyboard). */}
       {narrowLayout && menuOpen && <div className="sidebar-backdrop" aria-hidden="true" onClick={closeMenu} />}
 
-      <main className="main-content" id="main-content" tabIndex={-1}>
+      <main className="main-content" id="main-content" tabIndex={-1} inert={drawerCoversPage}>
         <header className={`topbar${view === "documents" ? " topbar-with-add" : ""}`}>
           <button
             ref={menuButtonRef}
@@ -1569,6 +1729,23 @@ function App() {
           )}
         </header>
         <section className={`page-content${view === "documents" && query.trim() ? " library-searching" : ""}`}>
+          <div className="trash-undo-region" aria-live="polite" aria-atomic="true">
+            {trashedNotice && (
+              <div className="upload-progress upload-done trash-undo-notice">
+                <Check size={19} aria-hidden="true" />{" "}
+                <span>{trashedNotice.state === "restored" ? l.restoredFromTrash(trashedNotice.title)
+                  : trashedNotice.state === "failed" ? l.undoTrashFailed(trashedNotice.title)
+                  : l.movedToTrash(trashedNotice.title)}</span>
+                {(trashedNotice.state === "trashed" || trashedNotice.state === "restoring") && (
+                  <button type="button" className="text-action" disabled={trashedNotice.state === "restoring"}
+                    aria-label={l.undoTrashLabel(trashedNotice.title)} onClick={() => void undoTrash()}>
+                    <RotateCcw size={16} aria-hidden="true" /> {l.undoTrash}
+                  </button>
+                )}
+                <button type="button" className="upload-done-dismiss" aria-label={l.dismissAdded} onClick={() => setTrashedNotice(null)}><X size={16} aria-hidden="true" /></button>
+              </div>
+            )}
+          </div>
           {view === "backups" ? (
             <BackupPanel />
           ) : view === "shared" ? (
@@ -1901,11 +2078,18 @@ function App() {
                       ? l.nothingFound
                       : l.freshShelf}
                   </h3>
+                  {query && suggestion && (
+                    <p className="search-suggestion">
+                      {l.didYouMean}{" "}
+                      <button type="button" className="text-action" onClick={() => setQuery(suggestion)}>{suggestion}</button>
+                    </p>
+                  )}
                   <p>
                     {query || activeFilterCount
                       ? l.tryAnotherSearch
                       : l.addSearchable}
                   </p>
+                  {(query || activeFilterCount) ? <p className="search-hint">{l.searchHint}</p> : null}
                   {!query && !activeFilterCount && (
                     <Button
                       onClick={() => setShowAdd(true)}
@@ -2141,7 +2325,7 @@ function App() {
             // The dialog closes on save: say so, since nothing else on screen changes visibly.
             if (closing) setAppAnnouncement(l.documentSaved(saved.title));
           }}
-          onTrashed={() => { void loadDocuments(query); setTrashRefresh((value) => value + 1); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }}
+          onTrashed={(trashed) => void documentTrashed(trashed)}
           onOpenTags={() => {
             setSelectedDocument(null);
             setView("tags");

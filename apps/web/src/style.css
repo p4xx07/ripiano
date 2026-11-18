@@ -1323,9 +1323,15 @@ button:disabled {
   .search-box button {
     min-height: 44px;
   }
+  /* A 44px target that still ends long titles with "…": a block-level button with its own ellipsis (an
+     inline-flex button stopped the heading's ellipsis from showing, so titles were cut mid-word). */
   .document-title-button {
-    display: inline-flex;
-    align-items: center;
+    display: block;
+    max-width: 100%;
+    line-height: 44px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   .search-box button {
     min-width: 44px;
@@ -2895,12 +2901,15 @@ button:disabled {
   line-height: 1.5;
 }
 .agent-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-medium);
   overflow: hidden;
 }
-.agent-events > div {
+.agent-events > li {
   display: flex;
   align-items: center;
   gap: var(--space-compact);
@@ -2910,7 +2919,7 @@ button:disabled {
   font-size: var(--type-small);
   color: var(--color-muted);
 }
-.agent-events > div:last-child {
+.agent-events > li:last-child {
   border: 0;
 }
 .agent-events strong {
@@ -3192,6 +3201,9 @@ button:disabled {
   padding: var(--space-2) var(--space-compact);
 }
 .copy-history {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
   border-top: 1px solid var(--color-border);
   padding-top: var(--space-2);
   display: grid;
@@ -4861,5 +4873,89 @@ button:disabled {
   }
   .detail-preview-actions .text-action {
     min-height: 44px;
+  }
+}
+
+/* Moved to Trash from a document: the confirmation with Undo sits at the top of the screen. */
+.trash-undo-notice .text-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 44px;
+}
+
+/* Touch screens (round-4 judge L3): Agents permission and semantic-mode choices get a 44px tall row
+   to tap and a 24px visible control. */
+@media (pointer: coarse) {
+  .agent-create-card .agent-scope-choice,
+  .semantic-card label.agent-scope-choice {
+    min-height: 44px;
+    align-items: center;
+  }
+  .agent-scope-choice input,
+  .semantic-card label.agent-scope-choice input,
+  .semantic-card label.agent-scope-choice input[type="radio"] {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    margin: 0;
+  }
+}
+
+/* Opened without a connection (round-4 judge M4): who was signed in, what is waiting, and a retry. */
+.offline-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--color-canvas);
+}
+.offline-card {
+  max-width: 440px;
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  color: var(--color-accent-strong);
+}
+.offline-card h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--type-subtitle);
+}
+.offline-card p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.offline-waiting {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+.offline-card button {
+  min-height: 44px;
+  border: 0;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-soft);
+}
+
+/* 320px reflow (round-4 judge L2): long labels (Italian "Esegui backup ora", "Aggiungi posizione al
+   livello principale") wrap inside their button instead of pushing the page sideways. */
+@media (max-width: 400px) {
+  .page-heading {
+    flex-wrap: wrap;
+  }
+  .button {
+    white-space: normal;
+    max-width: 100%;
+    text-align: center;
+  }
+  .page-content form,
+  .page-content form label,
+  .page-content form input,
+  .page-content form select {
+    min-width: 0;
+    max-width: 100%;
   }
 }

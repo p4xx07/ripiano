@@ -1,7 +1,7 @@
-import { ComponentPropsWithoutRef, ReactNode, useEffect, useRef } from "react";
+import { ComponentPropsWithRef, ReactNode, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-type ButtonProps = ComponentPropsWithoutRef<"button"> & {
+type ButtonProps = ComponentPropsWithRef<"button"> & {
   variant?: "primary" | "secondary" | "danger";
 };
 

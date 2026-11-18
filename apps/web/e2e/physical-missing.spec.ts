@@ -44,7 +44,7 @@ test("a missing paper copy keeps its sticker and last known location", async ({ 
   const code = (await card.locator("strong").textContent())!.trim();
   await card.getByRole("button", { name: "Mark missing" }).click();
   await expect(detail.getByRole("status")).toContainText("marked missing");
-  await expect(card).toContainText("Reported missing");
+  await expect(card.locator(".copy-missing-label")).toHaveText("Marked missing");
   await expect(card).toContainText(`Last known: ${location}`);
   await expect(card.getByRole("button", { name: "Move" })).toBeDisabled();
   await card.getByRole("button", { name: "History" }).click();
@@ -52,14 +52,14 @@ test("a missing paper copy keeps its sticker and last known location", async ({ 
   await card.screenshot({ path: testInfo.outputPath("missing-paper-copy.png") });
 
   await page.goto(`/?sticker=${code}`);
-  await expect(page.getByText("This paper copy was reported missing.")).toBeVisible();
+  await expect(page.getByText("This paper copy was marked missing.")).toBeVisible();
   await expect(page.getByText(`Last known: ${location}`)).toBeVisible();
   await page.locator(".sticker-result").screenshot({ path: testInfo.outputPath("missing-sticker-lookup.png") });
   const locationRow = page.locator(".location-list > div").filter({ hasText: location });
   await locationRow.getByRole("button", { name: "View contents" }).click();
   const contents = page.locator(".location-result");
   await expect(contents).toContainText("0 paper copies listed as present");
-  await expect(contents).toContainText("1 copy was last recorded here or inside nested locations, then reported missing.");
+  await expect(contents).toContainText("1 copy was last recorded here or inside nested locations, then marked missing.");
   await expect(contents.locator(":scope > .location-contents li")).toHaveCount(0);
   const missingItem = contents.locator(".location-missing-contents li");
   await expect(missingItem).toHaveCount(1);
@@ -70,7 +70,7 @@ test("a missing paper copy keeps its sticker and last known location", async ({ 
   detail = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await detail.locator(".copy-card").first().getByRole("button", { name: "Mark found" }).click();
   await expect(detail.getByRole("status")).toContainText("marked found");
-  await expect(detail.locator(".copy-card").first()).not.toContainText("Reported missing");
+  await expect(detail.locator(".copy-card").first().locator(".copy-missing-label")).toHaveCount(0);
   await expect(detail.locator(".copy-card").first()).toContainText(location);
   await detail.getByRole("button", { name: "Close" }).click();
   await navigate(page, "Paper archive");

@@ -131,10 +131,10 @@ test("capture, find, tag, and locate a paper copy", async ({
   await page.getByRole("button", { name, exact: true }).click();
   const detail = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await detail.getByRole("button", { name: "Mark missing" }).click();
-  await expect(detail.getByText("Reported missing", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Marked missing", { exact: true })).toBeVisible();
   await detail.getByRole("button", { name: "Close" }).click();
   const missingRow = page.locator(".document-row").filter({ has: page.getByRole("button", { name, exact: true }) });
-  await expect(missingRow.getByText("Paper copy reported missing")).toBeVisible();
+  await expect(missingRow.getByText("Paper copy marked missing")).toBeVisible();
   await expect(missingRow.getByText(locationName, { exact: true })).toHaveCount(0);
   await missingRow.screenshot({ path: testInfo.outputPath("missing-paper-copy.png"), animations: "disabled" });
   await page.getByRole("button", { name: /Filters/ }).click();

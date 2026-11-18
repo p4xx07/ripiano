@@ -284,6 +284,11 @@
           "string"
          ]
         },
+        "document_date_origin": {
+         "type": [
+          "string"
+         ]
+        },
         "document_type": {
          "type": [
           "object"
@@ -516,6 +521,11 @@
       ]
      },
      "document_date": {
+      "type": [
+       "string"
+      ]
+     },
+     "document_date_origin": {
       "type": [
        "string"
       ]
@@ -1894,6 +1904,11 @@
           "null"
          ]
         },
+        "set_custom_fields": {
+         "type": [
+          "array"
+         ]
+        },
         "set_document_type_id": {
          "type": [
           "null"
@@ -1902,6 +1917,21 @@
         "set_needs_action": {
          "type": [
           "boolean"
+         ]
+        },
+        "set_storage_path_id": {
+         "type": [
+          "null"
+         ]
+        },
+        "share_with": {
+         "type": [
+          "array"
+         ]
+        },
+        "title_template": {
+         "type": [
+          "string"
          ]
         },
         "trigger": {
@@ -1990,6 +2020,11 @@
       ]
      },
      "document_date": {
+      "type": [
+       "string"
+      ]
+     },
+     "document_date_origin": {
       "type": [
        "string"
       ]
@@ -2426,6 +2461,11 @@
      "document_date": {
       "type": [
        "null"
+      ]
+     },
+     "document_date_origin": {
+      "type": [
+       "string"
       ]
      },
      "document_type": {
@@ -3025,6 +3065,11 @@
        "null"
       ]
      },
+     "set_custom_fields": {
+      "type": [
+       "array"
+      ]
+     },
      "set_document_type_id": {
       "type": [
        "null"
@@ -3033,6 +3078,21 @@
      "set_needs_action": {
       "type": [
        "boolean"
+      ]
+     },
+     "set_storage_path_id": {
+      "type": [
+       "null"
+      ]
+     },
+     "share_with": {
+      "type": [
+       "array"
+      ]
+     },
+     "title_template": {
+      "type": [
+       "string"
       ]
      },
      "trigger": {

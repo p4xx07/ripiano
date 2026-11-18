@@ -14,7 +14,8 @@ from django.db import IntegrityError, transaction
 from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
-from .models import Document, DocumentNote, DocumentTag, TagOverride, Workflow, WorkflowRun
+from .models import (CustomField, CustomFieldValue, Document, DocumentAccess, DocumentEvent, DocumentNote, DocumentTag, TagOverride, Workflow,
+                     WorkflowRun)
 
 logger = logging.getLogger(__name__)
 SCHEDULE_BATCH = 500
@@ -123,12 +124,112 @@ def record_unlock(workflow, document):
         pass
 
 
-def _apply(workflow, document, *, first_time=True):
+MAX_SHARES = 20
+MAX_FIELD_VALUES = 20
+MAX_GRANTS = 200  # same cap as sharing by hand (people_views.document_access)
+
+
+def set_by_person(document):
+    """Details a person changed by hand, from the document's history: "title", "storage_path", ("custom_field", name).
+
+    Ripiano keeps no origin for these details, so the history is the record: a change written by a person
+    (not an agent, workflow, rule, or import) marks the detail as a manual choice that automation keeps.
+    """
+    chosen = set()
+    events = DocumentEvent.objects.filter(document=document, actor_kind=DocumentEvent.ActorKind.USER, action=DocumentEvent.Action.UPDATED)
+    for changes in events.values_list("changes", flat=True):
+        for change in changes or []:
+            field = change.get("field") if isinstance(change, dict) else None
+            if field == "custom_field":
+                chosen.add(("custom_field", str(change.get("name") or "").casefold()))
+            elif field:
+                chosen.add(field)
+    return chosen
+
+
+def _share(workflow, document, changes, access_changes):
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Group
+
+    rank = {DocumentAccess.Level.VIEW: 1, DocumentAccess.Level.EDIT: 2}
+    for entry in workflow.share_with or []:
+        kind, target_id, level = entry.get("kind"), entry.get("id"), entry.get("level")
+        if level not in rank or not isinstance(target_id, int):
+            continue
+        if kind == "person":
+            target = get_user_model().objects.filter(pk=target_id, is_active=True).exclude(pk=document.owner_id).first()
+            lookup, name = ({"user": target}, target.get_username()) if target else (None, "")
+        elif kind == "group":
+            target = Group.objects.filter(pk=target_id).first()
+            lookup, name = ({"group": target}, target.name) if target else (None, "")
+        else:
+            continue
+        if lookup is None:
+            continue  # the person was turned off or the group removed since the workflow was saved
+        grant = DocumentAccess.objects.filter(document=document, **lookup).first()
+        if grant is None:
+            if DocumentAccess.objects.filter(document=document).count() >= MAX_GRANTS:
+                changes.append(f"could not share with {name} (sharing limit reached)")
+                continue
+            DocumentAccess.objects.create(document=document, level=level, **lookup)
+            previous = None
+        elif rank[level] > rank.get(grant.level, 0):
+            previous = grant.level  # raise view to edit; never lower or remove a grant
+            DocumentAccess.objects.filter(pk=grant.pk).update(level=level)
+        else:
+            continue
+        changes.append(f"shared with {name} ({level})")
+        access_changes.append({"field": "access", "kind": kind, "name": name, "from": previous, "to": level})
+
+
+def _assign(workflow, document, changes, fields):
+    """Storage path, custom field values, and title; each skipped where a person chose it by hand."""
+    if not (workflow.title_template or workflow.set_storage_path_id or workflow.set_custom_fields):
+        return
+    manual = set_by_person(document)
+    if workflow.set_storage_path_id and "storage_path" not in manual and document.storage_path_id != workflow.set_storage_path_id:
+        document.storage_path_id = workflow.set_storage_path_id
+        fields.append("storage_path")
+        changes.append(f"set storage path {workflow.set_storage_path.name}")
+    entries = [entry for entry in (workflow.set_custom_fields or []) if isinstance(entry, dict)]
+    if entries:
+        from .custom_field_views import normalize_value
+
+        owned = {str(field.pk): field for field in CustomField.objects.filter(owner_id=workflow.owner_id, pk__in=[entry.get("field_id") for entry in entries])}
+        current = dict(CustomFieldValue.objects.filter(document=document).values_list("field_id", "value"))
+        for entry in entries:
+            field = owned.get(str(entry.get("field_id")))
+            if field is None or ("custom_field", field.name.casefold()) in manual:
+                continue
+            raw = entry.get("value")
+            try:  # Re-checked against the field's current type, which may have changed since saving.
+                value = normalize_value(field.kind, raw == "true" if field.kind == CustomField.Kind.BOOLEAN and isinstance(raw, str) else raw)
+            except ValueError:
+                changes.append(f"skipped field {field.name} (the saved value no longer fits its type)")
+                continue
+            if current.get(field.pk) == value:
+                continue
+            CustomFieldValue.objects.update_or_create(document=document, field=field, defaults={"value": value})
+            shown = ("yes" if value == "true" else "no") if field.kind == CustomField.Kind.BOOLEAN else value
+            changes.append(f"set field {field.name} to {shown}")
+    if workflow.title_template and "title" not in manual:
+        from .storage_paths import render_title
+
+        title = render_title(workflow.title_template, document)
+        if title and title != document.title:
+            document.title = title
+            fields.append("title")
+            changes.append(f"set title {title}")
+
+
+def _apply(workflow, document, *, first_time=True, access_changes=None):
     """Apply metadata actions; return a short description of what changed.
 
     Notes, webhooks, and emails happen only the first time a workflow applies to a document.
+    ``access_changes`` collects sharing changes for the document history (the snapshot does not track grants).
     """
     changes = []
+    access_changes = [] if access_changes is None else access_changes
     suppressed = set(TagOverride.objects.filter(document=document).values_list("tag_id", flat=True))
     added = [tag for tag in workflow.add_tags.all() if tag.id not in suppressed]
     for tag in added:
@@ -149,6 +250,8 @@ def _apply(workflow, document, *, first_time=True):
         document.document_type_id, document.document_type_origin = workflow.set_document_type_id, Document.FilingOrigin.SOURCE
         fields += ["document_type", "document_type_origin"]
         changes.append(f"set type {workflow.set_document_type.name}")
+    # After sender and type, so a title template sees the values this workflow just set.
+    _assign(workflow, document, changes, fields)
     # Only start a follow-up; never reopen one the owner completed.
     if workflow.set_needs_action and document.action_status == Document.ActionStatus.NONE:
         document.action_status, document.action_completed_at = Document.ActionStatus.OPEN, None
@@ -162,6 +265,8 @@ def _apply(workflow, document, *, first_time=True):
     if workflow.add_note and first_time:
         DocumentNote.objects.create(document=document, author_id=document.owner_id, body=workflow.add_note)
         changes.append("added a note")
+    if workflow.share_with:
+        _share(workflow, document, changes, access_changes)
     if workflow.webhook_url and first_time:
         changes.append("queued webhook")
     if workflow.email_to and first_time:
@@ -188,8 +293,9 @@ def run_workflow(workflow, document, trigger):
             from . import history
 
             before = history.snapshot(document)
-            run.detail = _apply(workflow, document, first_time=first_time)[:500]
-            history.record(document, before, actor_label=workflow.name, actor_kind=history.Kind.WORKFLOW)
+            access_changes = []
+            run.detail = _apply(workflow, document, first_time=first_time, access_changes=access_changes)[:500]
+            history.record(document, before, actor_label=workflow.name, actor_kind=history.Kind.WORKFLOW, extra=access_changes)
             run.save(update_fields=["detail"])
             if first_time and (workflow.webhook_url or workflow.email_to):
                 transaction.on_commit(lambda run_id=str(run.id): send_workflow_notifications.delay(run_id), robust=True)
@@ -206,7 +312,7 @@ def run_workflow(workflow, document, trigger):
 def run_for_document(document, trigger):
     """Run the owner's enabled workflows for a trigger, in order. Workflow changes never trigger further workflows."""
     runs = []
-    for workflow in Workflow.objects.filter(owner_id=document.owner_id, enabled=True, trigger=trigger).prefetch_related("add_tags", "remove_tags").select_related("set_correspondent", "set_document_type"):
+    for workflow in Workflow.objects.filter(owner_id=document.owner_id, enabled=True, trigger=trigger).prefetch_related("add_tags", "remove_tags").select_related("set_correspondent", "set_document_type", "set_storage_path"):
         document.refresh_from_db()
         run = run_workflow(workflow, document, trigger)
         if run:
@@ -218,7 +324,7 @@ def run_scheduled():
     """Daily: apply scheduled workflows to documents whose chosen date is the configured number of days ago or older."""
     today = timezone.localdate()
     total = 0
-    for workflow in Workflow.objects.filter(enabled=True, trigger=Workflow.Trigger.SCHEDULED).prefetch_related("add_tags", "remove_tags").select_related("set_correspondent", "set_document_type"):
+    for workflow in Workflow.objects.filter(enabled=True, trigger=Workflow.Trigger.SCHEDULED).prefetch_related("add_tags", "remove_tags").select_related("set_correspondent", "set_document_type", "set_storage_path"):
         cutoff = today - timedelta(days=workflow.schedule_days)
         candidates = Document.objects.filter(owner_id=workflow.owner_id, trashed_at__isnull=True, is_split_source=False, status=Document.Status.READY)
         if workflow.schedule_field == Workflow.DateField.CREATED:

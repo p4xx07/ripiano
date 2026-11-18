@@ -9,8 +9,9 @@ from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from .models import Correspondent, Document, DocumentType, Tag, Workflow, WorkflowRun
-from .workflows import MAX_PDF_PASSWORDS, pdf_passwords, run_workflow, set_pdf_passwords
+from .models import CustomField, Correspondent, Document, DocumentAccess, DocumentType, StoragePath, Tag, Workflow, WorkflowRun
+from .storage_paths import validate_title_template
+from .workflows import MAX_FIELD_VALUES, MAX_PDF_PASSWORDS, MAX_SHARES, pdf_passwords, run_workflow, set_pdf_passwords
 from .field_labels import label
 
 
@@ -41,9 +42,65 @@ def _workflow_json(item):
         "set_document_type_id": str(item.set_document_type_id) if item.set_document_type_id else None,
         "set_needs_action": item.set_needs_action, "action_note": item.action_note, "add_note": item.add_note,
         "webhook_url": item.webhook_url, "email_to": item.email_to, "email_attach": item.email_attach,
+        "title_template": item.title_template,
+        "set_storage_path_id": str(item.set_storage_path_id) if item.set_storage_path_id else None,
+        "set_custom_fields": [_field_value_json(entry) for entry in item.set_custom_fields or []],
+        "share_with": [{"kind": entry["kind"], "id": entry["id"], "level": entry["level"]} for entry in item.share_with or []],
         # Passwords are write-only; only how many are saved is ever shown.
         "pdf_password_count": len(pdf_passwords(item)),
     }
+
+
+def _field_value_json(entry):
+    # Booleans are stored as "true"/"false" like document values and returned as true/false.
+    value = entry.get("value")
+    if entry.get("kind") == CustomField.Kind.BOOLEAN:
+        value = value == "true"
+    return {"field_id": entry.get("field_id"), "value": value}
+
+
+def _custom_field_values(owner, values):
+    from .custom_field_views import normalize_value
+
+    if not isinstance(values, list) or len(values) > MAX_FIELD_VALUES or not all(isinstance(entry, dict) for entry in values):
+        raise ValueError(f"Custom field values must be a list of up to {MAX_FIELD_VALUES} fields")
+    result, seen = [], set()
+    for entry in values:
+        field = _owned(CustomField, owner, entry.get("field_id"), "Custom field")
+        if field is None:
+            raise ValueError("Choose a custom field for each value")
+        if field.pk in seen:
+            raise ValueError("Choose each custom field only once")
+        seen.add(field.pk)
+        if "value" not in entry or entry["value"] is None:
+            raise ValueError("Give each custom field a value")
+        result.append({"field_id": str(field.pk), "kind": field.kind, "value": normalize_value(field.kind, entry["value"])})
+    return result
+
+
+def _share_with(owner, values):
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Group
+
+    if not isinstance(values, list) or len(values) > MAX_SHARES or not all(isinstance(entry, dict) for entry in values):
+        raise ValueError(f"Share with up to {MAX_SHARES} people or groups")
+    result, seen = [], set()
+    for entry in values:
+        kind, target_id, level = entry.get("kind"), entry.get("id"), entry.get("level", DocumentAccess.Level.VIEW)
+        if kind not in ("person", "group") or not isinstance(target_id, int) or isinstance(target_id, bool) or level not in DocumentAccess.Level.values:
+            raise ValueError("Choose a person or a group, and view or edit, for each share")
+        if kind == "person":
+            if target_id == owner.pk:
+                raise ValueError("You already own your documents; choose someone else to share with")
+            if not get_user_model().objects.filter(pk=target_id, is_active=True).exists():
+                raise ValueError("Person not found")
+        elif not Group.objects.filter(pk=target_id).exists():
+            raise ValueError("Group not found")
+        if (kind, target_id) in seen:
+            raise ValueError("Choose each person or group only once")
+        seen.add((kind, target_id))
+        result.append({"kind": kind, "id": target_id, "level": level})
+    return result
 
 
 def _run_json(run):
@@ -116,9 +173,23 @@ def _apply(item, body, owner):
     item.action_note = _text(body, "action_note", 500, item.action_note)
     item.add_note = _text(body, "add_note", 2000, item.add_note)
     for key, model, label in (("filter_tag", Tag, "Tag"), ("filter_correspondent", Correspondent, "Sender"), ("filter_document_type", DocumentType, "Document type"),
-                              ("set_correspondent", Correspondent, "Sender"), ("set_document_type", DocumentType, "Document type")):
+                              ("set_correspondent", Correspondent, "Sender"), ("set_document_type", DocumentType, "Document type"),
+                              ("set_storage_path", StoragePath, "Storage path")):
         if f"{key}_id" in body:
             setattr(item, key, _owned(model, owner, body[f"{key}_id"], label))
+    if "title_template" in body:
+        template = body["title_template"]
+        if not isinstance(template, str):
+            raise ValueError("Write a title template of up to 200 characters on one line")
+        template = template.strip()
+        problem = validate_title_template(template) if template else ""
+        if problem:
+            raise ValueError(problem)
+        item.title_template = template
+    if "set_custom_fields" in body:
+        item.set_custom_fields = _custom_field_values(owner, body["set_custom_fields"])
+    if "share_with" in body:
+        item.share_with = _share_with(owner, body["share_with"])
     url = _text(body, "webhook_url", 500, item.webhook_url)
     if url:
         parts = urlsplit(url)

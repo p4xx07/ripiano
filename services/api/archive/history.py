@@ -20,7 +20,7 @@ SCALARS = (
     ("asn", "asn"),
 )
 # Details someone the owner shared one document with does not see.
-OWNER_ONLY_FIELDS = {"storage_path", "asn", "custom_field"}
+OWNER_ONLY_FIELDS = {"storage_path", "asn", "custom_field", "access"}
 DIFF_ACTIONS = {Action.UPDATED, Action.FILED_AUTOMATICALLY}
 
 
@@ -54,9 +54,13 @@ def diff(before, after):
     return changes
 
 
-def record(document, before, actor_user=None, actor_label="", action=Action.UPDATED, *, actor_kind=None):
-    """Write one event if a tracked detail changed since ``before``; return it, or None."""
-    changes = diff(before, snapshot(document))
+def record(document, before, actor_user=None, actor_label="", action=Action.UPDATED, *, actor_kind=None, extra=()):
+    """Write one event if a tracked detail changed since ``before``; return it, or None.
+
+    ``extra`` adds changes the snapshot does not track, e.g. ``{"field": "access", "kind": "person",
+    "name": "anna", "from": None, "to": "view"}`` when a workflow shares the document.
+    """
+    changes = diff(before, snapshot(document)) + list(extra)
     if not changes:
         return None
     return DocumentEvent.objects.create(

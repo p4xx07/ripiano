@@ -51,6 +51,8 @@ export default function AgentPanel() {
   const [scopes, setScopes] = useState<string[]>(["documents:search"]);
   const [filterTag, setFilterTag] = useState("");
   const [days, setDays] = useState(30);
+  // Creating an agent token asks for the person's current password, like an API token.
+  const [password, setPassword] = useState("");
   const [newToken, setNewToken] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -112,8 +114,10 @@ export default function AgentPanel() {
           scopes,
           filter_tag_id: filterTag || null,
           expires_in_days: days,
+          password,
         }),
       });
+      setPassword("");
       setNewToken(grant.token);
       setCopied(false);
       setName("");
@@ -288,17 +292,17 @@ export default function AgentPanel() {
             </div>
           </div>
           {events.length ? (
-            <div className="agent-events">
+            <ul className="agent-events" aria-label={m.activityHeading}>
               {events.map((event, index) => (
-                <div key={`${event.at}-${index}`}>
+                <li key={`${event.at}-${index}`}>
                   <span>{event.agent}</span>
                   <strong>{toolNames[event.action] ?? event.action.replaceAll("_", " ")}</strong>
                   <small>
-                    {outcomeNames[event.outcome] ?? event.outcome} · {formatDateTime(event.at)}
+                    {outcomeNames[event.outcome] ?? event.outcome} · <time dateTime={event.at}>{formatDateTime(event.at)}</time>
                   </small>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           ) : (
             <p className="agent-empty-activity">{m.noActivity}</p>
           )}
@@ -360,8 +364,18 @@ export default function AgentPanel() {
                 required
               />
             </label>
+            <label>
+              {m.password}
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </label>
             <Button
-              disabled={busy || scopes.length === 0}
+              disabled={busy || scopes.length === 0 || !password}
             >
               <Plus size={17} /> {busy ? m.creating : m.create}
             </Button>

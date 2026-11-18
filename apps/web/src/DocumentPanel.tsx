@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   Building2,
@@ -18,7 +18,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Document, DocumentNote, FilingItem, FilingSuggestion, FilingSuggestions, Location, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
+import { Document, DocumentNote, FilingItem, FilingSuggestion, FilingSuggestions, formatDateTime, Location, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 import DocumentHistory from "./DocumentHistory";
@@ -31,27 +31,6 @@ import EmailDocumentPanel from "./EmailDocumentPanel";
 import DocumentPreview from "./DocumentPreview";
 import { useMessages } from "./i18n";
 import messages from "./locales/DocumentPanel";
-
-// The API has no way to reject a learned suggestion for good; a dismissed one stays hidden for
-// this browser session (kept in sessionStorage so a reload does not bring it back).
-const DISMISSED_KEY = "ripiano.dismissedSuggestions";
-function readDismissed(): Set<string> {
-  try {
-    const value = JSON.parse(sessionStorage.getItem(DISMISSED_KEY) ?? "[]");
-    return new Set(Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
-  } catch {
-    return new Set();
-  }
-}
-const dismissedSuggestions = readDismissed();
-function rememberDismissed(key: string) {
-  dismissedSuggestions.add(key);
-  try {
-    sessionStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissedSuggestions].slice(-500)));
-  } catch {
-    // Storage blocked: the suggestion stays hidden until the page is reloaded.
-  }
-}
 
 export default function DocumentPanel({
   initial,
@@ -88,7 +67,10 @@ export default function DocumentPanel({
   const [creatingDocumentType, setCreatingDocumentType] = useState(false);
   const [creatingTag, setCreatingTag] = useState(false);
   const [newTag, setNewTag] = useState("");
-  const [, setDismissedTick] = useState(0);
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  // Bumped when a change that is not a document save (a rejected suggestion) adds a history entry.
+  const [historyKey, setHistoryKey] = useState(0);
+  const historyRefresh = useMemo(() => ({ current, historyKey }), [current, historyKey]);
   const [actionStatus, setActionStatus] = useState(initial.action_status);
   const [actionDueDate, setActionDueDate] = useState(initial.action_due_date ?? "");
   const [actionNote, setActionNote] = useState(initial.action_note);
@@ -106,7 +88,7 @@ export default function DocumentPanel({
   const [newLocation, setNewLocation] = useState("");
   const [moveChoices, setMoveChoices] = useState<Record<string, string>>({});
   const [histories, setHistories] = useState<
-    Record<string, { from: string[]; to: string[]; note: string; at: string }[]>
+    Record<string, { from: string[]; to: string[]; note: string; at: string; by?: string }[]>
   >({});
   const [notes, setNotes] = useState<DocumentNote[]>([]);
   const [noteDraft, setNoteDraft] = useState("");
@@ -428,7 +410,7 @@ export default function DocumentPanel({
   async function showHistory(copy: PhysicalCopy) {
     try {
       const result = await request<{
-        movements: { from: string[]; to: string[]; note: string; at: string }[];
+        movements: { from: string[]; to: string[]; note: string; at: string; by?: string }[];
       }>(`/api/copies/${copy.id}/history`);
       setHistories((value) => ({ ...value, [copy.id]: result.movements }));
     } catch (cause) {
@@ -440,15 +422,28 @@ export default function DocumentPanel({
     }
   }
 
-  const dismissKey = (kind: "tag" | "sender" | "type", item: FilingSuggestion) => `${current.id}:${kind}:${item.id}`;
-  const notDismissed = (kind: "tag" | "sender" | "type") => (item: FilingSuggestion) => !dismissedSuggestions.has(dismissKey(kind, item));
+  // Rejected suggestions are stored on the server (a rejected tag counts as removed by hand), so the
+  // filing-suggestions API no longer returns them; this set only hides them until that reloads.
+  const dismissKey = (kind: "tag" | "sender" | "type", item: FilingSuggestion) => `${kind}:${item.id}`;
+  const notDismissed = (kind: "tag" | "sender" | "type") => (item: FilingSuggestion) => !dismissed.includes(dismissKey(kind, item));
   const suggestedTags = suggestions?.tags.filter((item) => !selected.includes(item.id)).filter(notDismissed("tag")) ?? [];
   const suggestedSenders = correspondentId ? [] : (suggestions?.correspondents ?? []).filter(notDismissed("sender"));
   const suggestedTypes = documentTypeId ? [] : (suggestions?.document_types ?? []).filter(notDismissed("type"));
-  function dismissSuggestion(kind: "tag" | "sender" | "type", item: FilingSuggestion, label: string) {
-    rememberDismissed(dismissKey(kind, item));
-    setDismissedTick((tick) => tick + 1);
-    setSuggestionStatus(m.suggestionDismissed(label));
+  async function dismissSuggestion(kind: "tag" | "sender" | "type", item: FilingSuggestion, label: string) {
+    const key = dismissKey(kind, item);
+    setDismissed((value) => [...value, key]);
+    try {
+      await request(`/api/documents/${current.id}/filing-suggestions/dismiss`, {
+        method: "POST",
+        body: JSON.stringify({ kind: kind === "sender" ? "correspondent" : kind === "type" ? "document_type" : "tag", id: item.id }),
+      });
+      setSuggestionStatus(m.suggestionDismissed(label));
+      setHistoryKey((value) => value + 1);
+    } catch (cause) {
+      setDismissed((value) => value.filter((entry) => entry !== key));
+      setError(cause instanceof Error ? cause.message : m.dismissError);
+      return;
+    }
     // Keep focus in the suggestions (or on the field below once the last one is gone).
     requestAnimationFrame(() => (document.querySelector<HTMLElement>(".filing-suggestions .suggestion-accept") ?? document.getElementById(kind === "tag" ? "detail-add-tag" : kind === "sender" ? "detail-correspondent" : "detail-document-type"))?.focus());
   }
@@ -716,7 +711,7 @@ export default function DocumentPanel({
           </ol>}
           {nextNoteOffset !== null && <button type="button" className="text-action" disabled={notesLoading} onClick={() => void loadNotes(nextNoteOffset)}>{m.showOlderNotes}</button>}
         </section>
-        <DocumentHistory documentId={current.id} refreshKey={current} />
+        <DocumentHistory documentId={current.id} refreshKey={historyRefresh} />
         <DocumentLinks documentId={current.id} onOpenDocument={onOpenDuplicate} />
         <div className="detail-files">
           <h3>
@@ -823,9 +818,10 @@ export default function DocumentPanel({
                 <ol className="copy-history" aria-label={m.historyOf(copy.sticker_code)}>
                   {histories[copy.id].map((move, index) => (
                     <li key={index}>
-                      <time dateTime={move.at}>{new Date(move.at).toLocaleDateString()}</time> ·{" "}
+                      <time dateTime={move.at}>{formatDateTime(move.at)}</time> ·{" "}
                       {move.to.join(" / ") || m.noLocation}
                       {move.note && ` · ${move.note}`}
+                      {move.by && ` · ${m.movedBy(move.by)}`}
                     </li>
                   ))}
                 </ol>

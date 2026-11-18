@@ -36,7 +36,10 @@ export default defineMessages({
   fieldTags: "Tags",
   fieldVersion: "Version",
   fieldSource: "Added from",
-  noValue: "none",
+  // "none" agrees with the field in Italian; English does not need to know the field.
+  noValue: (_field: string) => "none",
+  fieldDismissedSuggestion: "Suggestion rejected",
+  dismissedSuggestion: (kind: string, name: string) => `${kind === "tag" ? "tag" : kind === "correspondent" ? "sender" : "document type"} “${name}” will not be suggested again`,
   sourceWeb: "Web upload",
   sourceTelegram: "Telegram",
   sourceAndroid: "Android scanner",
@@ -80,7 +83,11 @@ export default defineMessages({
   fieldTags: "Etichette",
   fieldVersion: "Versione",
   fieldSource: "Aggiunto da",
-  noValue: "nessuno",
+  // Feminine fields: data, etichette, versione; masculine: titolo, mittente, tipo, percorso, ASN.
+  // A custom field's gender is unknown, so it gets a neutral dash.
+  noValue: (field: string) => ["document_date", "tags", "version"].includes(field) ? "nessuna" : field === "custom_field" ? "—" : "nessuno",
+  fieldDismissedSuggestion: "Suggerimento rifiutato",
+  dismissedSuggestion: (kind: string, name: string) => `${kind === "tag" ? "l'etichetta" : kind === "correspondent" ? "il mittente" : "il tipo di documento"} “${name}” non verrà più suggerit${kind === "tag" ? "a" : "o"}`,
   sourceWeb: "Caricamento web",
   sourceTelegram: "Telegram",
   sourceAndroid: "Scanner Android",

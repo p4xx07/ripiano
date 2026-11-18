@@ -1,10 +1,25 @@
-import { expect, test } from "@playwright/test";
+import { expect, Page, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const username = process.env.RIPIANO_E2E_USERNAME;
 const password = process.env.RIPIANO_E2E_PASSWORD;
 const asnFor = { desktop: 900001, mobile: 900002 } as Record<string, number>;
+
+
+/** Free an archive number from earlier runs, including documents that were later moved to Trash (they keep it). */
+async function freeAsn(page: Page, asn: number) {
+  const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "csrftoken")?.value ?? "";
+  const headers = { "X-CSRFToken": csrf };
+  for (const item of (await (await page.request.get(`/api/documents?q=asn:${asn}`)).json()).documents) {
+    await page.request.patch(`/api/documents/${item.id}`, { data: { asn: null }, headers });
+  }
+  for (const item of (await (await page.request.get(`/api/documents?view=trash&q=asn:${asn}`)).json()).documents) {
+    await page.request.post(`/api/documents/${item.id}/restore`, { headers });
+    await page.request.patch(`/api/documents/${item.id}`, { data: { asn: null }, headers });
+    await page.request.post(`/api/documents/${item.id}/trash`, { headers });
+  }
+}
 
 test("a separator sheet splits a scan and an ASN barcode numbers the part", async ({ page }, testInfo) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
@@ -18,11 +33,7 @@ test("a separator sheet splits a scan and an ASN barcode numbers the part", asyn
   await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
 
   // Free this project's ASN from an earlier run so the barcode can claim it.
-  const previous = await (await page.request.get(`/api/documents?q=asn:${asn}`)).json();
-  for (const item of previous.documents) {
-    const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "csrftoken")?.value ?? "";
-    await page.request.patch(`/api/documents/${item.id}`, { data: { asn: null }, headers: { "X-CSRFToken": csrf } });
-  }
+  await freeAsn(page, asn);
 
   const name = `batch-${Date.now()}-${testInfo.project.name}`;
   const add = page.getByRole("button", { name: "Add document", exact: true });
@@ -66,13 +77,7 @@ test("ASN barcodes start separate documents without separator sheets", async ({ 
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
 
-  const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "csrftoken")?.value ?? "";
-  for (const asn of [firstAsn, secondAsn]) {
-    const previous = await (await page.request.get(`/api/documents?q=asn:${asn}`)).json();
-    for (const item of previous.documents) {
-      await page.request.patch(`/api/documents/${item.id}`, { data: { asn: null }, headers: { "X-CSRFToken": csrf } });
-    }
-  }
+  for (const asn of [firstAsn, secondAsn]) await freeAsn(page, asn);
 
   const name = `asn-scan-${Date.now()}-${testInfo.project.name}`;
   const add = page.getByRole("button", { name: "Add document", exact: true });

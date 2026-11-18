@@ -52,6 +52,7 @@ urlpatterns = [
     path("api/documents/merge", version_views.documents_merge),
     path("api/documents/<uuid:document_id>", views.document_detail),
     path("api/documents/<uuid:document_id>/filing-suggestions", views.document_filing_suggestions),
+    path("api/documents/<uuid:document_id>/filing-suggestions/dismiss", views.dismiss_filing_suggestion),
     path("api/documents/<uuid:document_id>/similar", similar_views.document_similar),
     path("api/documents/<uuid:document_id>/original", views.download_original),
     path("api/documents/<uuid:document_id>/versions", version_views.document_versions),

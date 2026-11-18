@@ -109,10 +109,11 @@ export default function PeoplePanel({ currentUsername }: { currentUsername: stri
               void run(() => request(`/api/people/${person.id}`, { method: "PATCH", body: JSON.stringify({ password: resetPassword, current_password: adminPassword }) }),
                 m.passwordSet(person.username)).then((ok) => { if (ok) { setResetFor(null); setResetPassword(""); } });
             }}>
+              <p className="password-warning" id={`reset-warning-${person.id}`}>{m.resetWarning(person.username)}</p>
               <Field label={m.newPasswordFor(person.username)} hint={m.atLeast12}>
                 <input type="password" autoComplete="new-password" minLength={12} required value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} />
               </Field>
-              <Button disabled={busy || !adminPassword}>{m.setPassword}</Button>
+              <Button aria-describedby={`reset-warning-${person.id}`} disabled={busy || !adminPassword}>{m.setPassword}</Button>
               <Button type="button" variant="secondary" onClick={() => { setResetFor(null); setResetPassword(""); }}>{m.cancel}</Button>
             </form> : person.username !== currentUsername && !person.is_admin && <Button type="button" variant="secondary" disabled={busy} onClick={() => setResetFor(person.id)}><KeyRound size={15} /> {m.resetPassword}</Button>}
             {person.username !== currentUsername && (confirmOffId === person.id ? <span className="note-actions">

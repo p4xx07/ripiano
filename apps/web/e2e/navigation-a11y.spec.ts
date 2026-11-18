@@ -56,10 +56,12 @@ test("sign-out and the language picker are reachable on every screen size", asyn
       const language = page.getByLabel("Language");
       await language.scrollIntoViewIfNeeded();
       await expect(language, `${size.width}x${size.height}`).toBeInViewport({ ratio: 1 });
-      // The note card stays inside the sidebar's own background.
+      // The note card scrolls with the navigation and, when shown, stays inside the sidebar's own background.
+      const note = page.locator(".sidebar-note");
+      await note.scrollIntoViewIfNeeded();
       const sidebar = await page.locator(".sidebar").boundingBox();
-      const note = await page.locator(".sidebar-note").boundingBox();
-      expect(note!.y + note!.height).toBeLessThanOrEqual(sidebar!.y + sidebar!.height + 1);
+      const noteBox = await note.boundingBox();
+      expect(noteBox!.y + noteBox!.height).toBeLessThanOrEqual(sidebar!.y + sidebar!.height + 1);
       if (size.mobile) {
         const button = await page.getByRole("button", { name: "Dismiss navigation" }).boundingBox();
         expect(button!.height).toBeGreaterThanOrEqual(44);

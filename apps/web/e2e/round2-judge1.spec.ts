@@ -182,7 +182,7 @@ test("a tag can be created from the document dialog and a wrong suggestion dismi
   const dialog = page.getByRole("dialog", { name });
   if (wrong) {
     await expect(dialog.getByRole("button", { name: `Add tag: ${wrong.name}`, exact: true })).toBeVisible();
-    await dialog.getByRole("button", { name: `Dismiss suggestion “Add tag: ${wrong.name}”` }).click();
+    await dialog.getByRole("button", { name: `Reject suggestion “Add tag: ${wrong.name}”` }).click();
     await expect(dialog.getByRole("button", { name: `Add tag: ${wrong.name}`, exact: true })).toHaveCount(0);
   }
 
@@ -198,7 +198,10 @@ test("a tag can be created from the document dialog and a wrong suggestion dismi
   expect(saved.tags.map((item: { name: string }) => item.name)).toContain(tag);
 
   if (wrong) {
-    // A dismissed suggestion stays hidden for the rest of the session.
+    // A rejected suggestion is stored on the server (round 5): the real suggestions API no longer offers it.
+    await page.unroute(`**/api/documents/${id}/filing-suggestions`);
+    const fresh = await (await page.request.get(`/api/documents/${id}/filing-suggestions`)).json();
+    expect(fresh.tags.map((item: { id: string }) => item.id)).not.toContain(wrong.id);
     await page.getByRole("button", { name, exact: true }).click();
     await expect(page.getByRole("dialog", { name }).getByRole("button", { name: "Save changes" })).toBeVisible();
     await expect(page.getByRole("dialog", { name }).getByRole("button", { name: `Add tag: ${wrong.name}`, exact: true })).toHaveCount(0);

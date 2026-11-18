@@ -30,7 +30,7 @@ test("a searchable PDF can be rebuilt from its preserved original", async ({ pag
   const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   const files = dialog.locator(".detail-files").first();
   await expect(files.getByRole("link", { name: "Open searchable PDF" })).toBeVisible();
-  await files.getByRole("button", { name: "Run OCR again" }).click();
+  await files.getByRole("button", { name: "Retry OCR" }).click();
   await expect(files.getByRole("status")).toContainText("OCR queued from the preserved original.");
   await expect(files.getByRole("link", { name: "Download original" })).toBeVisible();
   await expect.poll(async () => (await (await page.request.get(`/api/documents/${id}`)).json()).status, { timeout: 60000 }).toBe("ready");

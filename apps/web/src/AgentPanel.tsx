@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Check, Copy, LockKeyhole, Plus, Shield, X } from "lucide-react";
+import { Bot, Check, Copy, LockKeyhole, Plus, Shield, Trash2, X } from "lucide-react";
 import { formatDate, formatDateTime, request, Tag } from "./api";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
@@ -44,6 +44,9 @@ export default function AgentPanel() {
   };
   const outcomeNames: Record<string, string> = { ok: m.outcomeOk, denied: m.outcomeDenied, error: m.outcomeError };
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  // Revoked and expired agents are kept out of the way under a closed "Revoked or expired (N)" group.
+  const [showInactive, setShowInactive] = useState(false);
   const [grants, setGrants] = useState<Grant[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -59,7 +62,7 @@ export default function AgentPanel() {
   const [error, setError] = useState("");
   // Screen-reader announcements; focus moves with each result so it never falls back to the page.
   const [announcement, setAnnouncement] = useState("");
-  const [focusTarget, setFocusTarget] = useState<{ kind: "token" } | { kind: "grant" | "revoke"; id: string } | null>(null);
+  const [focusTarget, setFocusTarget] = useState<{ kind: "token" } | { kind: "grant" | "revoke" | "remove" | "inactive"; id: string } | null>(null);
   const tokenCardRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -142,8 +145,8 @@ export default function AgentPanel() {
       if (newToken) setNewToken("");
       await load();
       setAnnouncement(m.revokedAnnouncement(grant.name));
-      // The revoked card stays in the list, now marked Revoked: focus it so the result is read out.
-      setFocusTarget({ kind: "grant", id: grant.id });
+      // The revoked card moves to the closed "Revoked or expired" group: focus that group's summary.
+      setFocusTarget({ kind: "inactive", id: "summary" });
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : m.revokeError,
@@ -151,6 +154,92 @@ export default function AgentPanel() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function remove(grant: Grant) {
+    setBusy(true);
+    setError("");
+    try {
+      await request(`/api/agents/${grant.id}?forget=1`, { method: "DELETE" });
+      setConfirmRemove(null);
+      await load();
+      setAnnouncement(m.removedAnnouncement(grant.name));
+      setFocusTarget({ kind: "inactive", id: "summary" });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.removeError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isInactive = (grant: Grant) => Boolean(grant.revoked_at) || new Date(grant.expires_at) < new Date();
+  const activeGrants = grants.filter((grant) => !isInactive(grant));
+  const inactiveGrants = grants.filter(isInactive);
+
+  function renderGrant(grant: Grant) {
+    const inactive = isInactive(grant);
+    return (
+      <article className="agent-card" key={grant.id} tabIndex={-1} data-agent-grant={grant.id}>
+        <span className="agent-avatar">
+          <Bot size={21} />
+        </span>
+        <div className="agent-card-body">
+          <strong>{grant.name}</strong>
+          <span>
+            {grant.revoked_at ? m.revoked : inactive ? m.expired : m.active}{" "}
+            {m.expires(formatDate(grant.expires_at))}
+          </span>
+          <div className="agent-scopes">
+            {grant.scopes.map((scope) => (
+              <small key={scope}>{scopeNames[scope] ?? scope}</small>
+            ))}
+          </div>
+          {grant.filter_tag_name && (
+            <span>{m.onlyTagged(grant.filter_tag_name)}</span>
+          )}
+          {grant.last_used_at && (
+            <span>
+              {m.lastUsed(formatDateTime(grant.last_used_at))}
+            </span>
+          )}
+        </div>
+        {inactive ? (confirmRemove === grant.id ? (
+          <div className="agent-revoke-confirm" role="group" aria-label={m.removeConfirm(grant.name)}>
+            <strong>{m.removeConfirm(grant.name)}</strong>
+            <Button variant="danger" disabled={busy} autoFocus onClick={() => void remove(grant)}>
+              {m.confirmRemove}
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => { setConfirmRemove(null); setFocusTarget({ kind: "remove", id: grant.id }); }}>
+              {m.cancel}
+            </Button>
+          </div>
+        ) : (
+          <Button variant="secondary" disabled={busy} aria-label={m.removeNamed(grant.name)} data-agent-remove={grant.id} onClick={() => setConfirmRemove(grant.id)}>
+            <Trash2 size={16} aria-hidden="true" /> {m.remove}
+          </Button>
+        )) : confirmRevoke === grant.id ? (
+          <div className="agent-revoke-confirm" role="group" aria-label={m.revokeConfirm(grant.name)}>
+            <strong>{m.revokeConfirm(grant.name)}</strong>
+            <Button variant="danger" disabled={busy} autoFocus onClick={() => void revoke(grant)}>
+              {m.confirmRevoke}
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => { setConfirmRevoke(null); setFocusTarget({ kind: "revoke", id: grant.id }); }}>
+              {m.cancel}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="secondary"
+            disabled={busy}
+            aria-label={m.revokeNamed(grant.name)}
+            data-agent-revoke={grant.id}
+            onClick={() => setConfirmRevoke(grant.id)}
+          >
+            {m.revoke}
+          </Button>
+        )}
+      </article>
+    );
   }
 
   async function copyToken() {
@@ -221,62 +310,15 @@ export default function AgentPanel() {
               <p>{m.connectedIntro}</p>
             </div>
           </div>
-          {grants.length ? (
-            <div className="agent-list">
-              {grants.map((grant) => (
-                <article className="agent-card" key={grant.id} tabIndex={-1} data-agent-grant={grant.id}>
-                  <span className="agent-avatar">
-                    <Bot size={21} />
-                  </span>
-                  <div className="agent-card-body">
-                    <strong>{grant.name}</strong>
-                    <span>
-                      {grant.revoked_at
-                        ? m.revoked
-                        : new Date(grant.expires_at) < new Date()
-                          ? m.expired
-                          : m.active}{" "}
-                      {m.expires(formatDate(grant.expires_at))}
-                    </span>
-                    <div className="agent-scopes">
-                      {grant.scopes.map((scope) => (
-                        <small key={scope}>{scopeNames[scope] ?? scope}</small>
-                      ))}
-                    </div>
-                    {grant.filter_tag_name && (
-                      <span>{m.onlyTagged(grant.filter_tag_name)}</span>
-                    )}
-                    {grant.last_used_at && (
-                      <span>
-                        {m.lastUsed(formatDateTime(grant.last_used_at))}
-                      </span>
-                    )}
-                  </div>
-                  {!grant.revoked_at && (confirmRevoke === grant.id ? (
-                    <div className="agent-revoke-confirm" role="group" aria-label={m.revokeConfirm(grant.name)}>
-                      <strong>{m.revokeConfirm(grant.name)}</strong>
-                      <Button variant="danger" disabled={busy} autoFocus onClick={() => void revoke(grant)}>
-                        {m.confirmRevoke}
-                      </Button>
-                      <Button variant="secondary" disabled={busy} onClick={() => { setConfirmRevoke(null); setFocusTarget({ kind: "revoke", id: grant.id }); }}>
-                        {m.cancel}
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      disabled={busy}
-                      aria-label={m.revokeNamed(grant.name)}
-                      data-agent-revoke={grant.id}
-                      onClick={() => setConfirmRevoke(grant.id)}
-                    >
-                      {m.revoke}
-                    </Button>
-                  ))}
-                </article>
-              ))}
-            </div>
-          ) : (
+          {activeGrants.length > 0 && <div className="agent-list">{activeGrants.map(renderGrant)}</div>}
+          {inactiveGrants.length > 0 && (
+            <details className="agent-inactive" open={showInactive} onToggle={(event) => setShowInactive(event.currentTarget.open)}>
+              <summary data-agent-inactive="summary">{m.inactiveSummary(inactiveGrants.length)}</summary>
+              <p>{m.inactiveIntro}</p>
+              <div className="agent-list">{inactiveGrants.map(renderGrant)}</div>
+            </details>
+          )}
+          {!grants.length && (
             <div className="tag-empty">
               <Bot size={27} />
               <strong>{m.emptyTitle}</strong>

@@ -13,6 +13,7 @@ export default defineMessages({
   next: "Next document",
   previous: "Previous document",
   open: "Open the highlighted document",
+  leaveSearch: "In the search field: leave it and go to the first result",
   closeDialog: "Close a dialog or panel",
   then: "then",
   // Screen names match the navigation menu (locales/App.ts).
@@ -31,6 +32,7 @@ export default defineMessages({
   next: "Documento successivo",
   previous: "Documento precedente",
   open: "Apri il documento evidenziato",
+  leaveSearch: "Nel campo di ricerca: esci e vai al primo risultato",
   closeDialog: "Chiudi una finestra o un pannello",
   then: "poi",
   goTo: (key: string) => ({ l: "Vai a “Tutti i documenti”", i: "Vai a “In arrivo”", a: "Vai a “Da fare”",

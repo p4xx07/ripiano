@@ -9,7 +9,7 @@ from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 from django.db.models.functions import Substr
 
-from .models import ClassificationRule, Document, DocumentTag, FilingRule, TagOverride
+from .models import ClassificationRule, Document, DocumentTag, FilingRule, SuggestionDismissal, TagOverride
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,13 @@ def filing_suggestions(document):
             tags_by_document.setdefault(doc_id, []).append((tag_id, name))
     suppressed = set(TagOverride.objects.filter(document=document).values_list("tag_id", flat=True))
     existing = set(DocumentTag.objects.filter(document=document).values_list("tag_id", flat=True))
+    # Senders and types the owner dismissed for this document are not offered again.
+    dismissed = {"correspondents": set(), "document_types": set()}
+    for correspondent_id, document_type_id in SuggestionDismissal.objects.filter(document=document).values_list("correspondent_id", "document_type_id"):
+        if correspondent_id:
+            dismissed["correspondents"].add(str(correspondent_id))
+        if document_type_id:
+            dismissed["document_types"].add(str(document_type_id))
     sources = [_terms(row["title"] + " " + row["text_start"]) for row in rows]
     # Words in many examples (letterhead, scanner boilerplate) do not tell documents apart.
     frequency = Counter(term for terms in sources for term in terms)
@@ -74,6 +81,8 @@ def filing_suggestions(document):
         evidence = sorted(shared, key=lambda term: (-len(term), term))[:4]
 
         def add(kind, item_id, name):
+            if str(item_id) in dismissed.get(kind, ()):
+                return
             item = {"id": str(item_id), "name": name, "example": example, "shared_terms": evidence, "similarity": round(similarity, 2)}
             old = candidates[kind].get(str(item_id))
             if old is None or item["similarity"] > old["similarity"]:
@@ -92,11 +101,11 @@ def filing_suggestions(document):
         ranked = sorted(values.values(), key=lambda item: (-item["similarity"], item["name"], item["id"]))
         cutoff = ranked[0]["similarity"] * 0.8 if ranked else 1
         result[kind] = [item for item in ranked if item["similarity"] >= cutoff][:limits[kind]]
-    _add_learned(document, result, existing | suppressed, limits)
+    _add_learned(document, result, existing | suppressed, limits, dismissed)
     return result
 
 
-def _add_learned(document, result, skip_tags, limits):
+def _add_learned(document, result, skip_tags, limits, dismissed=None):
     """Merge calibrated predictions from the person's learned model, if they trained one."""
     from .learning import TEXT_CHARS, _load, predict
     from .models import Correspondent, DocumentType, Tag
@@ -120,7 +129,8 @@ def _add_learned(document, result, skip_tags, limits):
     for kind, items in predictions.items():
         if not allowed.get(kind) or not items:
             continue
-        ids = [label for label, _ in items if not (kind == "tags" and label in {str(tag) for tag in skip_tags})]
+        skip = {str(tag) for tag in skip_tags} if kind == "tags" else (dismissed or {}).get(kind, set())
+        ids = [label for label, _ in items if label not in skip]
         names = {str(pk): name for pk, name in models[kind].objects.filter(owner_id=document.owner_id, pk__in=ids).values_list("pk", "name")}
         current = {item["id"]: item for item in result.get(kind, [])}
         for label, probability in items:

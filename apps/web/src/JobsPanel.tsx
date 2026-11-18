@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Activity, X } from "lucide-react";
-import { request } from "./api";
+import { formatDateTime, request } from "./api";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/JobsPanel";
@@ -13,7 +13,7 @@ type Jobs = {
   workflow_failures: { id: string; workflow: string; document: { id: string; title: string }; detail: string; at: string | null }[];
 };
 
-const when = (value: string | null) => (value ? new Date(value).toLocaleString() : "");
+const when = (value: string | null) => (value ? formatDateTime(value) : "");
 
 /** Background work that is waiting or failed, with the safe controls for each kind. */
 export default function JobsPanel({ onOpenDocument, onChanged }: { onOpenDocument: (id: string) => void; onChanged?: () => void }) {

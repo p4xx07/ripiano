@@ -71,11 +71,12 @@ export default function DocumentHistory({ documentId, refreshKey }: { documentId
       storage_path: m.fieldStoragePath, asn: m.fieldAsn, tags: m.fieldTags, version: m.fieldVersion, source: m.fieldSource,
     };
     if (change.field === "access") return m.fieldAccess(change.name ?? "", change.kind === "group");
+    if (change.field === "dismissed_suggestion") return m.fieldDismissedSuggestion;
     return change.field === "custom_field" ? change.name ?? "" : labels[change.field] ?? change.field;
   }
 
   function value(change: Change, raw: string | string[] | null) {
-    if (raw === null || raw === "" || (Array.isArray(raw) && !raw.length)) return m.noValue;
+    if (raw === null || raw === "" || (Array.isArray(raw) && !raw.length)) return m.noValue(change.field);
     if (Array.isArray(raw)) return raw.join(", ");
     if (change.field === "document_date") return formatDate(raw);
     if (change.field === "source") return sourceLabel(raw);
@@ -92,6 +93,7 @@ export default function DocumentHistory({ documentId, refreshKey }: { documentId
       return [...added, ...removed].join(", ");
     }
     if (change.field === "source") return value(change, change.to);
+    if (change.field === "dismissed_suggestion") return m.dismissedSuggestion(change.kind ?? "", change.name ?? "");
     return `${value(change, change.from)} → ${value(change, change.to)}`;
   }
 

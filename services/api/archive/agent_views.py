@@ -101,6 +101,13 @@ def grant_detail(request, grant_id):
     grant = AgentGrant.objects.filter(pk=grant_id, owner=request.user).first()
     if grant is None:
         return JsonResponse({"error": "Agent grant not found"}, status=404)
+    if request.GET.get("forget") in ("1", "true"):
+        # Removing a revoked or expired agent also removes its activity log: nothing about what it
+        # read is kept once the owner chose to forget it. Document history entries it made stay.
+        if grant.revoked_at is None and (grant.expires_at is None or grant.expires_at > timezone.now()):
+            return JsonResponse({"error": "Revoke this agent before removing it"}, status=409)
+        grant.delete()
+        return JsonResponse({"deleted": True})
     if grant.revoked_at is None:
         grant.revoked_at = timezone.now()
         grant.save(update_fields=["revoked_at"])

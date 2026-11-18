@@ -40,9 +40,10 @@ export default function PasswordPanel() {
     <h2 id="password-heading"><KeyRound size={18} /> {m.heading}</h2>
     {error && <p className="inline-error" role="alert">{error}</p>}
     {notice && <p className="bulk-notice" role="status">{notice}</p>}
+    <p className="password-warning" id="password-warning">{m.warning}</p>
     <Field label={m.current}><input type="password" autoComplete="current-password" required value={current} onChange={(event) => setCurrent(event.target.value)} /></Field>
     <Field label={m.next} hint={m.nextHint}><input type="password" autoComplete="new-password" minLength={12} required value={next} onChange={(event) => setNext(event.target.value)} /></Field>
     <Field label={m.repeat}><input type="password" autoComplete="new-password" minLength={12} required value={repeat} onChange={(event) => setRepeat(event.target.value)} /></Field>
-    <Button disabled={busy || !current || next.length < 12 || !repeat}>{busy ? m.changing : m.change}</Button>
+    <Button aria-describedby="password-warning" disabled={busy || !current || next.length < 12 || !repeat}>{busy ? m.changing : m.change}</Button>
   </form>;
 }

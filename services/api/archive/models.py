@@ -366,6 +366,31 @@ class TagOverride(models.Model):
         constraints = [models.UniqueConstraint(fields=["document", "tag"], name="unique_tag_override")]
 
 
+class SuggestionDismissal(models.Model):
+    """The owner said a suggested sender or document type is wrong for this document.
+
+    Dismissed tag suggestions are stored as a ``TagOverride`` instead (the same as removing the tag
+    by hand). The learned filing model only learns from what documents are filed under, so a
+    dismissal keeps the suggestion away from this document but is not a training example.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="suggestion_dismissals")
+    correspondent = models.ForeignKey(Correspondent, null=True, blank=True, on_delete=models.CASCADE, related_name="+")
+    document_type = models.ForeignKey(DocumentType, null=True, blank=True, on_delete=models.CASCADE, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["document", "correspondent"], name="unique_dismissed_sender"),
+            models.UniqueConstraint(fields=["document", "document_type"], name="unique_dismissed_type"),
+            models.CheckConstraint(
+                condition=(models.Q(correspondent__isnull=False, document_type__isnull=True)
+                           | models.Q(correspondent__isnull=True, document_type__isnull=False)),
+                name="dismissal_names_one_label"),
+        ]
+
+
 class Location(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="physical_locations")

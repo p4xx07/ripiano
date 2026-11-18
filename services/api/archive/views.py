@@ -22,7 +22,7 @@ from django.utils import timezone
 
 from . import fulltext, search_syntax
 from .field_labels import label
-from .models import StoragePath, BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, ShareLink, Tag, TagOverride
+from .models import StoragePath, BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, ShareLink, SuggestionDismissal, Tag, TagOverride
 from . import two_factor
 from .bundle_views import revoke_bundles_containing
 from .throttle import record_sign_in_failure, sign_in_blocked, sign_in_throttle_key
@@ -172,9 +172,40 @@ def _excerpt(text, query):
     return ("…" if start else "") + excerpt + ("…" if end < len(text) else "")
 
 
+EMAIL_MIMES = {"message/rfc822", "application/vnd.ms-outlook"}
+EMAIL_SUBJECT_LINE = re.compile(r"^[ \t]*Subject\b[ \t:]*(.*)$", re.IGNORECASE | re.MULTILINE)
+
+
+def _email_body_start(text):
+    """Where the subject value and the message body start in an email's text (0, 0 if unknown).
+
+    An email is stored as a rendered page whose header rows end with "Subject"; a snippet that starts
+    there reads as raw header text ("…+0100 Subject …"), so snippets come from the body first.
+    """
+    match = EMAIL_SUBJECT_LINE.search(text, 0, 3000)
+    if match is None:
+        return 0, 0
+    end = match.end()
+    if not match.group(1).strip():  # the subject value is on the next line
+        following = re.match(r"\s*\n[^\n]*", text[end:])
+        end += following.end() if following else 0
+    attachments = re.match(r"\s*\n[ \t]*Attachments:[^\n]*", text[end:])
+    if attachments:
+        end += attachments.end()
+    return match.start(1) if match.group(1).strip() else match.end(), end + (len(text[end:]) - len(text[end:].lstrip()))
+
+
 def _search_snippet(document, query):
     if not query:
         return "", None
+    text = document.extracted_text
+    if text and document.original_mime in EMAIL_MIMES:
+        subject, body = _email_body_start(text)
+        # The body first; then the subject and body without the From/To/Date header rows.
+        for start in (body, subject) if body else ():
+            excerpt = _excerpt(text[start:], query)
+            if excerpt:
+                return excerpt, "document"
     for text, source in ((document.extracted_text, "document"), (document.action_note, "note")):
         excerpt = _excerpt(text, query)
         if excerpt:
@@ -1069,6 +1100,50 @@ def document_filing_suggestions(request, document_id):
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     return JsonResponse(filing_suggestions(document))
+
+
+DISMISS_KINDS = {"tag": "tag", "sender": "correspondent", "correspondent": "correspondent", "type": "document_type", "document_type": "document_type"}
+
+
+@require_http_methods(["POST"])
+def dismiss_filing_suggestion(request, document_id):
+    """The owner says a suggested tag, sender, or type is wrong for this document; it is not offered again.
+
+    A dismissed tag is stored like a manual removal (a tag override, which rules, workflows, agents,
+    and learned filing also respect). A dismissed sender or type is remembered for this document.
+    """
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    body = _payload(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    kind = DISMISS_KINDS.get(body.get("kind")) if isinstance(body.get("kind"), str) else None
+    if kind is None:
+        return JsonResponse({"error": "Choose a tag, sender, or document type suggestion"}, status=400)
+    try:
+        target_id = UUID(str(body.get("id")))
+    except ValueError:
+        return JsonResponse({"error": "Invalid suggestion ID"}, status=400)
+    with transaction.atomic():
+        document = Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
+        if document is None:
+            return JsonResponse({"error": "Document not found"}, status=404)
+        model = {"tag": Tag, "correspondent": Correspondent, "document_type": DocumentType}[kind]
+        target = model.objects.filter(pk=target_id, owner=request.user).first()
+        if target is None:
+            return JsonResponse({"error": "Suggestion not found"}, status=404)
+        if kind == "tag":
+            if DocumentTag.objects.filter(document=document, tag=target).exists():
+                return JsonResponse({"error": "This tag is already on the document. Remove it instead."}, status=409)
+            _, created = TagOverride.objects.get_or_create(document=document, tag=target)
+        else:
+            _, created = SuggestionDismissal.objects.get_or_create(document=document, **{kind: target})
+        if created:
+            before = history.snapshot(document)
+            history.record(document, before, actor_user=request.user, extra=[
+                {"field": "dismissed_suggestion", "kind": kind, "name": target.name, "from": None, "to": None}])
+    return JsonResponse({"dismissed": {"kind": kind, "id": str(target.pk), "name": target.name}, "changed": created})
 
 
 @transaction.atomic

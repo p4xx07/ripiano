@@ -59,11 +59,11 @@ TOOLS = {
     ),
     "change_document_tags": (
         "documents:tag",
-        Tool(name="change_document_tags", description="Add or remove specific tags on one document. Existing unrelated tags stay in place.", inputSchema={
+        Tool(name="change_document_tags", description="Add or remove specific tags on one document, by tag ID or exact tag name (case-insensitive). Existing unrelated tags stay in place.", inputSchema={
             "type": "object", "properties": {
                 "document_id": {"type": "string", "format": "uuid"},
-                "add": {"type": "array", "items": {"type": "string", "format": "uuid"}, "maxItems": 20},
-                "remove": {"type": "array", "items": {"type": "string", "format": "uuid"}, "maxItems": 20},
+                "add": {"type": "array", "items": {"type": "string", "description": "Tag ID, or the exact tag name"}, "maxItems": 20},
+                "remove": {"type": "array", "items": {"type": "string", "description": "Tag ID, or the exact tag name"}, "maxItems": 20},
             }, "required": ["document_id"], "additionalProperties": False,
         }),
     ),
@@ -220,7 +220,21 @@ def _execute(grant, name, args):
         raw_add, raw_remove = args.get("add", []), args.get("remove", [])
         if not isinstance(raw_add, list) or not isinstance(raw_remove, list) or len(raw_add) > 20 or len(raw_remove) > 20:
             return document, {"error": "Add and remove must be lists of up to 20 IDs"}
-        add, remove = {_uuid(value) for value in raw_add}, {_uuid(value) for value in raw_remove}
+        # A value is a tag ID or the exact name of one of the owner's tags (any case). A name shared by
+        # several tags (e.g. "Utenze" and "utenze") is refused rather than guessed.
+        resolved = {}
+        for value in raw_add + raw_remove:
+            if not isinstance(value, str) or not value.strip() or len(value) > 100:
+                return document, {"error": "Invalid or conflicting tag IDs"}
+            if _uuid(value) is None and value not in resolved:
+                matches = list(Tag.objects.filter(owner=grant.owner, name__iexact=value.strip()).values_list("pk", flat=True)[:2])
+                if not matches:
+                    return document, {"error": "Tag not found"}
+                if len(matches) > 1:
+                    return document, {"error": "Several tags have this name; use the tag ID from list_tags"}
+                resolved[value] = matches[0]
+        add = {resolved.get(value) or _uuid(value) for value in raw_add}
+        remove = {resolved.get(value) or _uuid(value) for value in raw_remove}
         if None in add | remove or add & remove:
             return document, {"error": "Invalid or conflicting tag IDs"}
         tags = {tag.id: tag for tag in Tag.objects.filter(owner=grant.owner, pk__in=add | remove)}
@@ -297,7 +311,14 @@ def _call(name, args):
         return _result({"error": "Grant expired or revoked"}, error=True)
     required = TOOLS.get(name)
     if required is None or required[0] not in grant.scopes:
-        AgentAudit.objects.create(grant=grant, action=name[:60], outcome="denied")
+        # A refused call still names the owner's document it asked about (the agent learns nothing).
+        denied_document = None
+        if isinstance(args, dict) and args.get("document_id"):
+            try:
+                denied_document = Document.objects.filter(pk=UUID(str(args["document_id"])), owner=grant.owner).first()
+            except (TypeError, ValueError, AttributeError):
+                denied_document = None
+        AgentAudit.objects.create(grant=grant, action=name[:60], document=denied_document, outcome="denied")
         return _result({"error": "Tool is not permitted for this agent"}, error=True)
     document, payload = _execute(grant, name, args)
     failure = "error" in payload

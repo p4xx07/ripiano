@@ -31,6 +31,7 @@ export default function KeyboardHelp({ onClose }: { onClose: () => void }) {
       </dl>
       <h3>{m.library}</h3>
       <dl>
+        {row(["Esc"], m.leaveSearch)}
         {row(["j"], m.next)}
         {row(["k"], m.previous)}
         {row([m.enterKey], m.open)}

@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from .learning import AUTO_THRESHOLD, TEXT_CHARS, _load, predict
-from .models import AutoFilingPolicy, Correspondent, Document, DocumentTag, DocumentType, FilingModel, Tag, TagOverride
+from .models import AutoFilingPolicy, Correspondent, Document, DocumentTag, DocumentType, FilingModel, SuggestionDismissal, Tag, TagOverride
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,8 @@ def _apply_once(document_id, *, require_opt_in, expected_owner_id):
             if kind not in trusted or getattr(locked, f"{field}_origin") != Document.FilingOrigin.NONE or getattr(locked, f"{field}_id"):
                 continue
             label = next(iter(confident.get(kind, [])), None)
+            if label and SuggestionDismissal.objects.filter(document=locked, **{f"{field}_id": label}).exists():
+                label = None  # the owner said this sender or type is wrong for this document
             if label and model_type.objects.filter(pk=label, owner_id=owner_id).exists():
                 setattr(locked, f"{field}_id", label)
                 setattr(locked, f"{field}_origin", Document.FilingOrigin.LEARNED)

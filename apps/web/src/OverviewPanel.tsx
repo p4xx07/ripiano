@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, X } from "lucide-react";
-import { request } from "./api";
+import { formatDateTime, request } from "./api";
 import JobsPanel from "./JobsPanel";
 import { useMessages } from "./i18n";
 import messages from "./locales/OverviewPanel";
@@ -106,7 +106,7 @@ export default function OverviewPanel({ onNavigate, onOpenUntagged, onOpenDocume
               </ul>
             ) : <p>{m.nothingWaiting}</p>}
             <p className="overview-health">
-              {data.health.backup ? m.lastBackup(data.health.backup.status === "complete" ? m.backupCompleted : data.health.backup.status, new Date(data.health.backup.at).toLocaleString()) : m.backupsOwnerOnly}
+              {data.health.backup ? m.lastBackup(data.health.backup.status === "complete" ? m.backupCompleted : data.health.backup.status, formatDateTime(data.health.backup.at)) : m.backupsOwnerOnly}
               {" · "}{m.mailboxes(data.health.mailboxes.total)} · {m.activeWorkflows(data.health.workflows.enabled)}
               {" · "}{docs.untagged ? <button type="button" className="text-action" onClick={onOpenUntagged}>{m.untaggedLink(docs.untagged.toLocaleString())}</button> : m.noUntagged}
               {data.health.queues && <>{" · "}{m.queues(data.health.queues.celery.toLocaleString(), data.health.queues.maintenance.toLocaleString())}</>}

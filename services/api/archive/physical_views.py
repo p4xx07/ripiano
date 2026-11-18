@@ -392,7 +392,8 @@ def copy_history(request, copy_id):
         # Notes Ripiano wrote itself (the movement kind's label) are shown in the request's language.
         "note": display(request, move.note) if move.note in DEFAULT_NOTES else move.note,
         "at": move.created_at.isoformat(),
-    } for move in copy.movements.select_related("from_location", "to_location")[:50]]})
+        "by": move.moved_by.get_username(),
+    } for move in copy.movements.select_related("from_location", "to_location", "moved_by")[:50]]})
 
 
 @require_http_methods(["GET"])

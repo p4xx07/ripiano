@@ -54,7 +54,7 @@ if command == "setup":
     data["location_path"] = copy.json()["location_path"]
     agents = {}
     for name in ("Drill active agent", "Drill revoked agent"):
-        response = client.post("/api/agents", json={"name": name, "scopes": ["documents:search"], "expires_in_days": 30}, headers=headers())
+        response = client.post("/api/agents", json={"name": name, "scopes": ["documents:search"], "expires_in_days": 30, "password": data["password"]}, headers=headers())
         assert response.status_code == 201, response.text
         agents[name] = response.json()
     assert client.delete(f"/api/agents/{agents['Drill revoked agent']['id']}", headers=headers()).status_code == 200

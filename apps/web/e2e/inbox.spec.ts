@@ -81,7 +81,7 @@ test("failed OCR can be retried directly from Inbox", async ({ page }, testInfo)
   await navigate(page, "Inbox");
   await expect(page.getByText("OCR could not finish: OCR failed")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("failed-ocr.png") });
-  await page.getByRole("button", { name: "Try OCR again" }).focus();
+  await page.getByRole("button", { name: "Retry OCR" }).focus();
   await page.keyboard.press("Enter");
   const emptyHeading = page.getByRole("heading", { name: "Nothing needs your attention." });
   await expect(emptyHeading).toBeVisible();

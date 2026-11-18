@@ -20,7 +20,7 @@ SCALARS = (
     ("asn", "asn"),
 )
 # Details someone the owner shared one document with does not see.
-OWNER_ONLY_FIELDS = {"storage_path", "asn", "custom_field", "access"}
+OWNER_ONLY_FIELDS = {"storage_path", "asn", "custom_field", "access", "dismissed_suggestion"}
 DIFF_ACTIONS = {Action.UPDATED, Action.FILED_AUTOMATICALLY}
 
 

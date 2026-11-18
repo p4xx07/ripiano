@@ -148,7 +148,8 @@ test("creating and revoking an agent token keeps focus and announces the result"
   await grant.getByRole("button", { name: `Revoke ${name}` }).click();
   await grant.getByRole("button", { name: "Yes, revoke" }).click();
   await expect(grant).toContainText("Revoked");
-  await expect(grant).toBeFocused();
+  // Round 5: the revoked card moves into the closed "Revoked or expired" group, whose summary takes focus.
+  await expect(page.locator("details.agent-inactive > summary")).toBeFocused();
   await expect(page.getByText(`Access for “${name}” revoked.`)).toHaveCount(1);
 });
 
@@ -283,7 +284,7 @@ test("a retried upload keeps the scan ID of its first attempt", async ({ page },
   await page.getByRole("button", { name: /Browse files/ }).click();
   await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
   await expect(page.getByText("1 file is waiting to upload")).toBeVisible();
-  await page.getByRole("button", { name: "Try now" }).click();
+  await page.getByRole("button", { name: "Send now" }).click();
   await expect(page.getByText("1 file is waiting to upload")).toHaveCount(0);
   expect(ids).toHaveLength(2);
   expect(ids[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);

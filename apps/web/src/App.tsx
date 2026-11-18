@@ -2,6 +2,7 @@ import {
   ChangeEvent,
   DragEvent,
   FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
   useRef,
@@ -46,7 +47,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { ApiError, CustomField, Document, FilingItem, formatDate, formatTime, LibraryFilters, onSessionEnded, request, Session, Tag, tagPathLabel } from "./api";
+import { ApiError, CustomField, Document, FilingItem, formatDate, formatDateTime, formatTime, LibraryFilters, onSessionEnded, request, Session, Tag, tagPathLabel } from "./api";
 import * as uploadQueue from "./uploadQueue";
 import DocumentPanel from "./DocumentPanel";
 import ActionPanel from "./ActionPanel";
@@ -74,15 +75,18 @@ import appMessages from "./locales/App";
 import backupMessages from "./locales/AppBackups";
 import libraryMessages from "./locales/AppLibrary";
 
-function AppearanceControl({ preference, onChange }: {
+function AppearanceControl({ preference, onChange, compact = false }: {
   preference: ThemePreference;
   onChange: (preference: ThemePreference) => void;
+  /** In the sidebar footer: one short row per setting, label beside the select, always in view. */
+  compact?: boolean;
 }) {
   const m = useMessages(appMessages);
   const languagePreference = useLanguagePreference();
+  const className = compact ? "appearance-control appearance-control-compact" : "appearance-control";
   return (
     <>
-    <label className="appearance-control">
+    <label className={className}>
       <span>{m.appearance}</span>
       <select value={preference} onChange={(event) => onChange(event.target.value as ThemePreference)}>
         <option value="system">{m.themeSystem}</option>
@@ -91,7 +95,7 @@ function AppearanceControl({ preference, onChange }: {
         <option value="amoled">{m.themeAmoled}</option>
       </select>
     </label>
-    <label className="appearance-control">
+    <label className={className}>
       <span>{m.language}</span>
       <select value={languagePreference} onChange={(event) => setLanguagePreference(event.target.value as LanguagePreference)}>
         <option value="system">{m.languageSystem}</option>
@@ -496,7 +500,7 @@ function BackupPanel() {
                       : run.trigger === "retry" ? m.backupRetry : m.scheduledBackup)}
                 </h3>
                 <div className="document-meta">
-                  {formatDate(run.created_at)} <span>·</span> {m.trigger(run.trigger)}
+                  {formatDateTime(run.created_at)} <span>·</span> {m.trigger(run.trigger)}
                 </div>
                 {run.error && <p className="doc-error">{readableJobError(run.error, m.rawJobError)}</p>}
                 {run.status === "running" && <p className="job-running-hint">{m.runningHint}</p>}
@@ -552,6 +556,9 @@ function viewFromPath(pathname: string): View | null {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
   return (Object.keys(VIEW_PATHS) as View[]).find((view) => VIEW_PATHS[view] === path) ?? null;
 }
+
+/** Delays between attempts to send waiting uploads while the device is online (the last one repeats). */
+const WAITING_RETRY_DELAYS = [3000, 10000, 30000, 60000];
 
 const GO_TO_VIEWS: Record<string, View> = {
   l: "documents", i: "inbox", a: "actions", t: "tags", o: "overview", s: "shared", w: "workflows", r: "sources",
@@ -632,6 +639,12 @@ function App() {
   const [pendingFocus, setPendingFocus] = useState<{ index?: number; id?: string } | null>(null);
   const [waitingUploads, setWaitingUploads] = useState(0);
   const sendingWaiting = useRef(false);
+  // Waiting uploads after a failed attempt while the device is online: retried soon with backoff
+  // (WAITING_RETRY_DELAYS), not only on the one-minute check or the next "online" event.
+  const waitingRetryTimer = useRef<number | null>(null);
+  const waitingAttempt = useRef(0);
+  const [waitingRetrying, setWaitingRetrying] = useState(false);
+  const sendWaitingRef = useRef<() => Promise<void>>(async () => {});
   const signedInAs = useRef<string | null>(null);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [nativeScanner] = useState(() => Boolean(window.RipianoAndroid));
@@ -650,6 +663,8 @@ function App() {
   const [phoneLayout, setPhoneLayout] = useState(() => window.matchMedia("(max-width: 570px)").matches);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
+  const sidebarFrameRef = useRef<HTMLDivElement>(null);
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [initialSticker] = useState(() => new URLSearchParams(window.location.search).get("sticker") ?? "");
   const [initialLocation] = useState(() => new URLSearchParams(window.location.search).get("location") ?? "");
@@ -880,6 +895,29 @@ function App() {
   }, [menuOpen]);
   const drawerCoversPage = narrowLayout && menuOpen;
 
+  // Sidebar scroll affordance: mark the frame when the list can scroll further up or down, so a fade
+  // shows at that edge. Set directly on the element (no re-render on every scroll event).
+  useEffect(() => {
+    const frame = sidebarFrameRef.current;
+    const list = sidebarScrollRef.current;
+    if (!frame || !list) return;
+    const update = () => {
+      frame.classList.toggle("can-scroll-up", list.scrollTop > 2);
+      frame.classList.toggle("can-scroll-down", list.scrollTop + list.clientHeight < list.scrollHeight - 2);
+    };
+    update();
+    list.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(list);
+    if (list.firstElementChild) observer?.observe(list.firstElementChild);
+    return () => {
+      list.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      observer?.disconnect();
+    };
+  }, [session?.authenticated, session?.owner, loading]);
+
   // The browser tab names the current screen, in the interface language.
   useEffect(() => {
     document.title = session?.authenticated ? m.pageTitle(viewLabelsFor(m)[view]) : m.documentTitle;
@@ -930,7 +968,15 @@ function App() {
     return () => document.removeEventListener("keydown", shortcut);
   }, [session?.authenticated, view, documents, activeRow]);
 
-  useEffect(() => { setActiveRow(-1); }, [documents, view]);
+  // Keep the keyboard selection on the same document when the list refreshes (it reloads every few seconds while
+  // something is processing); clear it only when that document is no longer listed or the screen changes.
+  const activeDocumentId = useRef<string | null>(null);
+  useEffect(() => { activeDocumentId.current = activeRow >= 0 ? documents[activeRow]?.id ?? null : null; }, [activeRow]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const id = activeDocumentId.current;
+    setActiveRow(id ? documents.findIndex((item) => item.id === id) : -1);
+  }, [documents]);
+  useEffect(() => { activeDocumentId.current = null; setActiveRow(-1); }, [view]);
   useEffect(() => {
     if (activeRow < 0) return;
     // j / k move real focus to the row's title, so screen readers announce it and closing the
@@ -1404,16 +1450,49 @@ function App() {
   }, [session?.authenticated, documents, query, loadDocuments]);
 
   async function refreshWaiting() {
-    setWaitingUploads(session?.username ? (await uploadQueue.pending(session.username)).length : 0);
+    const count = session?.username ? (await uploadQueue.pending(session.username)).length : 0;
+    setWaitingUploads(count);
+    return count;
+  }
+
+  function clearWaitingRetry() {
+    if (waitingRetryTimer.current !== null) window.clearTimeout(waitingRetryTimer.current);
+    waitingRetryTimer.current = null;
+  }
+
+  /** Try the waiting files again soon: 3 s, 10 s, 30 s, then every 60 s while online. Offline, the
+   *  "online" event sends them instead, and the banner says so. */
+  function scheduleWaitingRetry() {
+    clearWaitingRetry();
+    if (!navigator.onLine) {
+      setWaitingRetrying(false);
+      return;
+    }
+    const delay = WAITING_RETRY_DELAYS[Math.min(waitingAttempt.current, WAITING_RETRY_DELAYS.length - 1)];
+    waitingAttempt.current += 1;
+    setWaitingRetrying(true);
+    waitingRetryTimer.current = window.setTimeout(() => {
+      waitingRetryTimer.current = null;
+      void sendWaitingRef.current();
+    }, delay);
   }
 
   /** Send files kept while offline, oldest first. Stops at the first network failure; refused files are reported. */
+  /** "Send now": try at once and start the backoff again from the shortest delay. */
+  function sendWaitingNow() {
+    waitingAttempt.current = 0;
+    void sendWaiting();
+  }
+
   async function sendWaiting() {
     const owner = session?.username;
     if (!owner || sendingWaiting.current) return;
     sendingWaiting.current = true;
+    clearWaitingRetry();
     const failures: string[] = [];
     let sent = 0;
+    let stoppedOnFailure = false;
+    let left = 0;
     try {
       for (const item of await uploadQueue.pending(owner)) {
         const form = new FormData();
@@ -1425,27 +1504,47 @@ function App() {
           await uploadQueue.forget(item.id);
         } catch (cause) {
           // Keep the file unless the server refused the file itself (signed out, throttled, or server errors keep it).
-          if (!(cause instanceof ApiError) || !uploadQueue.isRefusal(cause.status)) break;
+          if (!(cause instanceof ApiError) || !uploadQueue.isRefusal(cause.status)) {
+            stoppedOnFailure = true;
+            break;
+          }
           failures.push(`${item.name}: ${cause.message}`);
           await uploadQueue.forget(item.id);
         }
       }
     } finally {
       sendingWaiting.current = false;
-      await refreshWaiting();
+      left = await refreshWaiting();
+    }
+    if (stoppedOnFailure && left > 0 && signedInAs.current === owner) scheduleWaitingRetry();
+    else if (!left) {
+      waitingAttempt.current = 0;
+      setWaitingRetrying(false);
     }
     if (failures.length) setUploadReport({ total: sent + failures.length, failures });
     if (sent) void loadDocuments(query);
   }
 
+  sendWaitingRef.current = sendWaiting;
+
   useEffect(() => {
     signedInAs.current = session?.authenticated ? session.username : null;
     if (!session?.authenticated) return;
     void sendWaiting();
-    const retry = () => void sendWaiting();
-    window.addEventListener("online", retry);
+    const retry = () => void sendWaitingRef.current();
+    const backOnline = () => { waitingAttempt.current = 0; void sendWaitingRef.current(); };
+    const wentOffline = () => { clearWaitingRetry(); setWaitingRetrying(false); };
+    window.addEventListener("online", backOnline);
+    window.addEventListener("offline", wentOffline);
     const timer = window.setInterval(retry, 60000);
-    return () => { window.removeEventListener("online", retry); window.clearInterval(timer); };
+    return () => {
+      window.removeEventListener("online", backOnline);
+      window.removeEventListener("offline", wentOffline);
+      window.clearInterval(timer);
+      clearWaitingRetry();
+      waitingAttempt.current = 0;
+      setWaitingRetrying(false);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.authenticated, session?.username]);
 
@@ -1486,7 +1585,12 @@ function App() {
           }
         }
       }
-      await refreshWaiting();
+      const waitingNow = await refreshWaiting();
+      // A file just kept because Ripiano could not be reached: try it again in a few seconds.
+      if (waitingNow > 0 && !sendingWaiting.current && waitingRetryTimer.current === null) {
+        waitingAttempt.current = 0;
+        scheduleWaitingRetry();
+      }
       await loadDocuments("");
       if (failures.length) setUploadReport({ total: chosen.length, failures });
       if (added.length) {
@@ -1549,6 +1653,22 @@ function App() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.signOutError);
     }
+  }
+
+  /** Escape in the search field hands the keyboard back to the results, so j / k / Enter work right away:
+   *  focus goes to the first result, or (while results are still loading, or there are none) to the page,
+   *  where j / k start on the first row. The query is kept; "/" returns to the field. */
+  function leaveSearchOnEscape(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    const firstTitle = document.querySelector<HTMLElement>("#main-content .library-list .document-row .document-title-button");
+    if (documents.length && firstTitle) {
+      firstTitle.focus();
+      setActiveRow(0);
+      return;
+    }
+    event.currentTarget.blur();
+    document.getElementById("main-content")?.focus({ preventScroll: true });
   }
 
   async function retryDocument(id: string) {
@@ -1646,7 +1766,9 @@ function App() {
             <X size={19} />
           </button>
         </div>
-        <div className="sidebar-scroll">
+        {/* The list scrolls on short screens; a fade at the top or bottom edge shows there is more. */}
+        <div className="sidebar-scroll-frame" ref={sidebarFrameRef}>
+        <div className="sidebar-scroll" ref={sidebarScrollRef}>
           <nav className="sidebar-nav" aria-label={m.mainNavigation}>
             <div className="sidebar-label">{m.yourSpace}</div>
             {navItems.map(([target, Icon, label]) => (
@@ -1667,7 +1789,6 @@ function App() {
             ))}
           </nav>
           <div className="sidebar-spacer" />
-          <AppearanceControl preference={appearance} onChange={changeAppearance} />
           <div className="sidebar-note">
             <div className="sidebar-note-icon">
               <LockKeyhole size={17} />
@@ -1675,6 +1796,11 @@ function App() {
             <strong>{m.sidebarNoteTitle}</strong>
             <span>{m.sidebarNoteText}</span>
           </div>
+        </div>
+        </div>
+        {/* Appearance and language stay next to the account row, visible on any screen height. */}
+        <div className="sidebar-settings">
+          <AppearanceControl preference={appearance} onChange={changeAppearance} compact />
         </div>
         <div className="profile">
           <span className="avatar" aria-hidden="true">
@@ -1866,6 +1992,7 @@ function App() {
                     ref={searchRef}
                     value={query}
                     onChange={(event) => { setQuery(event.target.value); setNextCursor(null); }}
+                    onKeyDown={leaveSearchOnEscape}
                     placeholder={l.searchPlaceholder}
                     aria-label={l.searchAria}
                   />
@@ -1895,7 +2022,7 @@ function App() {
               {phoneLayout && showFilters && savedSearchBar}
               <details className={`search-syntax${phoneLayout && !showFilters ? " phone-collapsed" : ""}`}>
                 <summary>{l.preciseSearch}</summary>
-                <p>{l.searchHelpUse} <code>{l.tagExample}</code>, <code>{l.senderExample}</code>, <code>date:2026-04-15</code> {l.searchHelpOr} <code>is:untagged</code>. {l.searchHelpAlso} <code>title:</code>, <code>text:</code>, <code>note:</code>, <code>type:</code>, <code>sticker:</code>, {l.searchHelpOr} <code>is:tagged</code>. {l.searchHelpCombine} {l.searchHelpPress} <kbd>/</kbd> {l.searchHelpToSearch} <kbd>N</kbd> {l.searchHelpToAdd}</p>
+                <p>{l.searchHelpUse} <code>{l.tagExample}</code>, <code>{l.senderExample}</code>, <code>{l.dateExample}</code> {l.searchHelpOr} <code>is:untagged</code>. {l.searchHelpAlso} {l.moreFields.split(" ").map((field) => <span key={field}><code>{field}</code>, </span>)}{l.searchHelpOr} <code>is:tagged</code>. {l.searchHelpCombine}{l.otherLanguageFields ? ` ${l.otherLanguageFields}` : ""} {l.searchHelpPress} <kbd>/</kbd> {l.searchHelpToSearch} <kbd>N</kbd> {l.searchHelpToAdd}</p>
               </details>
               {showFilters && <div className="library-filters" id="library-filters">
                 <Field label={l.tag} className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">{l.anyTag}</option>{tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}</select></Field>
@@ -1952,8 +2079,8 @@ function App() {
               )}
               {waitingUploads > 0 && (
                 <div className="upload-progress" role="status" aria-live="polite">
-                  <UploadCloud size={19} /> {l.waitingUploads(waitingUploads)}
-                  <button type="button" className="text-action" onClick={() => void sendWaiting()}>{l.sendWaitingNow}</button>
+                  <UploadCloud size={19} /> {waitingRetrying ? l.waitingUploadsRetrying(waitingUploads) : l.waitingUploads(waitingUploads)}
+                  <button type="button" className="text-action" onClick={sendWaitingNow}>{l.sendWaitingNow}</button>
                 </div>
               )}
               {uploading && (
@@ -2100,9 +2227,11 @@ function App() {
                 </div>
               ) : (
                 <>
-                <div className="document-list">
+                {/* A real list, so screen readers announce "list, N items"; each row stays an article. */}
+                <ul className="document-list library-list" role="list" aria-label={l.resultsList}>
                   {documents.map((doc, index) => (
-                    <article className={`document-row${activeRow === index ? " keyboard-active" : ""}`} key={doc.id} data-document-id={doc.id} aria-current={activeRow === index ? "true" : undefined}>
+                    <li key={doc.id}>
+                    <article className={`document-row${activeRow === index ? " keyboard-active" : ""}`} data-document-id={doc.id} aria-current={activeRow === index ? "true" : undefined}>
                       {selectionMode ? <label className="document-select">
                         <input type="checkbox" checked={selectedIds.includes(doc.id)} disabled={bulkBusy || (selectedIds.length >= 100 && !selectedIds.includes(doc.id))} onChange={() => toggleSelected(doc.id)} />
                         <span className="visually-hidden">{l.selectDocument(doc.title)}</span>
@@ -2113,7 +2242,7 @@ function App() {
                             className="document-title-button"
                             onClick={() => setSelectedDocument(doc)}
                           >
-                            {doc.title}
+                            <span className="document-title-text">{doc.title}</span>
                           </button>
                         </h3>
                         <div className="document-meta">
@@ -2159,6 +2288,7 @@ function App() {
                           </p>
                         )}
                       </div>
+                      <div className="document-row-actions">
                       <span className={`status status-${doc.status}`}>
                         {doc.status === "ready"
                           ? l.ready
@@ -2166,12 +2296,13 @@ function App() {
                             ? l.needsAttention
                             : l.processing}
                       </span>
+                      <div className="document-row-links">
                       {doc.status === "failed" && (
                         <button
                           className="download-link"
                           onClick={() => void retryDocument(doc.id)}
                           aria-label={l.retryNamed(doc.original_name)}
-                          title={l.retryProcessing}
+                          title={l.retryOcr}
                         >
                           <RotateCcw size={18} />
                         </button>
@@ -2195,9 +2326,12 @@ function App() {
                       >
                         <ArrowDownToLine size={18} />
                       </a>
+                      </div>
+                      </div>
                     </article>
+                    </li>
                   ))}
-                </div>
+                </ul>
                 {nextCursor !== null && (
                   <Button variant="secondary" className="load-more" disabled={loadingMore} onClick={() => void loadDocuments(query, nextCursor)}>
                     {loadingMore ? l.loading : l.showMore}

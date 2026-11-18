@@ -61,7 +61,7 @@ The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and O
 
 ## Interface language
 
-English is the default interface language on every device. The sign-in screen and sidebar let you switch to Italian or follow the device language instead. The choice is saved in this browser and also controls date formatting and the language requested from the API. Every screen is available in Italian, including Library bulk actions, document detail, mail, workflows, sharing, Sources, Overview and background jobs, semantic search, and People. The Italian source strings received a wording and terminology pass; a full on-device reading pass remains part of release verification. Every API error message is translated for Italian clients; field names inside messages use readable labels (for example “Filtro nome file”), never raw request keys. `archive/test_api_language.py` fails when a new message has no Italian version. Each Telegram source has its own **Bot reply language** (English or Italian), which defaults to the interface language when the source is created.
+English is the default interface language on every device. The sign-in screen and the sidebar (Appearance and Language sit just above the account row, always in view) let you switch to Italian or follow the device language instead. The choice is saved in this browser and also controls date formatting and the language requested from the API. Every screen is available in Italian, including Library bulk actions, document detail, mail, workflows, sharing, Sources, Overview and background jobs, semantic search, and People. The Italian source strings received a wording and terminology pass; a full on-device reading pass remains part of release verification. Every API error message is translated for Italian clients; field names inside messages use readable labels (for example “Filtro nome file”), never raw request keys. `archive/test_api_language.py` fails when a new message has no Italian version. Each Telegram source has its own **Bot reply language** (English or Italian), which defaults to the interface language when the source is created.
 
 ### Appearance
 
@@ -212,7 +212,7 @@ Turn it on as the archive owner under **Agents → Search by meaning**, choosing
 
 With a hardware keyboard (shortcuts stay inactive while typing or while a dialog is open):
 - **?** lists all shortcuts.
-- **/** focuses Library search from any screen; **N** opens Add.
+- **/** focuses Library search from any screen; **Esc** in the search field leaves it for the first result, so **J** / **K** / **Enter** work straight away (the search text is kept). **N** opens Add.
 - **G** then a letter goes to a screen: **L** All documents, **I** Inbox, **A** Needs action, **T** Tags & filing, **O** Overview, **S** Shared with me, **W** Workflows, **R** Sources.
 - In the Library, **J** / **K** move through the list and **Enter** opens the highlighted document; **Esc** closes it.
 - **Tab** from the top of the page reaches a **Skip to content** link.
@@ -227,7 +227,7 @@ Dialogs keep focus inside until closed and return it afterwards. `apps/web/e2e/a
 
 Documents can optionally be marked **Needs action** with a due date and note. The separate action list shows only open follow-ups; completing one keeps the document in the archive. Uploading and automatic tags do not require this step.
 
-The **Inbox** shows exceptions only: failed OCR and exact copies that have not been reviewed. Retry OCR or acknowledge that both copies should stay. Ordinary uploads go straight to the Library.
+The **Inbox** shows exceptions only: failed OCR and exact copies that have not been reviewed. Retry OCR, keep both copies, or choose **Move this copy to Trash**. **Resolve all exact copies** asks first, then keeps every original and moves every listed copy to the Trash, where you can restore it. Ordinary uploads go straight to the Library.
 
 <img src="../qa-artifacts/5252d3e/inbox/mobile/failed-ocr.png" alt="Mobile Inbox showing a failed OCR document and retry action" width="260">
 
@@ -265,7 +265,7 @@ Ripiano learns from the senders, document types, and tags you set by hand, on yo
 - **When it suggests:** only when it is at least 60% likely to be right. The probability is calibrated on documents the model had not seen.
 - **Automatic filing is optional:** in **Tags & filing → Learned suggestions**, turn on **File new documents automatically when very confident**. It applies only after OCR on new documents. Each assignment needs at least 90% calibrated confidence, at least 95% measured precision and at least 20 tested suggestions among held-out predictions above that same 90% threshold for that field. It fills empty sender/type fields and adds at most three tags; manual choices, input rules, and removed tags stay in control. You can correct the result in the document dialog. With the option off, suggestions only appear in the dialog and need a tap.
 - **File an existing selection:** in **Library → Select documents → File with local model**, choose up to 100 documents and run the same confidence checks once. Documents with no confident new detail stay selected. This one-time action works even when automatic filing for future documents is off; it never changes manual sender/type choices or re-adds a removed tag.
-- **A wrong suggestion:** the **×** next to it hides it for this browser session. The server does not yet store dismissals, so it can come back in a later session until you file the document differently.
+- **A wrong suggestion:** the **×** next to it ("Not right") rejects it for that document, on every device. A rejected tag counts as removed by hand, so rules, workflows, agents, and automatic filing do not add it either; a rejected sender or type is not suggested or filed automatically for that document again. The rejection is listed in the document's **Changes**. Adding the tag or choosing the sender yourself later still works. The learned model does not use rejections as training examples; it keeps learning only from how you file documents.
 - **Getting started:** it needs at least 3 hand-filed documents each for 2 or more senders (or types), or 3 documents with the same tag.
 - **Privacy and restore:** each person's model uses only their own documents. The model is rebuilt rather than exported; the opt-in setting is included in portable exports. After a restore, automatic filing waits until the model is retrained.
 
@@ -322,7 +322,7 @@ Under **Custom details**, create a text, number, date, or yes/no field once and 
 
 The document panel keeps dated notes separate from follow-ups. Notes can be added or deleted, found through Library search (including `note:`), and retrieved in older pages when the history grows.
 
-Each document also keeps an audit history, shown as **Changes** in the document panel (newest first, the latest five with a "Show all" button) and available at `GET /api/documents/<id>/history` in pages of 50. An entry records when it happened, who or what made it (the person, an agent by its grant name, a workflow, an email rule, a source, matching rules, local learned filing, or barcodes), and each changed detail as "field: old → new" for the title, document date, sender, document type, storage path, ASN, tags, and custom field values. Uploads, new file versions, Trash, restore, and sharing done by a workflow are recorded too. Values are stored as readable names and dates, so entries stay understandable after a tag or sender is renamed or deleted; document text, OCR output, and notes are never copied into the history. Saving without a real change records nothing. Anyone who can open the document can read its history; people it is shared with do not see owner-only details (storage path, ASN, custom fields, and who else a workflow shared it with). History is part of portable exports.
+Each document also keeps an audit history, shown as **Changes** in the document panel (newest first, the latest five with a "Show all" button) and available at `GET /api/documents/<id>/history` in pages of 50. An entry records when it happened, who or what made it (the person, an agent by its grant name, a workflow, an email rule, a source, matching rules, local learned filing, or barcodes), and each changed detail as "field: old → new" for the title, document date, sender, document type, storage path, ASN, tags, and custom field values. Uploads, new file versions, Trash, restore, and sharing done by a workflow are recorded too. Values are stored as readable names and dates, so entries stay understandable after a tag or sender is renamed or deleted; document text, OCR output, and notes are never copied into the history. Saving without a real change records nothing. Rejecting a filing suggestion ("Not right") is recorded as well, for the owner only. Anyone who can open the document can read its history; people it is shared with do not see owner-only details (storage path, ASN, custom fields, and who else a workflow shared it with). History is part of portable exports.
 
 ### Related documents
 
@@ -356,7 +356,7 @@ Move a completed document to **Trash** from its detail panel and restore it late
 
 Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link.
 
-If a paper copy is missing, mark its sticker **Missing** from the document panel. Ripiano keeps the last known location, shows a warning when the sticker is scanned, and records the report in its history. Mark it **Found** before assigning a new location; the sticker identity stays the same.
+If a paper copy is missing, mark its sticker **Missing** from the document panel. Ripiano keeps the last known location, shows a warning when the sticker is scanned, and records the report in its history. Mark it **Found** before assigning a new location; the sticker identity stays the same. A paper copy's **History** lists each placement or move with its date, time, and the person who made it.
 
 Each shelf or box also has a stable `L-` code and a printable QR label. Scan it to see the paper copies stored there, including copies in nested locations, or type the code in **Your paper archive**. Large locations load their contents in pages of 50. Missing copies remain listed at their last known location with a warning.
 
@@ -387,7 +387,8 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 - **What they get:** the document appears under their **Shared with me**. Viewers can read it, download it, and read its notes. Editors can also change the title, date, and follow-up, and add notes.
 - **What stays with you:** unshared filing, files, pages, versions, share links, paper copies, and Trash. Recipients with edit access can use only the tags, senders, and types you separately share with them; they cannot clear or replace a sender or type you kept private.
 - **Ending access:** removing a grant, removing someone from the group, turning the account off, or moving the document to Trash all end access immediately.
-- **Passwords:** a password reset ends that person's other sessions and API tokens. API tokens cannot manage people or groups.
+- **Passwords and accounts:** a password reset ends that person's other sessions and disconnects their API tokens and agents. Turning an account off does the same, and turning it on again does not revive them. API tokens cannot manage people or groups.
+- **Caching:** signed-in `/api/` answers and original downloads are sent with `Cache-Control: private, no-store`, so browsers and proxies do not keep copies.
 
 **Sharing tags, senders, types, and saved views:** each has a **Share** button (the people icon) that opens the same people-with-access panel as documents, for a person or a group:
 - **Can view and use:** the object appears for them under Shared with me (as a filter), and they can use it to file your documents they have *edit* access to: add or remove your shared tags, and set your shared sender or type. Your other tags on the document are never touched, and archive details (storage path, ASN, duplicates) stay with you.
@@ -412,7 +413,7 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 
 ### Offline
 
-Without a connection Ripiano keeps what it already shows. Files you add while offline wait on this device and are sent automatically when the connection returns, without creating duplicates if an earlier attempt did arrive. If you reload the app while offline, it shows who was last signed in and how many files are waiting, and it reconnects by itself. Signing out with files still waiting asks whether to keep them for the next sign-in on this device or discard them.
+Without a connection Ripiano keeps what it already shows. Files you add while offline wait on this device and are sent automatically when the connection returns, without creating duplicates if an earlier attempt did arrive. If the device is online but Ripiano could not be reached, the waiting files are tried again after about 3, 10 and 30 seconds and then every minute; **Send now** tries at once. If you reload the app while offline, it shows who was last signed in and how many files are waiting, and it reconnects by itself. Signing out with files still waiting asks whether to keep them for the next sign-in on this device or discard them.
 
 ## Security
 

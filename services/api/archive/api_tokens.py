@@ -15,7 +15,8 @@ PREFIX = "rip_"
 # Anonymous share downloads stay usable even if a client sends a stale token header.
 PUBLIC_PREFIXES = ("/api/share-links/", "/api/share-bundles/")
 # Tokens cannot mint other credentials, create public links, manage people, or change how people sign in.
-BLOCKED_PREFIXES = ("/api/account/", "/api/session", "/api/setup", "/api/agents", "/api/share-bundles", "/api/people", "/api/groups")
+BLOCKED_PREFIXES = ("/api/account/", "/api/session", "/api/setup", "/api/agents", "/api/share-bundles", "/api/people", "/api/groups",
+                    "/api/object-access")
 
 
 # Tokens also cannot send documents out of Ripiano or change what does (mail, sources, workflows with

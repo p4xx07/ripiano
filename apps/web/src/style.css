@@ -4552,3 +4552,285 @@ button:disabled {
   min-height: 40px;
   text-align: left;
 }
+
+/* Upload finished: a short confirmation with a way to jump to the new document. */
+.upload-done {
+  border-radius: var(--radius-soft);
+  padding: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--type-body);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-surface-tint);
+  color: var(--color-accent-strong);
+}
+.upload-done-dismiss {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+/* Touch screens: the small controls the round-2 review measured below 44px get a full-size
+   target. Desktop (fine pointer) layouts are unchanged. */
+@media (pointer: coarse) {
+  .tag-icon-button,
+  .share-object-button,
+  .upload-done-dismiss {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .tag-move-button,
+  .add-rule {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .tag-move-button {
+    margin-top: 0;
+  }
+  .source-note a,
+  .page-heading p a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  input[type="password"],
+  input[type="color"] {
+    min-height: 44px;
+  }
+  input[type="color"] {
+    min-width: 44px;
+  }
+  .agent-card .button,
+  .agent-revoke-confirm .button {
+    min-height: 44px;
+  }
+}
+
+/* The Add sheet's close button sits in the top corner: keep the heading clear of it. */
+.add-modal .eyebrow,
+.add-modal h2 {
+  padding-right: 48px;
+}
+/* No hardware keyboard on touch screens: hide the "/" search hint. */
+@media (pointer: coarse) {
+  .search-shortcut {
+    display: none;
+  }
+}
+
+/* Sign-in screen after the session ended elsewhere. */
+.form-notice {
+  color: var(--color-accent-strong);
+  background: var(--color-surface-tint);
+  border-radius: var(--radius-soft);
+  padding: var(--space-compact);
+  font-size: var(--type-small);
+}
+
+/* Round 2 (judge 1): phone menu scrim, phone Library header, offline list, document preview. */
+.sidebar-backdrop,
+.topbar-add,
+.library-counts {
+  display: none;
+}
+.topbar-crumb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 800px) {
+  /* Tapping outside the open drawer closes it. */
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 7;
+    background: var(--color-scrim);
+  }
+}
+@media (max-width: 570px) {
+  .topbar-add {
+    display: inline-flex;
+    flex: none;
+    margin-left: auto;
+    min-height: 44px;
+    padding: 0 var(--space-4);
+  }
+  .topbar-with-add .topbar-right {
+    display: none;
+  }
+  /* The first documents belong on the first screen: one heading, one line of counts, the search. */
+  .library-heading .eyebrow,
+  .library-heading p,
+  .library-heading ~ .summary-row,
+  .library-section-heading p:not(.library-counts) {
+    display: none;
+  }
+  .library-heading h1 {
+    margin: 0;
+  }
+  .library-section-heading {
+    margin-top: var(--space-3);
+    align-items: center;
+  }
+  .library-section-heading h2 {
+    margin: 0;
+  }
+  .library-counts,
+  .library-searching .library-section-heading .library-counts {
+    display: block;
+    margin: var(--space-half) 0 0;
+    color: var(--color-muted);
+    font-size: var(--type-body);
+  }
+  .toolbar {
+    margin: var(--space-3) 0;
+  }
+  /* Sort and Filters share the row under the search box. */
+  .library-sort {
+    grid-column: auto;
+  }
+  .search-syntax.phone-collapsed {
+    display: none;
+  }
+  .toolbar + .saved-search-bar {
+    margin: 0 0 var(--space-3);
+  }
+}
+
+.stale-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-medium);
+  background: var(--color-warning-soft);
+  color: var(--color-heading);
+  font-size: var(--type-label);
+  line-height: 1.5;
+}
+.stale-notice svg {
+  flex: none;
+  color: var(--color-warning);
+}
+.stale-notice span {
+  flex: 1 1 220px;
+}
+
+/* First-page preview in the document dialog: a compact strip that can be expanded on narrow
+   screens, a column beside the form on wide ones. The frame keeps its size while the image loads. */
+.detail-preview {
+  margin: 0 0 var(--space-5);
+}
+.detail-preview-frame {
+  position: relative;
+  height: 140px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft);
+  background: var(--color-surface);
+}
+.detail-preview.expanded .detail-preview-frame {
+  height: auto;
+  min-height: 140px;
+}
+.detail-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.detail-preview img.loaded {
+  opacity: 1;
+}
+.detail-preview-loading,
+.detail-preview-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--color-muted);
+  font-size: var(--type-body);
+  text-align: center;
+}
+.detail-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin-top: var(--space-1);
+}
+.detail-preview-actions .text-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+@media (min-width: 1100px) {
+  .detail-panel.with-preview {
+    width: min(100%, 940px);
+    display: grid;
+    grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+    column-gap: var(--space-8);
+    align-content: start;
+  }
+  .detail-panel.with-preview > :not(.modal-close) {
+    grid-column: 2;
+  }
+  .detail-panel.with-preview > .detail-preview {
+    grid-column: 1;
+    grid-row: 1 / span 60;
+    align-self: start;
+    position: sticky;
+    top: 0;
+    margin: 0;
+  }
+  .detail-panel.with-preview .detail-preview-frame {
+    height: auto;
+    min-height: 180px;
+  }
+  .detail-panel.with-preview .detail-preview-toggle {
+    display: none;
+  }
+}
+
+/* A learned suggestion can be dismissed next to its accept button. */
+.filing-suggestions .suggestion-item {
+  display: flex;
+  gap: var(--space-tight);
+  min-width: 0;
+}
+.filing-suggestions .suggestion-accept {
+  flex: 1 1 auto;
+}
+.filing-suggestions .suggestion-dismiss {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 40px;
+  padding: 0;
+  color: var(--color-muted);
+}
+@media (pointer: coarse) {
+  .filing-suggestions .suggestion-dismiss {
+    min-width: 44px;
+  }
+  .detail-preview-actions .text-action {
+    min-height: 44px;
+  }
+}

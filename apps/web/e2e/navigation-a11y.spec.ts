@@ -73,15 +73,17 @@ test("navigation is a landmark, marks the current screen, names the tab, and mov
   await signIn(page);
   await expect(page).toHaveTitle("All documents · Ripiano");
   // The account name is not a button; sign-out has its own clear name.
-  await expect(page.getByRole("button", { name: new RegExp(username!) })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(1);
   const menuButton = page.getByRole("button", { name: "Toggle menu" });
   if (await menuButton.isVisible()) {
     const box = await menuButton.boundingBox();
     expect(box!.width).toBeGreaterThanOrEqual(44);
     expect(box!.height).toBeGreaterThanOrEqual(44);
+    // On a phone the closed menu is out of reach for keyboard and screen reader (it used to stay in the Tab order).
+    await expect(page.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(0);
   }
   await openMenuIfNeeded(page);
+  await expect(page.getByRole("button", { name: new RegExp(username!) })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(1);
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await expect(nav).toBeVisible();
   await expect(nav.getByRole("button", { name: "All documents" })).toHaveAttribute("aria-current", "page");

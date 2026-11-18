@@ -186,6 +186,10 @@ The Library can also narrow results with the visual tag, sender, type, and date 
 
 Select up to 100 loaded documents to add or remove a tag, set or clear the sender, or set or clear the document type, set or clear a shared document date, retry failed OCR, rebuild searchable PDFs, or move a batch to Trash; filing changes count as manual corrections for future automatic filing. Batch actions appear after a document is selected, so the Library stays compact between operations. The Library and Needs action lists load additional results in cursor-based pages of 50; Refresh shows new arrivals.
 
+**Italian field names.** Every field term also has an Italian name, and you can mix them freely: `titolo:` (title), `testo:` (text), `nota:` (note), `etichetta:` (tag), `mittente:` or `corrispondente:` (sender), `tipo:` (document type), `adesivo:` (sticker), `data:` or `creato:` (document date), `aggiunto:` (date added) and `campo:` (custom field). Field names are not case-sensitive. Example: `mittente:"Comune di Esempio" data:2026-11 -etichetta:Bozze`.
+
+**Word forms.** Plain search words match other forms of the same word in Italian and English: "rifiuto" also finds "rifiuti", "bolletta" finds "bollette", "invoice" finds "invoices". Documents containing the exact word you typed are listed first. This uses a stored search index in PostgreSQL that takes about twice the size of the documents' text on disk (about 130 MB per 10,000 typical documents) and makes searches much faster.
+
 ### Optional semantic search
 
 **Off by default; Ripiano works fully without it.** When on, plain-language searches in the Library combine keyword and meaning matches in one ranked list. A document found both ways ranks higher; semantic-only matches appear in the same list when similarity is at least 0.3. Field searches and explicit date/title sorts keep their normal behavior. If the model computer is unavailable, the Library still returns keyword results. MCP agents with OCR-text permission keep a `semantic_search` tool that returns passages for the agent's own model to answer from. Ripiano never generates answers and never calls a paid AI provider.
@@ -209,9 +213,11 @@ Turn it on as the archive owner under **Agents → Search by meaning**, choosing
 With a hardware keyboard (shortcuts stay inactive while typing or while a dialog is open):
 - **?** lists all shortcuts.
 - **/** focuses Library search from any screen; **N** opens Add.
-- **G** then a letter goes to a screen: **L** Library, **I** Inbox, **A** Needs action, **T** Tags & filing, **O** Overview, **S** Shared with me, **W** Workflows, **R** Sources.
+- **G** then a letter goes to a screen: **L** All documents, **I** Inbox, **A** Needs action, **T** Tags & filing, **O** Overview, **S** Shared with me, **W** Workflows, **R** Sources.
 - In the Library, **J** / **K** move through the list and **Enter** opens the highlighted document; **Esc** closes it.
 - **Tab** from the top of the page reaches a **Skip to content** link.
+
+Each screen has its own address (`/inbox`, `/tags`, `/paper`, `/agents`, …) and an open document adds `?document=<id>`, so the browser's Back button, the Android back gesture, and an installed PWA's back go to the previous screen or close the open document instead of leaving Ripiano; addresses can be bookmarked and survive a reload. On phones the closed menu is hidden from Tab and screen readers; opening it moves focus to the current screen's link, and **Esc** or a tap anywhere outside it closes it. On a phone the Library keeps **Add** in the top bar and shows one line of counts; saved searches and the precise-search help open with **Filters**, so the first documents fit on the first screen. If Ripiano cannot be reached, the Library keeps the documents it last loaded and says when they were loaded, instead of showing an empty archive. A finished upload says how many documents were added and offers **Show** (on phones the first new document is brought into view). If the session ends elsewhere, Ripiano returns to the sign-in screen with a short notice and, after signing in, to the same screen.
 
 Dialogs keep focus inside until closed and return it afterwards. `apps/web/e2e/accessibility.spec.ts` checks the sign-in page and the main screens for controls without names, unlabeled fields, duplicate ids, images without alt text, skipped heading levels, and missing landmarks.
 
@@ -228,6 +234,8 @@ The **Inbox** shows exceptions only: failed OCR and exact copies that have not b
 ### Tags, senders, and document types
 
 In **Senders** and **Document types**, add a matching phrase to a name to file new and existing documents by title or OCR text. A longer matching phrase wins when more than one name matches; the same phrase cannot target two names of the same kind. The document details show when a value came from a phrase; changing or clearing it there keeps that manual decision on later reprocessing. Automatic tags also stay automatic when you edit an unrelated detail. Tag, sender, and type phrase edits recheck only documents they may affect, so new OCR work is not held behind a full archive pass.
+
+The document dialog shows the document's first page next to the form (above it on a phone, where **Show larger** expands it and **Open full size** opens the searchable PDF), so you can check the sender and date without leaving the dialog. **Create a tag** in the dialog adds a new tag and ticks it; **Save changes** keeps it on the document.
 
 Tags can be grouped under other tags. Create a nested tag from the **Under** picker or move an existing tag from its card. Filtering the Library by a parent finds documents tagged with any nested child, including deeper levels; documents tagged with both parent and child appear once. Agent grants that use a tag filter continue to require the exact granted tag.
 
@@ -257,6 +265,7 @@ Ripiano learns from the senders, document types, and tags you set by hand, on yo
 - **When it suggests:** only when it is at least 60% likely to be right. The probability is calibrated on documents the model had not seen.
 - **Automatic filing is optional:** in **Tags & filing → Learned suggestions**, turn on **File new documents automatically when very confident**. It applies only after OCR on new documents. Each assignment needs at least 90% calibrated confidence, at least 95% measured precision and at least 20 tested suggestions among held-out predictions above that same 90% threshold for that field. It fills empty sender/type fields and adds at most three tags; manual choices, input rules, and removed tags stay in control. You can correct the result in the document dialog. With the option off, suggestions only appear in the dialog and need a tap.
 - **File an existing selection:** in **Library → Select documents → File with local model**, choose up to 100 documents and run the same confidence checks once. Documents with no confident new detail stay selected. This one-time action works even when automatic filing for future documents is off; it never changes manual sender/type choices or re-adds a removed tag.
+- **A wrong suggestion:** the **×** next to it hides it for this browser session. The server does not yet store dismissals, so it can come back in a later session until you file the document differently.
 - **Getting started:** it needs at least 3 hand-filed documents each for 2 or more senders (or types), or 3 documents with the same tag.
 - **Privacy and restore:** each person's model uses only their own documents. The model is rebuilt rather than exported; the opt-in setting is included in portable exports. After a restore, automatic filing waits until the model is retrained.
 

@@ -19,7 +19,8 @@ SCOPES = {
 
 
 def _owner(request):
-    return request.user.is_authenticated and request.user.is_superuser
+    # Every signed-in person can connect agents to their own archive; grants and audit are scoped to request.user.
+    return request.user.is_authenticated
 
 
 def grant_json(grant):
@@ -68,6 +69,9 @@ def grants(request):
             pass
         if filter_tag is None:
             return JsonResponse({"error": "Filter tag not found"}, status=400)
+    # Two live grants with one name can't be told apart in the list or the audit log.
+    if AgentGrant.objects.filter(owner=request.user, name__iexact=name.strip(), revoked_at__isnull=True, expires_at__gt=timezone.now()).exists():
+        return JsonResponse({"error": "An active agent already uses this name"}, status=409)
     token = "rpa_" + secrets.token_urlsafe(32)
     grant = AgentGrant.objects.create(
         owner=request.user,

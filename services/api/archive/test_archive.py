@@ -160,6 +160,13 @@ def test_android_scan_retry_is_idempotent_and_owner_scoped(tmp_path):
         assert Document.objects.count() == 2
         assert Document.objects.filter(source=Document.Source.ANDROID).count() == 2
         assert client.post("/api/documents", {"document": image_upload()}, HTTP_X_RIPIANO_SCAN_ID="bad").status_code == 400
+        # The web app's retried uploads are recognised too, and stay recorded as web uploads (judge 3 round 2, H2).
+        web_id = str(uuid4())
+        with patch("archive.ingestion.process_document.delay"):
+            web = client.post("/api/documents", {"document": image_upload()}, HTTP_X_RIPIANO_SCAN_ID=web_id, HTTP_X_RIPIANO_CLIENT="web")
+            retry = client.post("/api/documents", {"document": image_upload()}, HTTP_X_RIPIANO_SCAN_ID=web_id, HTTP_X_RIPIANO_CLIENT="web")
+        assert web.status_code == 202 and retry.status_code == 200 and retry.json()["id"] == web.json()["id"]
+        assert Document.objects.get(pk=web.json()["id"]).source == Document.Source.WEB
 
 
 @pytest.mark.django_db

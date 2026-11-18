@@ -128,3 +128,24 @@ def test_consume_folder_waits_for_an_archive_owner(db, tmp_path):
     (tmp_path / "consume").mkdir()
     with override_settings(RIPIANO_CONSUME_ROOT=str(tmp_path / "consume")):
         assert ensure_consume_source() is None
+
+
+@pytest.mark.django_db
+def test_a_read_only_folder_never_fills_the_processed_folder_with_copies(owner, root):
+    """Judge 1 round 2 (H2): without write access the original stayed and a new copy appeared on every check."""
+    write(root, "Scanner/locked/bill.pdf")
+    source = make_source(owner)
+    locked = root / "Scanner/locked"
+    os.chmod(locked, 0o555)
+    try:
+        if os.access(locked, os.W_OK):
+            pytest.skip("running as root: permissions are not enforced")
+        for _ in range(3):
+            with pytest.raises(SourceError, match="write access"):
+                run(source)
+            source.refresh_from_db()
+        assert Document.objects.count() == 1  # imported once
+        assert (locked / "bill.pdf").exists()
+        assert list((root / "Scanner/processed").rglob("*.pdf")) == []  # and never copied
+    finally:
+        os.chmod(locked, 0o755)

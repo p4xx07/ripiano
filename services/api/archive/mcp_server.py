@@ -226,6 +226,12 @@ def _execute(grant, name, args):
         tags = {tag.id: tag for tag in Tag.objects.filter(owner=grant.owner, pk__in=add | remove)}
         if len(tags) != len(add | remove):
             return document, {"error": "Tag not found"}
+        # A tag that limits another agent's documents decides what that agent may read. Only people change it, so
+        # one agent can never widen (or narrow) another agent's view (judge 3 round 2, H1).
+        guarded = set(AgentGrant.objects.filter(owner=grant.owner, revoked_at__isnull=True, filter_tag__isnull=False)
+                      .exclude(pk=grant.pk).values_list("filter_tag_id", flat=True))
+        if (add | remove) & guarded:
+            return document, {"error": "This tag limits another agent's access; only a person can add or remove it"}
         with transaction.atomic():
             document = _documents(grant).select_for_update(of=("self",)).filter(pk=document_id).first()
             if document is None:

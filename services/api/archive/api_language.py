@@ -11,7 +11,7 @@ import re
 from django.utils import translation
 from django.utils.cache import patch_vary_headers
 
-from .messages_it import EXACT, TEMPLATES, VALUES
+from .messages_it import DISPLAY, EXACT, TEMPLATES, VALUES
 
 
 def _compile(template):
@@ -51,6 +51,13 @@ def to_italian(message):
 
 def wants_italian(request):
     return translation.get_language_from_request(request).split("-")[0] == "it"
+
+
+def display(request, text, *values):
+    """Display text (not an error) in the request's language: `text` may hold {0}-style placeholders."""
+    if request is not None and wants_italian(request):
+        text = DISPLAY.get(text, text)
+    return text.format(*values) if values else text
 
 
 class ApiLanguageMiddleware:

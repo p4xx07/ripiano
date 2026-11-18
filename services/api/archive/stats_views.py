@@ -8,6 +8,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from .api_language import display
 from .models import BackupRun, Document, DocumentTag, MailAccount, Workflow, WorkflowRun
 
 
@@ -44,7 +45,7 @@ def overview(request):
     }
     monthly = [{"month": value, "count": counted.get(value, 0)} for value in months]
     by_type = [
-        {"name": row["document_type__name"] or "No type", "count": row["count"]}
+        {"name": row["document_type__name"] or display(request, "No type"), "count": row["count"]}
         for row in documents.values("document_type__name").annotate(count=Count("id")).order_by("-count")[:8]
     ]
     by_source = {row["source"]: row["count"] for row in documents.values("source").annotate(count=Count("id"))}

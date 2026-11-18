@@ -43,9 +43,10 @@ import {
   Users,
   UploadCloud,
   Cloud,
+  WifiOff,
   X,
 } from "lucide-react";
-import { ApiError, CustomField, Document, FilingItem, formatDate, LibraryFilters, request, Session, Tag, tagPathLabel } from "./api";
+import { ApiError, CustomField, Document, FilingItem, formatDate, formatTime, LibraryFilters, onSessionEnded, request, Session, Tag, tagPathLabel } from "./api";
 import * as uploadQueue from "./uploadQueue";
 import DocumentPanel from "./DocumentPanel";
 import ActionPanel from "./ActionPanel";
@@ -100,6 +101,11 @@ function AppearanceControl({ preference, onChange }: {
     </label>
     </>
   );
+}
+
+/** Server messages are shown as they are; raw system errors kept by older runs get a readable text. */
+function readableJobError(error: string, fallback: string) {
+  return /^\[Errno\b|^Traceback|^[A-Za-z]+Error:/.test(error.trim()) ? fallback : error;
 }
 
 type BackupRun = {
@@ -184,11 +190,13 @@ function AuthScreen({
   onAuthenticated,
   appearance,
   onAppearanceChange,
+  notice = "",
 }: {
   setup: boolean;
   onAuthenticated: (value: Session) => void;
   appearance: ThemePreference;
   onAppearanceChange: (preference: ThemePreference) => void;
+  notice?: string;
 }) {
   const m = useMessages(appMessages);
   const [username, setUsername] = useState("");
@@ -246,6 +254,7 @@ function AuthScreen({
             ? m.setupIntro
             : m.signInIntro}
         </p>
+        {notice && <p className="form-notice" role="status">{notice}</p>}
         <form onSubmit={submit}>
           <Field label={m.username}>
             <input
@@ -445,7 +454,7 @@ function BackupPanel() {
                   <h3>{run.folder ? m.readyOnNas(run.document_count) : m.browseCopyOn(formatDate(run.created_at))}</h3>
                   <div className="document-meta">{m.created(formatDate(run.created_at))}{run.retry_of ? m.retrySuffix : ""}</div>
                   {run.folder && <p className="browse-folder"><code>{run.folder}</code></p>}
-                  {run.error && <p className="doc-error">{run.error}</p>}
+                  {run.error && <p className="doc-error">{readableJobError(run.error, m.rawJobError)}</p>}
                   {run.status === "running" && <p className="job-running-hint">{m.runningHint}</p>}
                 </div>
                 <span tabIndex={-1} data-job-focus={`browse-${run.id}-status`} className={`status status-${run.status === "complete" ? "ready" : run.status === "failed" ? "failed" : run.status === "cancelled" ? "cancelled" : "pending"}`}>
@@ -489,7 +498,7 @@ function BackupPanel() {
                 <div className="document-meta">
                   {formatDate(run.created_at)} <span>·</span> {m.trigger(run.trigger)}
                 </div>
-                {run.error && <p className="doc-error">{run.error}</p>}
+                {run.error && <p className="doc-error">{readableJobError(run.error, m.rawJobError)}</p>}
                 {run.status === "running" && <p className="job-running-hint">{m.runningHint}</p>}
               </div>
               <span tabIndex={-1} data-job-focus={`backup-${run.id}-status`}
@@ -526,7 +535,25 @@ function viewLabelsFor(m: typeof appMessages.en) {
   };
 }
 
-const GO_TO_VIEWS: Record<string, "documents" | "inbox" | "actions" | "tags" | "overview" | "shared" | "workflows" | "sources"> = {
+type View =
+  "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations" | "sources" | "workflows" | "security" | "overview" | "shared" | "people";
+
+/** Each screen has its own address, so Back, bookmarks and reloads land on the same screen.
+ *  nginx and the service worker answer every one of these paths with index.html. */
+const VIEW_PATHS: Record<View, string> = {
+  documents: "/", inbox: "/inbox", actions: "/actions", tags: "/tags", physical: "/paper", backups: "/backups",
+  agents: "/agents", trash: "/trash", integrations: "/email", sources: "/sources", workflows: "/workflows",
+  security: "/security", overview: "/overview", shared: "/shared", people: "/people",
+};
+const OWNER_VIEWS: View[] = ["people", "backups"];
+const DOCUMENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function viewFromPath(pathname: string): View | null {
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  return (Object.keys(VIEW_PATHS) as View[]).find((view) => VIEW_PATHS[view] === path) ?? null;
+}
+
+const GO_TO_VIEWS: Record<string, View> = {
   l: "documents", i: "inbox", a: "actions", t: "tags", o: "overview", s: "shared", w: "workflows", r: "sources",
 };
 
@@ -548,6 +575,10 @@ function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [counts, setCounts] = useState({ total: 0, ready: 0, waiting: 0 });
+  // False until a list has loaded (or after a failed search): the counts then show a dash, never "0".
+  const [countsKnown, setCountsKnown] = useState(false);
+  // Set when Ripiano cannot be reached: the last loaded list stays on screen, marked as stale.
+  const [staleSince, setStaleSince] = useState<Date | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [semanticAvailable, setSemanticAvailable] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -571,6 +602,10 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
   const [uploadReport, setUploadReport] = useState<{ total: number; failures: string[] } | null>(null);
+  // After an upload: how many went in and which document to show first (announced politely).
+  const [uploadDone, setUploadDone] = useState<{ count: number; firstId: string } | null>(null);
+  const [revealDocument, setRevealDocument] = useState<string | null>(null);
+  const [appAnnouncement, setAppAnnouncement] = useState("");
   const [waitingUploads, setWaitingUploads] = useState(0);
   const sendingWaiting = useRef(false);
   const signedInAs = useRef<string | null>(null);
@@ -583,11 +618,20 @@ function App() {
   const [activeRow, setActiveRow] = useState(-1);
   const goPending = useRef(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  // On narrow screens the navigation is an off-canvas drawer: while closed it must not take focus
+  // or be read out. The width matches the CSS breakpoint for the drawer.
+  const [narrowLayout, setNarrowLayout] = useState(() => window.matchMedia("(max-width: 800px)").matches);
+  // Phone width (matches the 570px CSS breakpoint): the Library keeps saved searches and search help
+  // behind Filters so the first documents fit on the first screen.
+  const [phoneLayout, setPhoneLayout] = useState(() => window.matchMedia("(max-width: 570px)").matches);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
   const [loading, setLoading] = useState(true);
-  const initialSticker =
-    new URLSearchParams(window.location.search).get("sticker") ?? "";
-  const initialLocation =
-    new URLSearchParams(window.location.search).get("location") ?? "";
+  const [initialSticker] = useState(() => new URLSearchParams(window.location.search).get("sticker") ?? "");
+  const [initialLocation] = useState(() => new URLSearchParams(window.location.search).get("location") ?? "");
+  // Links from workflow emails and webhooks open one document: /?document=<id>. Read before the
+  // address is tidied up below.
+  const [initialDocumentId] = useState(() => new URLSearchParams(window.location.search).get("document") ?? "");
   const [initialMailNotice] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const connected = params.get("mail_connected");
@@ -602,11 +646,11 @@ function App() {
     const failed = params.get("source_error");
     if (!connected && !failed) return null;
     window.history.replaceState(null, "", window.location.pathname);
-    return failed ? { kind: "error" as const, text: failed } : { kind: "ok" as const, text: `“${connected}” is connected. Use Preview to check the folder.` };
+    return failed ? { kind: "error" as const, text: failed } : { kind: "ok" as const, text: m.sourceConnected(connected ?? "") };
   });
-  const [view, setView] = useState<
-    "documents" | "inbox" | "actions" | "tags" | "physical" | "backups" | "agents" | "trash" | "integrations" | "sources" | "workflows" | "security" | "overview" | "shared" | "people"
-  >(initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : initialSourceNotice ? "sources" : "documents");
+  const [view, setView] = useState<View>(() =>
+    initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : initialSourceNotice ? "sources"
+      : viewFromPath(window.location.pathname) ?? "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
   );
@@ -622,17 +666,98 @@ function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const focusSearchOnView = useRef(false);
 
-  // Links from workflow emails and webhooks open one document: /?document=<id>
+  // A document link opens its dialog once signed in. The address was already reduced to the screen,
+  // so opening the dialog adds a history entry and Back closes it instead of leaving the app.
+  const openedInitialDocument = useRef(false);
   useEffect(() => {
-    if (!session) return;
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get("document");
-    if (!id) return;
-    params.delete("document");
-    window.history.replaceState(null, "", `${window.location.pathname}${params.size ? `?${params}` : ""}${window.location.hash}`);
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return;
-    void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch(() => setError(m.documentUnavailable));
-  }, [session, m]);
+    if (!session?.authenticated || openedInitialDocument.current || !initialDocumentId) return;
+    openedInitialDocument.current = true;
+    if (!DOCUMENT_ID.test(initialDocumentId)) return;
+    void request<Document>(`/api/documents/${initialDocumentId}`).then(setSelectedDocument).catch(() => setError(m.documentUnavailable));
+  }, [session?.authenticated, initialDocumentId, m]);
+
+  // History: the address mirrors the screen and the open document (?document=<id>). Moving to
+  // another screen or opening a document adds an entry; Back (browser, Android gesture, installed
+  // PWA) walks back through them. Same-screen moves add nothing.
+  const historyReady = useRef(false);
+  const replaceNextUrl = useRef(false);
+  const awaitingBack = useRef(false);
+  const restoringDocument = useRef<string | null>(null);
+  const [historyTick, setHistoryTick] = useState(0);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const selectedRef = useRef(selectedDocument);
+  selectedRef.current = selectedDocument;
+  useEffect(() => {
+    if (awaitingBack.current) return;
+    const url = new URL(window.location.href);
+    const currentView = viewFromPath(url.pathname);
+    const currentDocument = url.searchParams.get("document");
+    const documentId = selectedDocument?.id ?? null;
+    if (!documentId && currentDocument && currentDocument === restoringDocument.current) return;
+    if (currentView === view && currentDocument === documentId) {
+      historyReady.current = true;
+      return;
+    }
+    const state = (window.history.state ?? {}) as { ripianoDialog?: boolean };
+    // Closing a dialog this app opened: step back, so the entry is not left behind for Back.
+    if (historyReady.current && !documentId && currentDocument && currentView === view && state.ripianoDialog) {
+      awaitingBack.current = true;
+      window.history.back();
+      return;
+    }
+    if (currentView !== view) {
+      url.pathname = VIEW_PATHS[view];
+      // Query values such as ?sticker= belong to the screen they came with.
+      if (historyReady.current) url.search = "";
+    }
+    url.hash = "";
+    if (documentId) url.searchParams.set("document", documentId);
+    else url.searchParams.delete("document");
+    const replace = !historyReady.current || replaceNextUrl.current || currentDocument !== null;
+    const dialog = documentId ? (currentDocument ? Boolean(state.ripianoDialog) : true) : false;
+    const address = `${url.pathname}${url.search}`;
+    if (replace) window.history.replaceState({ ripianoDialog: dialog }, "", address);
+    else window.history.pushState({ ripianoDialog: dialog }, "", address);
+    historyReady.current = true;
+    replaceNextUrl.current = false;
+  }, [view, selectedDocument, historyTick]);
+
+  useEffect(() => {
+    function restore() {
+      setMenuOpen(false);
+      if (awaitingBack.current) {
+        // Our own step back after closing a dialog: keep what is on screen and re-check the address.
+        awaitingBack.current = false;
+        setHistoryTick((tick) => tick + 1);
+        return;
+      }
+      const url = new URL(window.location.href);
+      const target = viewFromPath(url.pathname) ?? "documents";
+      const documentId = url.searchParams.get("document");
+      if (target !== viewRef.current) {
+        focusHeadingOnView.current = !documentId;
+        setView(target);
+      }
+      if (!documentId) {
+        restoringDocument.current = null;
+        setSelectedDocument(null);
+      } else if (documentId !== selectedRef.current?.id) {
+        setSelectedDocument(null);
+        if (!DOCUMENT_ID.test(documentId)) return;
+        restoringDocument.current = documentId;
+        void request<Document>(`/api/documents/${documentId}`)
+          .then((doc) => { if (restoringDocument.current === documentId) setSelectedDocument(doc); })
+          .catch(() => setError(m.documentUnavailable))
+          .finally(() => {
+            if (restoringDocument.current === documentId) restoringDocument.current = null;
+            setHistoryTick((tick) => tick + 1);
+          });
+      }
+    }
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, [m]);
 
   useEffect(() => {
     if (view === "documents" && focusSearchOnView.current) {
@@ -645,8 +770,12 @@ function App() {
   // so keyboard and screen-reader users land at the top of what they asked for (not on first load).
   const focusHeadingOnView = useRef(false);
   function goTo(target: typeof view) {
+    if (target === view) {
+      // Already here: close the drawer without dropping focus inside it.
+      if (menuOpen) closeMenu();
+      return;
+    }
     setMenuOpen(false);
-    if (target === view) return;
     focusHeadingOnView.current = true;
     setView(target);
   }
@@ -660,6 +789,42 @@ function App() {
     });
     return () => cancelAnimationFrame(frame);
   }, [view]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 800px)");
+    const phone = window.matchMedia("(max-width: 570px)");
+    const update = () => setNarrowLayout(media.matches);
+    const updatePhone = () => setPhoneLayout(phone.matches);
+    media.addEventListener("change", update);
+    phone.addEventListener("change", updatePhone);
+    return () => {
+      media.removeEventListener("change", update);
+      phone.removeEventListener("change", updatePhone);
+    };
+  }, []);
+  // Opening the drawer puts focus on the current screen's link; Esc closes it and returns focus
+  // to the menu button.
+  useEffect(() => {
+    if (!menuOpen || !narrowLayout) return;
+    const frame = requestAnimationFrame(() => {
+      const sidebar = sidebarRef.current;
+      (sidebar?.querySelector<HTMLElement>(".nav-link[aria-current=page]") ?? sidebar?.querySelector<HTMLElement>(".nav-link"))?.focus();
+    });
+    function escape(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented || document.querySelector('[role="dialog"]')) return;
+      event.preventDefault();
+      closeMenu();
+    }
+    document.addEventListener("keydown", escape);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [menuOpen, narrowLayout]);
+  function closeMenu() {
+    setMenuOpen(false);
+    menuButtonRef.current?.focus();
+  }
 
   // The browser tab names the current screen, in the interface language.
   useEffect(() => {
@@ -720,6 +885,16 @@ function App() {
     row?.querySelector<HTMLElement>(".document-title-button")?.focus({ preventScroll: true });
     row?.scrollIntoView({ block: "nearest" });
   }, [activeRow]);
+
+  // Scroll to a document row (after an upload, or from "Show") and put focus on its title.
+  useEffect(() => {
+    if (!revealDocument || view !== "documents") return;
+    const row = document.querySelector<HTMLElement>(`.document-row[data-document-id="${CSS.escape(revealDocument)}"]`);
+    if (!row) return;
+    setRevealDocument(null);
+    row.scrollIntoView({ block: "center" });
+    row.querySelector<HTMLElement>(".document-title-button")?.focus({ preventScroll: true });
+  }, [revealDocument, documents, view]);
 
   const loadFilterOptions = useCallback(async () => {
     try {
@@ -908,6 +1083,9 @@ function App() {
     }
   }
 
+  const listLoadedRef = useRef(false);
+  const lastLoadedAt = useRef<Date | null>(null);
+  const lastLoadedView = useRef(""); // search + filters + sort of the list on screen
   const loadDocuments = useCallback(async (search: string, cursor: string | null = null) => {
     if (cursor && loadingMoreRef.current) return;
     if (cursor) {
@@ -915,10 +1093,12 @@ function App() {
       setLoadingMore(true);
     }
     const requestNumber = ++latestSearch.current;
+    let viewKey = "";
     try {
       const params = new URLSearchParams({ q: search });
       for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
       if (sort) params.set("sort", sort);
+      viewKey = params.toString();
       if (cursor) params.set("cursor", cursor);
       const result = await request<{ documents: Document[]; counts: typeof counts; next_cursor: string | null }>(
         `/api/documents?${params}`,
@@ -926,18 +1106,34 @@ function App() {
       if (requestNumber === latestSearch.current) {
         setDocuments((current) => cursor ? [...current, ...result.documents] : result.documents);
         setCounts(result.counts);
+        setCountsKnown(true);
+        listLoadedRef.current = true;
+        lastLoadedAt.current = new Date();
+        lastLoadedView.current = viewKey;
         setNextCursor(result.next_cursor);
         setListError("");
+        setStaleSince(null);
       }
     } catch (cause) {
       if (requestNumber !== latestSearch.current) return;
       const message = cause instanceof Error ? cause.message : l.loadDocumentsFailed;
-      if (cursor) setError(message);
+      // Offline, or the server is restarting, while reloading the list that is already on screen: keep it rather
+      // than showing an empty archive; the notice says it is from earlier and offers a retry. A different search
+      // or filter that fails shows its error instead: old results must never pass for the new search's answer.
+      const unreachable = cause instanceof ApiError && (cause.status === 0 || (cause.status >= 502 && cause.status <= 504));
+      if (unreachable && listLoadedRef.current && lastLoadedView.current === viewKey) {
+        setStaleSince((value) => value ?? lastLoadedAt.current ?? new Date());
+        setListError("");
+      } else if (cursor) setError(message);
       else {
         setDocuments([]);
-        setCounts({ total: 0, ready: 0, waiting: 0 });
+        setCountsKnown(false);
         setNextCursor(null);
         setListError(message);
+        setStaleSince(null);
+        // Nothing is on screen any more, so there is no "last loaded list" to keep on the next failure.
+        listLoadedRef.current = false;
+        lastLoadedView.current = "";
       }
     } finally {
       if (cursor) loadingMoreRef.current = false;
@@ -952,9 +1148,62 @@ function App() {
       .finally(() => setLoading(false));
   }, []);
 
+  // A 401 on any request while signed in (signed out elsewhere, session expired, account disabled):
+  // go back to the sign-in screen with a short notice instead of showing an empty archive. The screen
+  // address is kept, so signing in again returns to it.
+  const [sessionNotice, setSessionNotice] = useState("");
+  useEffect(() => onSessionEnded(() => {
+    const previous = signedInAs.current;
+    if (!previous) return;
+    signedInAs.current = null; // one check at a time
+    const ended = () => {
+      setSelectedDocument(null);
+      setShowAdd(false);
+      setShowShortcuts(false);
+      setMenuOpen(false);
+      setSessionNotice(m.sessionEnded);
+    };
+    request<Session>("/api/session")
+      .then((value) => {
+        if (value.authenticated) signedInAs.current = value.username; // a false alarm: nothing is closed, carry on
+        else ended();
+        setSession(value);
+      })
+      .catch(() => {
+        ended();
+        setSession((current) => current ? { ...current, authenticated: false, username: null, owner: false } : current);
+      });
+  }), [m]);
+
   useEffect(() => {
     if (session?.authenticated) window.RipianoAndroid?.postMessage("retry");
   }, [session?.authenticated]);
+
+  // Owner-only screens opened from an address by someone else fall back to the Library.
+  useEffect(() => {
+    if (session?.authenticated && !session.owner && OWNER_VIEWS.includes(view)) {
+      replaceNextUrl.current = true;
+      setView("documents");
+    }
+  }, [session?.authenticated, session?.owner, view]);
+
+  // A list kept on screen while offline belongs to the person who loaded it: never carry it over to
+  // the next sign-in on this device.
+  useEffect(() => {
+    setDocuments([]);
+    setCountsKnown(false);
+    setStaleSince(null);
+    listLoadedRef.current = false;
+    lastLoadedAt.current = null;
+  }, [session?.username]);
+
+  // Back online: load the list again straight away.
+  useEffect(() => {
+    if (!staleSince || !session?.authenticated) return;
+    const retry = () => void loadDocuments(query);
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [staleSince, session?.authenticated, query, loadDocuments]);
 
   useEffect(() => {
     if (!session?.authenticated || view !== "documents") return;
@@ -1026,7 +1275,7 @@ function App() {
         form.append("document", new File([item.blob], item.name, { type: item.type }));
         if (signedInAs.current !== owner) break; // someone else signed in meanwhile: never send into their account
         try {
-          await request<Document>("/api/documents", { method: "POST", body: form });
+          await request<Document>("/api/documents", { method: "POST", body: form, headers: { "X-Ripiano-Scan-ID": item.scanId ?? uploadQueue.newScanId(), "X-Ripiano-Client": "web" } });
           sent += 1;
           await uploadQueue.forget(item.id);
         } catch (cause) {
@@ -1065,20 +1314,27 @@ function App() {
     setFilters({ ...emptyLibraryFilters });
     setError("");
     setUploadReport(null);
+    setUploadDone(null);
     try {
       const failures: string[] = [];
+      const added: string[] = [];
       for (const [index, file] of chosen.entries()) {
         setUploadProgress(l.addingProgress(index + 1, chosen.length));
+        // One ID per file from its first attempt: if the answer is lost and the file is sent again from the
+        // queue, the server recognises it instead of storing a second copy.
+        const scanId = uploadQueue.newScanId();
         try {
           const form = new FormData();
           form.append("document", file);
-          await request<Document>("/api/documents", {
+          const created = await request<Document>("/api/documents", {
             method: "POST",
             body: form,
+            headers: { "X-Ripiano-Scan-ID": scanId, "X-Ripiano-Client": "web" },
           });
+          added.push(created.id);
         } catch (cause) {
           // Offline or the server is restarting: keep the file and send it later instead of losing it.
-          if (cause instanceof ApiError && uploadQueue.isRetryable(cause.status) && session?.username && await uploadQueue.keep(session.username, file)) {
+          if (cause instanceof ApiError && uploadQueue.isRetryable(cause.status) && session?.username && await uploadQueue.keep(session.username, file, scanId)) {
             continue; // shown in the "waiting to upload" banner, not as a rejected file
           } else {
             failures.push(`${file.name}: ${cause instanceof Error ? cause.message : l.uploadFailed}`);
@@ -1088,6 +1344,11 @@ function App() {
       await refreshWaiting();
       await loadDocuments("");
       if (failures.length) setUploadReport({ total: chosen.length, failures });
+      if (added.length) {
+        setUploadDone({ count: added.length, firstId: added[0] });
+        // On a phone the new card sits far below the fold: bring it into view.
+        if (window.matchMedia("(max-width: 800px)").matches) setRevealDocument(added[0]);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : l.uploadFailed);
     } finally {
@@ -1133,8 +1394,12 @@ function App() {
       await request("/api/session", { method: "DELETE" });
       setSession(await request<Session>("/api/session"));
       setDocuments([]);
-      // The next person to sign in on this device starts at the Library, with nothing left open.
+      // The next person to sign in on this device starts at the Library (/), with nothing left open.
+      // Only when something will actually change: otherwise the flag would linger and make the first
+      // navigation after the next sign-in replace the entry, so Back would leave the app.
+      replaceNextUrl.current = view !== "documents" || selectedDocument !== null;
       setSelectedDocument(null);
+      setMenuOpen(false);
       setView("documents");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.signOutError);
@@ -1162,11 +1427,21 @@ function App() {
     );
   if (!session.authenticated)
     return (
-      <AuthScreen setup={session.setup_required} onAuthenticated={setSession}
+      <AuthScreen setup={session.setup_required}
+        onAuthenticated={(value) => { setSessionNotice(""); setSession(value); }}
+        notice={sessionNotice}
         appearance={appearance} onAppearanceChange={changeAppearance} />
     );
 
-  const isEmpty = counts.total === 0;
+  const isEmpty = countsKnown && counts.total === 0;
+  const savedSearchBar = (
+    <SavedSearchBar query={query} filters={filters} onApply={(savedQuery, savedFilters) => {
+      setQuery(savedQuery);
+      setFilters(savedFilters);
+      setNextCursor(null);
+      setShowFilters(Object.values(savedFilters).some(Boolean));
+    }} />
+  );
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => !["custom_value", "custom_min", "custom_max"].includes(key) && Boolean(value)).length;
   const selectedCustomField = filterOptions.custom_fields.find((field) => field.id === filters.custom_field_id);
   const tagById = new Map(filterOptions.tags.map((tag) => [tag.id, tag]));
@@ -1174,13 +1449,14 @@ function App() {
     tagPathLabel(a, tagById).localeCompare(tagPathLabel(b, tagById)));
   const viewLabels = viewLabelsFor(m);
 
-  type View = typeof view;
   const navItems: [View, typeof Inbox, string][] = [
     ["inbox", Inbox, m.inbox], ["documents", FolderOpen, m.allDocuments], ["actions", ClipboardList, m.needsAction],
     ["tags", TagIcon, m.tags], ["physical", MapPin, m.physical], ["overview", BarChart3, m.overview],
     ["workflows", Workflow, m.workflows], ["security", ShieldCheck, m.security], ["integrations", Mail, m.email],
     ["sources", Cloud, m.sources], ["shared", Users, m.shared], ["trash", Trash2, m.trash],
-    ...(session.owner ? [["agents", Bot, m.agents], ["people", UserCog, m.people], ["backups", DatabaseBackup, m.backups]] as [View, typeof Inbox, string][] : []),
+    // Everyone may connect agents to their own archive; instance settings stay with the admin.
+    ["agents", Bot, m.agents],
+    ...(session.owner ? [["people", UserCog, m.people], ["backups", DatabaseBackup, m.backups]] as [View, typeof Inbox, string][] : []),
   ];
 
   return (
@@ -1197,14 +1473,16 @@ function App() {
       onDrop={drop}
     >
       <a className="skip-link" href="#main-content">{m.skipToContent}</a>
+      <p className="visually-hidden" aria-live="polite" aria-atomic="true">{appAnnouncement}</p>
       {showShortcuts && <KeyboardHelp onClose={() => setShowShortcuts(false)} />}
-      <aside className={`sidebar ${menuOpen ? "sidebar-open" : ""}`}>
+      <aside id="app-sidebar" ref={sidebarRef} className={`sidebar ${menuOpen ? "sidebar-open" : ""}`}
+        inert={narrowLayout && !menuOpen} aria-hidden={narrowLayout && !menuOpen ? true : undefined}>
         <div className="sidebar-brand">
           <span className="brand-mark">
             <FolderOpen size={22} strokeWidth={2.1} />
           </span>
           <span>ripiano</span>
-          <button className="sidebar-close" aria-label={m.dismissNavigation} onClick={() => setMenuOpen(false)}>
+          <button className="sidebar-close" aria-label={m.dismissNavigation} onClick={closeMenu}>
             <X size={19} />
           </button>
         </div>
@@ -1260,15 +1538,21 @@ function App() {
           )}
         </div>
       </aside>
+      {/* Tapping anywhere outside the open phone menu closes it (Esc does the same on a keyboard). */}
+      {narrowLayout && menuOpen && <div className="sidebar-backdrop" aria-hidden="true" onClick={closeMenu} />}
 
       <main className="main-content" id="main-content" tabIndex={-1}>
-        <header className="topbar">
+        <header className={`topbar${view === "documents" ? " topbar-with-add" : ""}`}>
           <button
+            ref={menuButtonRef}
+            type="button"
             className="icon-button mobile-menu"
             onClick={() => setMenuOpen(!menuOpen)}
             aria-label={m.toggleMenu}
+            aria-expanded={menuOpen}
+            aria-controls="app-sidebar"
           >
-            <Menu size={21} />
+            <Menu size={21} aria-hidden="true" />
           </button>
           <div className="topbar-crumb">
             {m.yourArchive} <span>/</span> {viewLabels[view]}
@@ -1276,6 +1560,13 @@ function App() {
           <div className="topbar-right">
             <span className="private-dot" /> {m.privateAndYours}
           </div>
+          {/* On a phone, adding a document is the main action: it sits in the top bar, in thumb reach
+              of the list, instead of under the search and filter controls. */}
+          {view === "documents" && (
+            <Button className="topbar-add" onClick={() => setShowAdd(true)}>
+              <Plus size={18} aria-hidden="true" /> {l.addShort}
+            </Button>
+          )}
         </header>
         <section className={`page-content${view === "documents" && query.trim() ? " library-searching" : ""}`}>
           {view === "backups" ? (
@@ -1293,7 +1584,8 @@ function App() {
           ) : view === "agents" ? (
             <>
               <AgentPanel />
-              <div className="semantic-settings"><SemanticPanel /></div>
+              {/* Semantic search is an instance-wide setting: admin only. */}
+              {session.owner && <div className="semantic-settings"><SemanticPanel /></div>}
             </>
           ) : view === "overview" ? (
             <OverviewPanel onNavigate={(target) => setView(target)}
@@ -1329,7 +1621,7 @@ function App() {
             />
           ) : (
             <>
-              <div className="page-heading">
+              <div className="page-heading library-heading">
                 <div>
                   <div className="eyebrow">
                     <span className="eyebrow-line" /> {l.eyebrow}
@@ -1354,7 +1646,7 @@ function App() {
                     <FileText size={20} />
                   </span>
                   <div>
-                    <strong>{counts.total}</strong>
+                    <strong>{countsKnown ? counts.total : "–"}</strong>
                     <span>{query || activeFilterCount ? l.matchingDocuments : l.documents}</span>
                   </div>
                 </div>
@@ -1363,7 +1655,7 @@ function App() {
                     <Check size={20} />
                   </span>
                   <div>
-                    <strong>{counts.ready}</strong>
+                    <strong>{countsKnown ? counts.ready : "–"}</strong>
                     <span>{l.readyToFind}</span>
                   </div>
                 </div>
@@ -1372,27 +1664,24 @@ function App() {
                     <Clock3 size={20} />
                   </span>
                   <div>
-                    <strong>{counts.waiting}</strong>
+                    <strong>{countsKnown ? counts.waiting : "–"}</strong>
                     <span>{l.beingProcessed}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="section-heading">
+              <div className="section-heading library-section-heading">
                 <div>
                   <h2>{l.yourDocuments}</h2>
                   <p>{l.searchIntro}</p>
+                  {/* Phones show the counts as one line instead of the three cards above. */}
+                  {countsKnown && <p className="library-counts">{l.compactCounts(counts.total, counts.waiting, Boolean(query || activeFilterCount))}</p>}
                 </div>
                 <Button type="button" variant="secondary" aria-label={l.refresh} title={l.refreshTitle} onClick={() => void loadDocuments(query)}>
                   <RotateCcw size={16} /> <span className="refresh-label">{l.refresh}</span>
                 </Button>
               </div>
-              <SavedSearchBar query={query} filters={filters} onApply={(savedQuery, savedFilters) => {
-                setQuery(savedQuery);
-                setFilters(savedFilters);
-                setNextCursor(null);
-                setShowFilters(Object.values(savedFilters).some(Boolean));
-              }} />
+              {!phoneLayout && savedSearchBar}
               <div className="toolbar">
                 <div className="search-box">
                   <Search size={19} />
@@ -1425,15 +1714,9 @@ function App() {
                 <Button type="button" variant="secondary" className="filter-toggle" aria-expanded={showFilters} aria-controls="library-filters" onClick={() => setShowFilters((current) => !current)}>
                   <SlidersHorizontal size={17} /> {l.filters}{activeFilterCount ? ` (${activeFilterCount})` : ""}
                 </Button>
-                <Button
-                  variant="secondary"
-                  className="mobile-add"
-                  onClick={() => setShowAdd(true)}
-                >
-                  <Plus size={18} /> {l.addShort}
-                </Button>
               </div>
-              <details className="search-syntax">
+              {phoneLayout && showFilters && savedSearchBar}
+              <details className={`search-syntax${phoneLayout && !showFilters ? " phone-collapsed" : ""}`}>
                 <summary>{l.preciseSearch}</summary>
                 <p>{l.searchHelpUse} <code>{l.tagExample}</code>, <code>{l.senderExample}</code>, <code>date:2026-04-15</code> {l.searchHelpOr} <code>is:untagged</code>. {l.searchHelpAlso} <code>title:</code>, <code>text:</code>, <code>note:</code>, <code>type:</code>, <code>sticker:</code>, {l.searchHelpOr} <code>is:tagged</code>. {l.searchHelpCombine} {l.searchHelpPress} <kbd>/</kbd> {l.searchHelpToSearch} <kbd>N</kbd> {l.searchHelpToAdd}</p>
               </details>
@@ -1483,6 +1766,13 @@ function App() {
                   <button onClick={() => void loadDocuments(query)}>{l.retry}</button>
                 </div>
               )}
+              {staleSince && (
+                <div className="stale-notice" role="status">
+                  <WifiOff size={18} aria-hidden="true" />
+                  <span>{l.offlineShowingLast(formatTime(staleSince))}</span>
+                  <button type="button" className="text-action" onClick={() => void loadDocuments(query)}>{l.retry}</button>
+                </div>
+              )}
               {waitingUploads > 0 && (
                 <div className="upload-progress" role="status" aria-live="polite">
                   <UploadCloud size={19} /> {l.waitingUploads(waitingUploads)}
@@ -1494,6 +1784,18 @@ function App() {
                   <UploadCloud size={19} /> {uploadProgress || l.addingDocument}
                 </div>
               )}
+              <div className="upload-done-region" aria-live="polite" aria-atomic="true">
+                {uploadDone && !uploading && (
+                  <div className="upload-progress upload-done">
+                    <Check size={19} aria-hidden="true" /> <span>{l.addedDocuments(uploadDone.count)}</span>
+                    {documents.some((doc) => doc.id === uploadDone.firstId) && (
+                      <button type="button" className="text-action" aria-label={l.showAddedLabel(uploadDone.count)}
+                        onClick={() => setRevealDocument(uploadDone.firstId)}>{l.showAdded}</button>
+                    )}
+                    <button type="button" className="upload-done-dismiss" aria-label={l.dismissAdded} onClick={() => setUploadDone(null)}><X size={16} aria-hidden="true" /></button>
+                  </div>
+                )}
+              </div>
               {!listError && (!isEmpty || selectionMode || bulkNotice) && <div className="bulk-controls">
                 <button type="button" className="text-action" disabled={bulkBusy || (isEmpty && !selectionMode)} onClick={() => { setSelectionMode(!selectionMode); setSelectedIds([]); setConfirmBulkTrash(false); setBulkError(""); setBulkNotice(""); }}>
                   {selectionMode ? l.doneSelecting : l.selectDocuments}
@@ -1616,7 +1918,7 @@ function App() {
                 <>
                 <div className="document-list">
                   {documents.map((doc, index) => (
-                    <article className={`document-row${activeRow === index ? " keyboard-active" : ""}`} key={doc.id} aria-current={activeRow === index ? "true" : undefined}>
+                    <article className={`document-row${activeRow === index ? " keyboard-active" : ""}`} key={doc.id} data-document-id={doc.id} aria-current={activeRow === index ? "true" : undefined}>
                       {selectionMode ? <label className="document-select">
                         <input type="checkbox" checked={selectedIds.includes(doc.id)} disabled={bulkBusy || (selectedIds.length >= 100 && !selectedIds.includes(doc.id))} onChange={() => toggleSelected(doc.id)} />
                         <span className="visually-hidden">{l.selectDocument(doc.title)}</span>
@@ -1834,7 +2136,11 @@ function App() {
           key={selectedDocument.id}
           initial={selectedDocument}
           onClose={() => setSelectedDocument(null)}
-          onSaved={() => { void loadDocuments(query); void loadFilterOptions(); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }}
+          onSaved={(saved, closing) => {
+            void loadDocuments(query); void loadFilterOptions(); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1);
+            // The dialog closes on save: say so, since nothing else on screen changes visibly.
+            if (closing) setAppAnnouncement(l.documentSaved(saved.title));
+          }}
           onTrashed={() => { void loadDocuments(query); setTrashRefresh((value) => value + 1); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1); }}
           onOpenTags={() => {
             setSelectedDocument(null);

@@ -20,6 +20,11 @@ app.conf.beat_schedule = {
         "task": "archive.tasks.semantic_index",
         "schedule": 900.0,
     },
+    # Indexes documents that predate the stored search vector (after an upgrade); a quick no-op afterwards.
+    "index-search-text": {
+        "task": "archive.tasks.index_search_text",
+        "schedule": 300.0,
+    },
     "reconcile-pending-documents": {
         "task": "archive.tasks.reconcile_pending_documents",
         "schedule": 60.0,

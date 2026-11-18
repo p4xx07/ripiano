@@ -17,7 +17,8 @@ def test_named_grants_are_hashed_scoped_and_revocable():
     user = get_user_model().objects.create_user("other", password="secure-password-2")
     client = Client()
     client.force_login(user)
-    assert client.get("/api/agents").status_code == 403
+    assert client.get("/api/agents").json()["grants"] == []  # members manage only their own agents
+    assert Client().get("/api/agents").status_code == 403
     client.force_login(owner)
     tag = Tag.objects.create(owner=owner, name="Bills")
     response = client.post("/api/agents", json.dumps({
@@ -197,3 +198,55 @@ def test_low_level_errors_become_readable_messages():
     sentence = "This PDF is locked. Add its password to a workflow, then retry."
     assert readable_error(sentence, "x") == sentence
     assert all(text.endswith(".") for text in PROCESSING_ERRORS.values())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_agent_cannot_change_tags_that_limit_another_agent():
+    owner = get_user_model().objects.create_superuser("owner", password="secure-password-1")
+    tag_a, tag_b = Tag.objects.create(owner=owner, name="Agent A docs"), Tag.objects.create(owner=owner, name="Agent B docs")
+    other = Tag.objects.create(owner=owner, name="Bills")
+    reader = AgentGrant.objects.create(owner=owner, name="Cloud reader", token_hash="d" * 64, filter_tag=tag_a,
+                                       scopes=["documents:search", "documents:text"], expires_at="2099-01-01T00:00:00Z")
+    tagger = AgentGrant.objects.create(owner=owner, name="Local tagger", token_hash="e" * 64, filter_tag=tag_b,
+                                       scopes=["documents:search", "documents:tag"], expires_at="2099-01-01T00:00:00Z")
+    private = Document.objects.create(owner=owner, title="Payslip", original_name="p.pdf", original_path="p",
+                                      original_mime="application/pdf", original_sha256="c" * 64, original_size=1, extracted_text="salary")
+    DocumentTag.objects.create(document=private, tag=tag_b)
+    _, refused = _execute(tagger, "change_document_tags", {"document_id": str(private.id), "add": [str(tag_a.id)]})
+    assert "another agent" in refused["error"]
+    assert not DocumentTag.objects.filter(document=private, tag=tag_a).exists()
+    _, removed = _execute(tagger, "change_document_tags", {"document_id": str(private.id), "remove": [str(tag_a.id)]})
+    assert "another agent" in removed["error"]
+    _, allowed = _execute(tagger, "change_document_tags", {"document_id": str(private.id), "add": [str(other.id)]})
+    assert "error" not in allowed
+    _, unseen = _execute(reader, "get_document_text", {"document_id": str(private.id)})
+    assert "error" in unseen  # the reader still cannot see it
+    reader.revoked_at = "2026-01-01T00:00:00Z"
+    reader.save()
+    _, after_revoke = _execute(tagger, "change_document_tags", {"document_id": str(private.id), "add": [str(tag_a.id)]})
+    assert "error" not in after_revoke  # a revoked grant no longer guards its tag
+
+
+@pytest.mark.django_db
+def test_members_connect_agents_to_their_own_archive_only():
+    owner = get_user_model().objects.create_superuser("owner", password="secure-password-1")
+    member = get_user_model().objects.create_user("member", password="secure-password-2")
+    Document.objects.create(owner=owner, title="Owner tax return", original_name="t.pdf", original_path="t",
+                            original_mime="application/pdf", original_sha256="d" * 64, original_size=1, status=Document.Status.READY)
+    mine = Document.objects.create(owner=member, title="Member payslip", original_name="m.pdf", original_path="m",
+                                   original_mime="application/pdf", original_sha256="e" * 64, original_size=1, status=Document.Status.READY)
+    owners_grant = AgentGrant.objects.create(owner=owner, name="Owner agent", token_hash="f" * 64, scopes=["documents:search"],
+                                             expires_at="2099-01-01T00:00:00Z")
+    client = Client()
+    client.force_login(member)
+    created = client.post("/api/agents", json.dumps({"name": "My agent", "scopes": ["documents:search"], "expires_in_days": 7}),
+                          content_type="application/json")
+    assert created.status_code == 201
+    grant = AgentGrant.objects.get(owner=member)
+    _, found = _execute(grant, "search_documents", {"query": ""})
+    titles = [item["title"] for item in found.get("documents", [])]
+    assert titles == [mine.title], found
+    assert [item["name"] for item in client.get("/api/agents").json()["grants"]] == ["My agent"]
+    assert client.delete(f"/api/agents/{owners_grant.id}").status_code == 404
+    owners_grant.refresh_from_db()
+    assert owners_grant.revoked_at is None

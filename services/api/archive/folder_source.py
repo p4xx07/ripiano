@@ -4,6 +4,7 @@ Paths always stay inside the mounted root; symbolic links are never followed. Fi
 last minute are left for the next check, so a scanner that is still writing is not imported half-done.
 """
 
+import errno
 import os
 import shutil
 import time
@@ -113,7 +114,21 @@ class FolderBackend:
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
                 target = target.with_name(f"{target.stem}-{int(time.time())}{target.suffix}")
-            shutil.move(str(source), str(target))
+            # Removing the original needs write access to its folder. Check first: otherwise a copy into the processed
+            # folder would be made on every check while the original stays (judge 1 round 2, H2).
+            if not os.access(source.parent, os.W_OK):
+                raise PermissionError(errno.EACCES, "no write access", str(source.parent))
+            try:
+                os.rename(source, target)
+            except OSError as exc:
+                if exc.errno != errno.EXDEV:
+                    raise
+                shutil.copy2(source, target)  # another filesystem: copy, then remove the original
+                try:
+                    source.unlink()
+                except OSError:
+                    target.unlink(missing_ok=True)  # never leave a second copy behind
+                    raise
         except OSError as exc:
             raise SourceError(f"Ripiano cannot move “{entry.relative}” (it needs write access to the mounted NAS folder)") from exc
 

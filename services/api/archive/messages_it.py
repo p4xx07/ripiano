@@ -2,6 +2,7 @@
 
 EXACT = {
     "Invalid credentials": "Credenziali non valide",
+    "This tag limits another agent's access; only a person can add or remove it": "Questa etichetta limita l'accesso di un altro agente; solo una persona può aggiungerla o rimuoverla",
     "Text recognition failed for this file. Check that it opens correctly, then choose Retry OCR. Details are in the worker log.": "Il riconoscimento del testo non è riuscito per questo file. Verifica che si apra correttamente, poi scegli Riprova l'OCR. I dettagli sono nel log del worker.",
     "The backup failed. Details are in the maintenance worker log.": "Il backup non è riuscito. I dettagli sono nel log del worker di manutenzione.",
     "Ripiano cannot write to the backup folder. Check the permissions of the mounted backup folder on the NAS.": "Ripiano non può scrivere nella cartella dei backup. Controlla i permessi della cartella di backup montata sul NAS.",
@@ -341,6 +342,7 @@ EXACT = {
     "NAS browse manifest contains an unsafe path": "L'elenco dei file del NAS contiene un percorso non sicuro",
     "NAS browse manifest is a link": "Il manifest della copia di consultazione sul NAS è un link",
     "Name must be 1–100 characters": "Il nome deve avere da 1 a 100 caratteri",
+    "An active agent already uses this name": "Un agente attivo usa già questo nome",
     "Name must be at most 150 characters": "Il nome può contenere al massimo 150 caratteri",
     "Note must be 1–2000 characters": "La nota deve contenere da 1 a 2000 caratteri",
     "Note not found": "Nota non trovata",
@@ -598,4 +600,19 @@ VALUES = {
     "Recursive": "Ricorsivo",
     "Storage path": "Percorso di archiviazione",
     "Custom field": "Campo personalizzato",
+}
+
+# Display text the API itself puts in JSON or printable pages (not errors); see api_language.display().
+DISPLAY = {
+    "No type": "Nessun tipo",
+    "Initial placement": "Prima collocazione",
+    "Move": "Spostamento",
+    "Marked missing": "Segnata come mancante",
+    "Marked found": "Segnata come ritrovata",
+    "Location not assigned": "Posizione non assegnata",
+    "location": "posizione",
+    "tag": "etichetta",
+    "Ripiano location {0}": "Ripiano posizione {0}",
+    "Ripiano sticker {0}": "Ripiano adesivo {0}",
+    "Ripiano tag {0}": "Ripiano etichetta {0}",
 }

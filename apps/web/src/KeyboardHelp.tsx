@@ -27,13 +27,13 @@ export default function KeyboardHelp({ onClose }: { onClose: () => void }) {
         {row(["n"], m.add)}
         {row(["?"], m.help)}
         {row(["Esc"], m.closeDialog)}
-        {GO_TO_KEYS.map((key) => row(["g", key], `${m.goTo} ${m.place(key)}`))}
+        {GO_TO_KEYS.map((key) => row(["g", key], m.goTo(key)))}
       </dl>
       <h3>{m.library}</h3>
       <dl>
         {row(["j"], m.next)}
         {row(["k"], m.previous)}
-        {row(["Enter"], m.open)}
+        {row([m.enterKey], m.open)}
       </dl>
     </Modal>
   );

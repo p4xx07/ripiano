@@ -1,14 +1,25 @@
 /**
  * Uploads that could not reach Ripiano (offline, server restarting) wait here, in this browser's IndexedDB, and are
- * sent again when the connection returns. A file the server already received may be stored twice if the answer was lost;
- * exact copies are flagged as duplicates for review. Entries belong to one signed-in person and are only sent while that
+ * sent again when the connection returns. Each file keeps the scan ID of its first attempt, so a file the server already
+ * received (the answer was lost) is recognised on retry instead of being stored twice. Entries belong to one signed-in person and are only sent while that
  * person is signed in; signing out asks whether to keep or discard them.
  */
 
 const DB_NAME = "ripiano-uploads";
 const STORE = "pending";
 
-export type PendingUpload = { id: string; owner: string; name: string; type: string; blob: Blob; addedAt: number };
+/** `scanId` is sent as X-Ripiano-Scan-ID so a retry of a file the server already received is recognised, not added twice.
+ *  Entries saved before it existed have none and get one when they are sent. */
+export type PendingUpload = { id: string; owner: string; name: string; type: string; blob: Blob; addedAt: number; scanId?: string };
+
+/** A random UUID (version 4). crypto.randomUUID needs a secure context; a NAS on plain http does not have one. */
+export function newScanId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -35,10 +46,10 @@ async function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) 
 }
 
 /** Keep a file for a later retry. Returns false when the browser cannot store it (private mode, quota). */
-export async function keep(owner: string, file: File): Promise<boolean> {
+export async function keep(owner: string, file: File, scanId: string = newScanId()): Promise<boolean> {
   try {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    await run("readwrite", (store) => store.put({ id, owner, name: file.name, type: file.type, blob: file, addedAt: Date.now() } satisfies PendingUpload));
+    await run("readwrite", (store) => store.put({ id, owner, name: file.name, type: file.type, blob: file, addedAt: Date.now(), scanId } satisfies PendingUpload));
     return true;
   } catch {
     return false;

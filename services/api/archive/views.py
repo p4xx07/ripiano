@@ -11,7 +11,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
-from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
+from django.contrib.postgres.search import SearchRank
 from django.db import IntegrityError, connection, transaction
 from django.db.models import BigIntegerField, BooleanField, Case, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, Value, When, prefetch_related_objects
 from django.db.models.functions import Cast, Lower, Substr
@@ -20,7 +20,7 @@ from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
-from . import search_syntax
+from . import fulltext, search_syntax
 from .field_labels import label
 from .models import StoragePath, BackupRun, Correspondent, CustomField, CustomFieldValue, Document, DocumentNote, DocumentTag, DocumentType, PhysicalCopy, ShareLink, Tag, TagOverride
 from . import two_factor
@@ -153,6 +153,14 @@ def _excerpt(text, query):
             match = re.search(re.escape(term), text, re.IGNORECASE)
             if match:
                 break
+        else:
+            # Stemmed full-text hits ("rifiuto" found "rifiuti"): show the word sharing the stem.
+            for term in terms:
+                if len(term) < 5:
+                    continue
+                match = re.search(r"\b" + re.escape(term[:max(4, len(term) - 2)]) + r"\w*", text, re.IGNORECASE)
+                if match:
+                    break
     if match is None:
         return ""
     start = max(0, match.start() - 32)
@@ -466,8 +474,8 @@ def documents(request):
                 field_match=Exists(CustomFieldValue.objects.filter(document_id=OuterRef("pk"), field__owner=request.user, value__icontains=free_query)) if not shared else Value(False, output_field=BooleanField()),
             )
             if connection.vendor == "postgresql":
-                vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
-                search_query = SearchQuery(free_query, search_type="plain", config="simple")
+                vector = fulltext.StoredSearchVector()
+                search_query = fulltext.search_query(free_query)
                 queryset = queryset.annotate(
                     search_vector=vector,
                     search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField()),
@@ -507,8 +515,7 @@ def documents(request):
                         ranks[doc_id] = ranks.get(doc_id, 0) + int(HYBRID_SCORE_SCALE / (HYBRID_RRF_K + rank))
                     queryset = filtered_queryset.filter(Q(pk__in=keyword_queryset.values("pk")) | Q(pk__in=semantic_ids))
                     if connection.vendor == "postgresql":
-                        vector = SearchVector("title", weight="A", config="simple") + SearchVector("extracted_text", weight="B", config="simple") + SearchVector("action_note", weight="C", config="simple")
-                        queryset = queryset.annotate(search_score=Cast(SearchRank(vector, SearchQuery(free_query, search_type="plain", config="simple")) * 1000000, BigIntegerField()))
+                        queryset = queryset.annotate(search_score=Cast(SearchRank(fulltext.StoredSearchVector(), fulltext.search_query(free_query)) * 1000000, BigIntegerField()))
                     else:
                         queryset = queryset.annotate(search_score=Value(0, output_field=BigIntegerField()))
                     queryset = queryset.annotate(hybrid_score=Case(
@@ -592,21 +599,24 @@ def documents(request):
     if upload is None:
         return JsonResponse({"error": "Missing document file"}, status=400)
     scan_id = request.headers.get("X-Ripiano-Scan-ID", "")
+    # The Android client sends a scan ID for every capture; the web app sends one too (with X-Ripiano-Client: web) so a
+    # retried upload whose answer was lost is recognised. The ID is only compared within the same input channel.
+    scan_source = Document.Source.WEB if request.headers.get("X-Ripiano-Client", "") == "web" else Document.Source.ANDROID
     if scan_id:
         try:
             scan_id = str(UUID(scan_id))
         except ValueError:
             return JsonResponse({"error": "Invalid scan ID"}, status=400)
-        existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").first()
+        existing = Document.objects.filter(owner=request.user, source=scan_source, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").first()
         if existing:
             if existing.trashed_at:
                 return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
             return JsonResponse(_document_json(existing), status=200)
     try:
-        document = ingest_document(request.user, upload, source=Document.Source.ANDROID if scan_id else Document.Source.WEB, source_ref=scan_id)
+        document = ingest_document(request.user, upload, source=scan_source if scan_id else Document.Source.WEB, source_ref=scan_id)
     except IntegrityError:
         if scan_id:
-            existing = Document.objects.filter(owner=request.user, source=Document.Source.ANDROID, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").first()
+            existing = Document.objects.filter(owner=request.user, source=scan_source, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").first()
             if existing:
                 if existing.trashed_at:
                     return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
@@ -1222,6 +1232,17 @@ def _restart_document_processing(request, document_id, allowed_statuses, conflic
     return JsonResponse(_document_json(document), status=202)
 
 
+def _backup_error(request, text):
+    """A stored backup error for people: older runs kept raw OS text; shown in the request's language."""
+    from .api_language import to_italian, wants_italian
+    from .tasks import PROCESSING_ERRORS, readable_error
+
+    if not text:
+        return text
+    text = PROCESSING_ERRORS["backup_permission"] if text.startswith("[Errno 13]") else readable_error(text, PROCESSING_ERRORS["backup"])
+    return to_italian(text) if wants_italian(request) else text
+
+
 @require_http_methods(["GET", "POST"])
 def backups(request):
     if not request.user.is_authenticated or not request.user.is_superuser:
@@ -1231,7 +1252,7 @@ def backups(request):
             "schedule": f"{settings.RIPIANO_BACKUP_HOUR:02d}:{settings.RIPIANO_BACKUP_MINUTE:02d} Europe/Rome",
             "runs": [{
                 "id": str(run.id), "status": run.status, "trigger": run.trigger,
-                "snapshot_name": run.snapshot_name, "error": run.error,
+                "snapshot_name": run.snapshot_name, "error": _backup_error(request, run.error),
                 "created_at": run.created_at.isoformat(),
                 "can_cancel": run.status == BackupRun.Status.PENDING,
                 "can_retry": run.status in {BackupRun.Status.FAILED, BackupRun.Status.CANCELLED} and not hasattr(run, "retry_run"),

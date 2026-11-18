@@ -8,8 +8,17 @@ const italianStatus: Record<string, string> = {
   cancelled: "annullato",
 };
 
+// Trigger values stored by the API (archive/models.py BackupRun.trigger): "schedule", "manual", "retry".
+const englishTrigger: Record<string, string> = {
+  manual: "manual",
+  schedule: "scheduled",
+  scheduled: "scheduled",
+  retry: "retry",
+};
+
 const italianTrigger: Record<string, string> = {
   manual: "manuale",
+  schedule: "pianificato",
   scheduled: "pianificato",
   retry: "nuovo tentativo",
 };
@@ -40,7 +49,9 @@ export default defineMessages({
   runningHint: "Finishing safely; active jobs cannot be stopped.",
   removed: "Removed",
   status: (status: string) => status,
-  trigger: (trigger: string) => trigger,
+  trigger: (trigger: string) => englishTrigger[trigger] ?? trigger,
+  // Older runs stored the raw system error (for example "[Errno 13] Permission denied: …").
+  rawJobError: "This job stopped because of a system error. Check that the backup volume is mounted and writable, then try again.",
   cancelBrowseLabel: (id: string) => `Cancel queued NAS copy ${id}`,
   retryBrowseLabel: (id: string) => `Retry NAS copy ${id}`,
   cancelBackupLabel: (id: string) => `Cancel queued backup ${id}`,
@@ -83,6 +94,7 @@ export default defineMessages({
   removed: "Rimossa",
   status: (status: string) => italianStatus[status] ?? status,
   trigger: (trigger: string) => italianTrigger[trigger] ?? trigger,
+  rawJobError: "L'attività si è interrotta per un errore di sistema. Controlla che il volume di backup sia montato e scrivibile, poi riprova.",
   cancelBrowseLabel: (id: string) => `Annulla la copia NAS in coda ${id}`,
   retryBrowseLabel: (id: string) => `Riprova la copia NAS ${id}`,
   cancelBackupLabel: (id: string) => `Annulla il backup in coda ${id}`,

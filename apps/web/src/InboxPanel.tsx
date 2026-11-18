@@ -116,13 +116,13 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
         {documents.map((document) => <article className="document-row exception-row" key={document.id}>
           <div className="document-icon">{document.status === "failed" ? <AlertCircle size={21} /> : <FileText size={21} />}</div>
           <div className="document-info">
-            <h3><button className="document-title-button" onClick={() => onOpenDocument(document)}>{document.title}</button></h3>
+            <h3><button id={`inbox-title-${document.id}`} className="document-title-button" onClick={() => onOpenDocument(document)}>{document.title}</button></h3>
             {document.status === "failed" && <p className="doc-error">{m.ocrFailed(document.error)}</p>}
             {document.duplicate_of && !document.duplicate_reviewed_at && <p><Copy size={13} />{m.exactCopy(document.duplicate_of.title)}</p>}
           </div>
           <div className="exception-actions">
-            {document.status === "failed" && <Button type="button" variant="secondary" disabled={busyId === document.id} onClick={() => void retry(document)}><RotateCcw size={16} /> {m.tryOcrAgain}</Button>}
-            {document.duplicate_of && !document.duplicate_reviewed_at && <Button type="button" variant="secondary" disabled={busyId === document.id} onClick={() => void keepBoth(document)}><Check size={16} /> {m.keepBoth}</Button>}
+            {document.status === "failed" && <Button type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} disabled={busyId === document.id} onClick={() => void retry(document)}><RotateCcw size={16} /> {m.tryOcrAgain}</Button>}
+            {document.duplicate_of && !document.duplicate_reviewed_at && <Button type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} disabled={busyId === document.id} onClick={() => void keepBoth(document)}><Check size={16} /> {m.keepBoth}</Button>}
           </div>
         </article>)}
       </div>

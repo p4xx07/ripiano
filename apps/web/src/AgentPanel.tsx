@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Check, Copy, LockKeyhole, Plus, Shield, X } from "lucide-react";
 import { formatDate, formatDateTime, request, Tag } from "./api";
 import { Button } from "./ui";
@@ -55,6 +55,10 @@ export default function AgentPanel() {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Screen-reader announcements; focus moves with each result so it never falls back to the page.
+  const [announcement, setAnnouncement] = useState("");
+  const [focusTarget, setFocusTarget] = useState<{ kind: "token" } | { kind: "grant" | "revoke"; id: string } | null>(null);
+  const tokenCardRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -75,6 +79,17 @@ export default function AgentPanel() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!focusTarget) return;
+    let element: HTMLElement | null = null;
+    if (focusTarget.kind === "token") element = tokenCardRef.current;
+    else element = document.querySelector<HTMLElement>(`[data-agent-${focusTarget.kind}="${CSS.escape(focusTarget.id)}"]`);
+    if (!element) return;
+    setFocusTarget(null);
+    element.scrollIntoView({ block: "center" });
+    element.focus({ preventScroll: true });
+  }, [focusTarget, grants, newToken]);
 
   function toggleScope(scope: string) {
     setScopes((current) =>
@@ -100,8 +115,11 @@ export default function AgentPanel() {
         }),
       });
       setNewToken(grant.token);
+      setCopied(false);
       setName("");
       await load();
+      setAnnouncement(m.createdAnnouncement(grant.name));
+      setFocusTarget({ kind: "token" });
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : m.createError,
@@ -119,6 +137,9 @@ export default function AgentPanel() {
       setConfirmRevoke(null);
       if (newToken) setNewToken("");
       await load();
+      setAnnouncement(m.revokedAnnouncement(grant.name));
+      // The revoked card stays in the list, now marked Revoked: focus it so the result is read out.
+      setFocusTarget({ kind: "grant", id: grant.id });
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : m.revokeError,
@@ -150,6 +171,7 @@ export default function AgentPanel() {
           <p>{m.intro}</p>
         </div>
       </div>
+      <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{announcement}</p>
       {error && (
         <div className="inline-error" role="alert">
           {error}
@@ -161,10 +183,10 @@ export default function AgentPanel() {
       <div className="agent-layout">
         <section className="agent-main">
           {newToken && (
-            <div className="agent-token-card">
+            <div className="agent-token-card" ref={tokenCardRef} tabIndex={-1} role="region" aria-labelledby="agent-token-title">
               <div className="agent-token-head">
-                <LockKeyhole size={19} />
-                <strong>{m.copyNow}</strong>
+                <LockKeyhole size={19} aria-hidden="true" />
+                <strong id="agent-token-title">{m.copyNow}</strong>
               </div>
               <p>
                 {m.showOnce}
@@ -198,7 +220,7 @@ export default function AgentPanel() {
           {grants.length ? (
             <div className="agent-list">
               {grants.map((grant) => (
-                <article className="agent-card" key={grant.id}>
+                <article className="agent-card" key={grant.id} tabIndex={-1} data-agent-grant={grant.id}>
                   <span className="agent-avatar">
                     <Bot size={21} />
                   </span>
@@ -232,7 +254,7 @@ export default function AgentPanel() {
                       <Button variant="danger" disabled={busy} autoFocus onClick={() => void revoke(grant)}>
                         {m.confirmRevoke}
                       </Button>
-                      <Button variant="secondary" disabled={busy} onClick={() => setConfirmRevoke(null)}>
+                      <Button variant="secondary" disabled={busy} onClick={() => { setConfirmRevoke(null); setFocusTarget({ kind: "revoke", id: grant.id }); }}>
                         {m.cancel}
                       </Button>
                     </div>
@@ -241,6 +263,7 @@ export default function AgentPanel() {
                       variant="secondary"
                       disabled={busy}
                       aria-label={m.revokeNamed(grant.name)}
+                      data-agent-revoke={grant.id}
                       onClick={() => setConfirmRevoke(grant.id)}
                     >
                       {m.revoke}

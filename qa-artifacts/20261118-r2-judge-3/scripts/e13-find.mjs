@@ -1,0 +1,21 @@
+import { start, OUT } from "./pw.mjs";
+import fs from "node:fs";
+const { code } = JSON.parse(fs.readFileSync("phys.json"));
+const { browser, page, errors } = await start();
+await page.getByRole("button", { name: "Paper archive", exact: true }).click(); await page.waitForTimeout(600);
+await page.getByRole("textbox", { name: "Sticker code" }).fill(code.toLowerCase());
+await page.getByRole("button", { name: "Find" }).click(); await page.waitForTimeout(1000);
+console.log("sticker result:", (await page.locator("main").innerText()).split("\n").filter(l => /j3r2|three|Box|R-/.test(l)).slice(0, 6));
+await page.screenshot({ path: OUT + "22-sticker-lookup.png" });
+await page.getByRole("button", { name: "All documents", exact: true }).click(); await page.waitForTimeout(500);
+await page.keyboard.press("/");
+await page.keyboard.type("heron tag:j3r2-agentA OR text:heron");
+await page.waitForTimeout(1500);
+console.log("search:", (await page.locator("main article h3").allInnerTexts()).slice(0, 6));
+await page.getByRole("searchbox").or(page.getByRole("textbox", { name: /Search documents/ })).fill("heron");
+await page.waitForTimeout(1500);
+console.log("heron:", (await page.locator("main article h3").allInnerTexts()).slice(0, 6));
+await page.screenshot({ path: OUT + "23-search-ocr-phrase.png" });
+// Mobile session-loss check skipped; check sign-out queued uploads prompt
+console.log("ERRORS", errors.slice(0, 3));
+await browser.close();

@@ -626,6 +626,17 @@ def semantic_index():
     return indexed
 
 
+@shared_task(name="archive.tasks.index_search_text")
+def index_search_text():
+    """Store search vectors for documents that predate the stored search index, 200 at a time. No-op once done."""
+    from .fulltext import backfill
+
+    indexed, remaining = backfill(limit=200)
+    if remaining and indexed:
+        index_search_text.apply_async(countdown=2)
+    return indexed
+
+
 @shared_task(name="archive.tasks.poll_storage_source", soft_time_limit=1800, time_limit=1900)
 def poll_storage_source(source_id):
     from .storage_sources import claim, run_claimed

@@ -7,6 +7,7 @@
     date:2026-01-01..2026-03-31          an inclusive range; either end may be left open (2026-01..)
     date:>=2026-01-01  added:<2026-11    open-ended comparisons; added: is the day Ripiano received it
     created:2026                         same as date: (the Paperless name)
+    mittente:"Comune" etichetta:Bollette Italian field names work too (see ALIASES)
 
 `parse` returns (free words for ranking, clauses). A clause is (field, value), ("-" + field, value) for an
 exclusion, or ("or", [clauses]). `clause_filter` turns one clause into a Q for the document queryset.
@@ -20,7 +21,13 @@ from datetime import date
 from django.db.models import Exists, OuterRef, Q
 
 FIELDS = {"title", "text", "note", "tag", "sender", "type", "sticker", "date", "added", "field", "asn", "is"}
-ALIASES = {"created": "date", "correspondent": "sender", "document_type": "type"}
+ALIASES = {
+    "created": "date", "correspondent": "sender", "document_type": "type",
+    # Italian field names (field names are matched without regard to case)
+    "titolo": "title", "testo": "text", "nota": "note", "etichetta": "tag", "mittente": "sender",
+    "corrispondente": "sender", "tipo": "type", "adesivo": "sticker", "data": "date", "creato": "date",
+    "aggiunto": "added", "campo": "field",
+}
 # Collected by archive/message_catalog.py (names ending in _ERRORS) so they get an Italian version.
 SEARCH_ERRORS = {
     "date": "Use a date after date: or added:, like 2026-03-01, 2026-03, 2026, a range 2026-01-01..2026-03-31, or >=2026-01-01",
@@ -82,6 +89,7 @@ def _date_range(value):
 def _term(token):
     """A field clause for `field:value`, or None for an ordinary word."""
     field, separator, value = token.partition(":")
+    field = field.lower()
     field = ALIASES.get(field, field)
     if not (separator and field in FIELDS and value):
         return None

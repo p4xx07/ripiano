@@ -40,6 +40,8 @@ def test_api_tokens_act_as_their_owner_without_csrf_and_can_be_revoked():
         assert response.status_code == 403, (method, path)
         assert "send documents out" in response.json()["error"]
     assert api.get("/api/documents").status_code == 200  # reading and filing still work
+    # Sharing tags, senders, types, or saved views with other people is a person's decision, like document sharing.
+    assert api.post(f"/api/object-access/tag/{some_id}", {"user_id": 1}, content_type="application/json").status_code == 403
     assert Client(HTTP_AUTHORIZATION="Token rip_stale").get("/api/share-links/" + "a" * 43).status_code == 404  # public path, header ignored
     assert ApiToken.objects.get().last_used_at is not None
     assert Client(HTTP_AUTHORIZATION="Token rip_wrong").get("/api/tags").status_code == 401

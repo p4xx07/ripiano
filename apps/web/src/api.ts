@@ -222,6 +222,15 @@ export class ApiError extends Error {
   }
 }
 
+const sessionEndedListeners = new Set<() => void>();
+
+/** Called when the server answers 401 to a signed-in request: the session ended elsewhere, expired, or the
+ *  account was disabled. Sign-in and setup (where 401 means a wrong password or code) never trigger it. */
+export function onSessionEnded(listener: () => void) {
+  sessionEndedListeners.add(listener);
+  return () => { sessionEndedListeners.delete(listener); };
+}
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -254,6 +263,9 @@ export async function request<T>(
   } catch {
     if (response.ok) throw new ApiError(transportMessage("unexpected"), response.status, {});
     result = {};
+  }
+  if (response.status === 401 && !/^\/api\/(session|setup)(\/|\?|$)/.test(path)) {
+    for (const listener of sessionEndedListeners) listener();
   }
   if (!response.ok) {
     const fallback = response.status === 413 ? transportMessage("tooLarge") : response.status >= 502 && response.status <= 504 ? transportMessage("unavailable") : transportMessage("unexpected");
@@ -290,6 +302,11 @@ export function formatDate(value: string) {
     month: "short",
     year: "numeric",
   }).format(date);
+}
+
+/** Time of day in the interface language, e.g. "10:48" or "10:48 AM". */
+export function formatTime(value: Date) {
+  return new Intl.DateTimeFormat(locale(), { hour: "numeric", minute: "2-digit" }).format(value);
 }
 
 /** Date and time in the interface language, e.g. for "last signed in". */

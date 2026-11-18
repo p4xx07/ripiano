@@ -38,7 +38,15 @@ let preference = readLanguagePreference();
 let current = resolve(preference);
 
 function apply() {
-  if (typeof document !== "undefined") document.documentElement.lang = current;
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = current;
+  // Pages the server renders for a plain link (printable labels open in a new tab) cannot carry the
+  // Accept-Language header the app sends; Django reads this cookie first, so they match the interface.
+  try {
+    document.cookie = `django_language=${current}; path=/; max-age=31536000; SameSite=Lax`;
+  } catch {
+    // Cookies blocked: labels follow the browser language instead.
+  }
 }
 apply();
 

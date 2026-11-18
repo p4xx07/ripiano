@@ -14,6 +14,7 @@ from django.utils import timezone
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 
+from .api_language import display, wants_italian
 from .models import Document, Location, Movement, PhysicalCopy
 
 STICKER_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
@@ -211,6 +212,7 @@ def location_lookup(request, sticker_code):
 
 
 LABEL_PATH_LIMIT = 60
+DEFAULT_NOTES = set(Movement.Kind.labels)
 
 # Sticker sheet geometry: 70 x 40 mm, 3 mm padding, 30 mm QR code, 3 mm gap -> 31 mm wide text column.
 # The code never wraps: its font size is computed from Arial Bold advance widths so it fits the column.
@@ -259,9 +261,9 @@ def label_path(names, limit=LABEL_PATH_LIMIT):
     return ("… / " if len(kept) < len(names) else "") + text
 
 
-def _label_html(title, brand, svg, heading, code, path_names):
+def _label_html(title, brand, svg, heading, code, path_names, lang="en"):
     return (
-        f'<!doctype html><html lang="en"><meta charset="utf-8"><title>{escape(title)}</title>'
+        f'<!doctype html><html lang="{lang}"><meta charset="utf-8"><title>{escape(title)}</title>'
         f"<style>{LABEL_CSS}</style>"
         f'<div class="label">{svg}<div class="text"><div class="brand">{escape(brand)}</div>'
         f'<h1>{escape(heading[:120])}</h1><div class="code" style="font-size:{code_font_pt(code)}pt">{escape(code)}</div>'
@@ -282,7 +284,8 @@ def location_label(request, location_id):
     output = io.BytesIO()
     qr.save(output, kind="svg", scale=3, border=2, dark="#183e32")
     svg = output.getvalue().decode("utf-8")
-    html = _label_html(f"Ripiano location {location.sticker_code}", "ripiano · location", svg, location.name, location.sticker_code, location_path(location))
+    html = _label_html(display(request, "Ripiano location {0}", location.sticker_code), "ripiano · " + display(request, "location"), svg, location.name,
+                       location.sticker_code, location_path(location), lang="it" if wants_italian(request) else "en")
     response = HttpResponse(html, content_type="text/html; charset=utf-8")
     response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     return response
@@ -386,7 +389,8 @@ def copy_history(request, copy_id):
         "kind": move.kind,
         "from": location_path(move.from_location),
         "to": location_path(move.to_location),
-        "note": move.note,
+        # Notes Ripiano wrote itself (the movement kind's label) are shown in the request's language.
+        "note": display(request, move.note) if move.note in DEFAULT_NOTES else move.note,
         "at": move.created_at.isoformat(),
     } for move in copy.movements.select_related("from_location", "to_location")[:50]]})
 
@@ -417,7 +421,8 @@ def printable_label(request, copy_id):
     output = io.BytesIO()
     qr.save(output, kind="svg", scale=3, border=2, dark="#183e32")
     svg = output.getvalue().decode("utf-8")
-    html = _label_html(f"Ripiano sticker {copy.sticker_code}", "ripiano", svg, copy.document.title, copy.sticker_code, location_path(copy.location) or ["Location not assigned"])
+    html = _label_html(display(request, "Ripiano sticker {0}", copy.sticker_code), "ripiano", svg, copy.document.title, copy.sticker_code,
+                       location_path(copy.location) or [display(request, "Location not assigned")], lang="it" if wants_italian(request) else "en")
     response = HttpResponse(html, content_type="text/html; charset=utf-8")
     response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     return response

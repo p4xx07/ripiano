@@ -28,8 +28,30 @@ import DocumentAccessPanel from "./DocumentAccessPanel";
 import PagesPanel from "./PagesPanel";
 import SimilarPanel from "./SimilarPanel";
 import EmailDocumentPanel from "./EmailDocumentPanel";
+import DocumentPreview from "./DocumentPreview";
 import { useMessages } from "./i18n";
 import messages from "./locales/DocumentPanel";
+
+// The API has no way to reject a learned suggestion for good; a dismissed one stays hidden for
+// this browser session (kept in sessionStorage so a reload does not bring it back).
+const DISMISSED_KEY = "ripiano.dismissedSuggestions";
+function readDismissed(): Set<string> {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(DISMISSED_KEY) ?? "[]");
+    return new Set(Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+const dismissedSuggestions = readDismissed();
+function rememberDismissed(key: string) {
+  dismissedSuggestions.add(key);
+  try {
+    sessionStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissedSuggestions].slice(-500)));
+  } catch {
+    // Storage blocked: the suggestion stays hidden until the page is reloaded.
+  }
+}
 
 export default function DocumentPanel({
   initial,
@@ -42,7 +64,7 @@ export default function DocumentPanel({
 }: {
   initial: Document;
   onClose: () => void;
-  onSaved: (document: Document) => void;
+  onSaved: (document: Document, closing?: boolean) => void;
   onOpenTags: () => void;
   onOpenLocations: () => void;
   onOpenDuplicate: (id: string) => void;
@@ -63,6 +85,9 @@ export default function DocumentPanel({
   const [newDocumentType, setNewDocumentType] = useState("");
   const [creatingCorrespondent, setCreatingCorrespondent] = useState(false);
   const [creatingDocumentType, setCreatingDocumentType] = useState(false);
+  const [creatingTag, setCreatingTag] = useState(false);
+  const [newTag, setNewTag] = useState("");
+  const [, setDismissedTick] = useState(0);
   const [actionStatus, setActionStatus] = useState(initial.action_status);
   const [actionDueDate, setActionDueDate] = useState(initial.action_due_date ?? "");
   const [actionNote, setActionNote] = useState(initial.action_note);
@@ -257,7 +282,7 @@ export default function DocumentPanel({
         body: JSON.stringify(changes),
       });
       setCurrent(updated);
-      onSaved(updated);
+      onSaved(updated, true);
       onClose();
     } catch (cause) {
       setError(
@@ -297,6 +322,27 @@ export default function DocumentPanel({
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.createFilingError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createTag() {
+    const name = newTag.trim();
+    if (!name) return;
+    setBusy(true);
+    setError("");
+    setSuggestionStatus("");
+    try {
+      const tag = await request<Tag>("/api/tags", { method: "POST", body: JSON.stringify({ name }) });
+      setAvailable((items) => [...items, tag]);
+      setSelected((ids) => ids.includes(tag.id) ? ids : [...ids, tag.id]);
+      setNewTag("");
+      setCreatingTag(false);
+      setSuggestionStatus(m.tagCreated(tag.name));
+      focusSoon(`detail-tag-${tag.id}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.createTagError);
     } finally {
       setBusy(false);
     }
@@ -381,9 +427,18 @@ export default function DocumentPanel({
     }
   }
 
-  const suggestedTags = suggestions?.tags.filter((item) => !selected.includes(item.id)) ?? [];
-  const suggestedSenders = correspondentId ? [] : suggestions?.correspondents ?? [];
-  const suggestedTypes = documentTypeId ? [] : suggestions?.document_types ?? [];
+  const dismissKey = (kind: "tag" | "sender" | "type", item: FilingSuggestion) => `${current.id}:${kind}:${item.id}`;
+  const notDismissed = (kind: "tag" | "sender" | "type") => (item: FilingSuggestion) => !dismissedSuggestions.has(dismissKey(kind, item));
+  const suggestedTags = suggestions?.tags.filter((item) => !selected.includes(item.id)).filter(notDismissed("tag")) ?? [];
+  const suggestedSenders = correspondentId ? [] : (suggestions?.correspondents ?? []).filter(notDismissed("sender"));
+  const suggestedTypes = documentTypeId ? [] : (suggestions?.document_types ?? []).filter(notDismissed("type"));
+  function dismissSuggestion(kind: "tag" | "sender" | "type", item: FilingSuggestion, label: string) {
+    rememberDismissed(dismissKey(kind, item));
+    setDismissedTick((tick) => tick + 1);
+    setSuggestionStatus(m.suggestionDismissed(label));
+    // Keep focus in the suggestions (or on the field below once the last one is gone).
+    requestAnimationFrame(() => (document.querySelector<HTMLElement>(".filing-suggestions .suggestion-accept") ?? document.getElementById(kind === "tag" ? "detail-add-tag" : kind === "sender" ? "detail-correspondent" : "detail-document-type"))?.focus());
+  }
   async function acceptSuggestion(kind: "tag" | "sender" | "type", item: FilingSuggestion) {
     setBusy(true);
     setError("");
@@ -414,7 +469,7 @@ export default function DocumentPanel({
   const visibleSuggestions = suggestedTags.length + suggestedSenders.length + suggestedTypes.length > 0;
 
   return (
-    <Modal titleId="detail-heading" panelClassName="detail-panel" backdropClassName="detail-backdrop" onClose={onClose}>
+    <Modal titleId="detail-heading" panelClassName="detail-panel with-preview" backdropClassName="detail-backdrop" onClose={onClose}>
         <button className="modal-close" onClick={onClose} aria-label={m.close}>
           <X size={20} />
         </button>
@@ -426,6 +481,7 @@ export default function DocumentPanel({
         <p className="detail-intro">
           <strong className="detail-tagline">{m.heading}</strong> {m.intro}
         </p>
+        <DocumentPreview document={current} />
         {current.duplicate_of && (
           <button
             className="duplicate-note"
@@ -481,22 +537,37 @@ export default function DocumentPanel({
               <h3 id="filing-suggestions-heading">{m.suggestionsHeading}</h3>
               <p>{m.suggestionsIntro}</p>
               {suggestedTags.map((item) => (
-                <button type="button" disabled={busy} key={`tag-${item.id}`} aria-label={m.addTag(item.name)} aria-describedby={`suggestion-tag-${item.id}`} onClick={() => void acceptSuggestion("tag", item)}>
-                  <span className="suggestion-action"><TagIcon size={16} aria-hidden="true" /><span>{m.addTag(item.name)}</span></span>
-                  <small id={`suggestion-tag-${item.id}`}>{suggestionBasis(item, m)}</small>
-                </button>
+                <div className="suggestion-item" key={`tag-${item.id}`}>
+                  <button type="button" className="suggestion-accept" disabled={busy} aria-label={m.addTag(item.name)} aria-describedby={`suggestion-tag-${item.id}`} onClick={() => void acceptSuggestion("tag", item)}>
+                    <span className="suggestion-action"><TagIcon size={16} aria-hidden="true" /><span>{m.addTag(item.name)}</span></span>
+                    <small id={`suggestion-tag-${item.id}`}>{suggestionBasis(item, m)}</small>
+                  </button>
+                  <button type="button" className="suggestion-dismiss" disabled={busy} aria-label={m.dismissSuggestion(m.addTag(item.name))} title={m.dismissSuggestionTitle} onClick={() => dismissSuggestion("tag", item, m.addTag(item.name))}>
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                </div>
               ))}
               {suggestedSenders.map((item) => (
-                <button type="button" disabled={busy} key={`sender-${item.id}`} aria-label={m.setSender(item.name)} aria-describedby={`suggestion-sender-${item.id}`} onClick={() => void acceptSuggestion("sender", item)}>
-                  <span className="suggestion-action"><Building2 size={16} aria-hidden="true" /><span>{m.setSender(item.name)}</span></span>
-                  <small id={`suggestion-sender-${item.id}`}>{suggestionBasis(item, m)}</small>
-                </button>
+                <div className="suggestion-item" key={`sender-${item.id}`}>
+                  <button type="button" className="suggestion-accept" disabled={busy} aria-label={m.setSender(item.name)} aria-describedby={`suggestion-sender-${item.id}`} onClick={() => void acceptSuggestion("sender", item)}>
+                    <span className="suggestion-action"><Building2 size={16} aria-hidden="true" /><span>{m.setSender(item.name)}</span></span>
+                    <small id={`suggestion-sender-${item.id}`}>{suggestionBasis(item, m)}</small>
+                  </button>
+                  <button type="button" className="suggestion-dismiss" disabled={busy} aria-label={m.dismissSuggestion(m.setSender(item.name))} title={m.dismissSuggestionTitle} onClick={() => dismissSuggestion("sender", item, m.setSender(item.name))}>
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                </div>
               ))}
               {suggestedTypes.map((item) => (
-                <button type="button" disabled={busy} key={`type-${item.id}`} aria-label={m.setType(item.name)} aria-describedby={`suggestion-type-${item.id}`} onClick={() => void acceptSuggestion("type", item)}>
-                  <span className="suggestion-action"><FileText size={16} aria-hidden="true" /><span>{m.setType(item.name)}</span></span>
-                  <small id={`suggestion-type-${item.id}`}>{suggestionBasis(item, m)}</small>
-                </button>
+                <div className="suggestion-item" key={`type-${item.id}`}>
+                  <button type="button" className="suggestion-accept" disabled={busy} aria-label={m.setType(item.name)} aria-describedby={`suggestion-type-${item.id}`} onClick={() => void acceptSuggestion("type", item)}>
+                    <span className="suggestion-action"><FileText size={16} aria-hidden="true" /><span>{m.setType(item.name)}</span></span>
+                    <small id={`suggestion-type-${item.id}`}>{suggestionBasis(item, m)}</small>
+                  </button>
+                  <button type="button" className="suggestion-dismiss" disabled={busy} aria-label={m.dismissSuggestion(m.setType(item.name))} title={m.dismissSuggestionTitle} onClick={() => dismissSuggestion("type", item, m.setType(item.name))}>
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                </div>
               ))}
             </section>
           )}
@@ -586,6 +657,18 @@ export default function DocumentPanel({
               <TagIcon size={17} /> {m.createFirstTag}
             </button>
           )}
+          {creatingTag ? (
+            <div className="filing-create">
+              <input id="detail-new-tag" autoFocus aria-label={m.newTagName} value={newTag} maxLength={100} placeholder={m.tagPlaceholder}
+                onChange={(event) => setNewTag(event.target.value)}
+                onKeyDown={(event) => {
+                  // Enter creates the tag instead of saving the whole form.
+                  if (event.key === "Enter") { event.preventDefault(); void createTag(); }
+                }} />
+              <Button type="button" variant="secondary" disabled={busy || !newTag.trim()} onClick={() => void createTag()}>{m.createTag}</Button>
+              <button type="button" aria-label={m.cancelNewTag} onClick={() => { setCreatingTag(false); focusSoon("detail-add-tag"); }}><X size={16} /></button>
+            </div>
+          ) : <button type="button" id="detail-add-tag" className="text-action" onClick={() => setCreatingTag(true)}><Plus size={15} /> {m.addATag}</button>}
           <Button className="detail-save" disabled={busy}>
             <Save size={17} /> {busy ? m.saving : m.saveChanges}
           </Button>

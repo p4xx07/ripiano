@@ -20,3 +20,9 @@ Ripiano itself sends no document content to an AI provider. A client that calls 
 ## Test with a client
 
 The MCP URL is shown on the token card. A compatible client must send `Authorization: Bearer <token>` to that URL. The [SDK client transport guide](https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/docs/client/transports.md) shows how to provide the header through `httpx2.AsyncClient`. After connecting, `tools/list` contains only tools covered by that grant; a call to another tool returns a permission error. Revoking the grant makes the next request return HTTP 401.
+
+## Who can connect agents, and tags that guard other agents
+
+Every signed-in person can create agents for their own archive under **Agents**; an agent only ever sees its creator's documents, and only that person sees its grants and activity. Turning semantic search on or off stays with the archive owner.
+
+A tag used as an agent's document filter decides what that agent may read. To keep one agent from widening or narrowing another agent's view, an agent can never add or remove a tag that is the filter of another active agent; only a person can. Its own filter tag and ordinary tags are unaffected. Requests an agent was refused still name the document in the owner's activity log.

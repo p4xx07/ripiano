@@ -14,6 +14,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 
+from .api_language import display, wants_italian
 from .field_labels import label
 from .models import ClassificationRule, Correspondent, CustomField, DocumentType, FilingRule, SavedView, Tag
 from .custom_field_views import normalize_filter_range, normalize_filter_value
@@ -494,9 +495,10 @@ def tag_barcode_label(request, tag_id):
     qr.save(output, kind="svg", scale=3, border=2, dark="#183e32")
     name = escape(tag.name[:70])
     code = escape(tag.barcode_value)
-    html = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>Ripiano tag {name}</title>
+    lang, title, kind = ("it" if wants_italian(request) else "en"), escape(display(request, "Ripiano tag {0}", tag.name[:70])), escape(display(request, "tag"))
+    html = f"""<!doctype html><html lang="{lang}"><meta charset="utf-8"><title>{title}</title>
 <style>@page{{size:70mm 40mm;margin:0}}body{{margin:0;font-family:Arial,sans-serif;color:#183e32}}.label{{box-sizing:border-box;width:70mm;height:40mm;padding:3mm;display:flex;gap:3mm;border:1px solid #bbb}}svg{{width:30mm;height:30mm;flex:none}}.text{{overflow:hidden}}.brand{{font-size:8pt;font-weight:bold}}h1{{font-size:11pt;margin:2mm 0 1mm;overflow:hidden}}.code{{font-size:8pt;overflow-wrap:anywhere}}</style>
-<div class="label">{output.getvalue().decode("utf-8")}<div class="text"><div class="brand">ripiano · tag</div><h1>{name}</h1><div class="code">{code}</div></div></div></html>"""
+<div class="label">{output.getvalue().decode("utf-8")}<div class="text"><div class="brand">ripiano · {kind}</div><h1>{name}</h1><div class="code">{code}</div></div></div></html>"""
     response = HttpResponse(html, content_type="text/html; charset=utf-8")
     response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     return response

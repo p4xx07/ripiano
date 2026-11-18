@@ -107,8 +107,11 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
 
   function focusForm() {
     requestAnimationFrame(() => {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      formRef.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+      const form = formRef.current;
+      if (!form) return;
+      form.scrollIntoView({ behavior: "smooth", block: "start" });
+      // Never take focus from a field the person is already typing in: text would land in the name instead.
+      if (!form.contains(document.activeElement)) form.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
     });
   }
 

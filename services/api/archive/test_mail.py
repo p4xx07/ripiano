@@ -413,3 +413,40 @@ def test_a_rule_can_import_the_email_itself_with_or_without_its_attachments(owne
     rule.save()
     assert poll(FakeMailbox({"INBOX": {2: with_file}}), account, tmp_path) == 2
     assert sorted(Document.objects.filter(owner=owner).values_list("title", flat=True)) == ["Avviso di pagamento", "Bolletta", "Bolletta – bill"]
+
+
+@pytest.mark.django_db
+def test_subject_body_attachment_and_age_filters_flag_action_and_rule_order(owner, tmp_path):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    account = account_for(owner)
+    searches = []
+
+    class RecordingMailbox(FakeMailbox):
+        def uid(self, command, *args):
+            if command.upper() == "SEARCH":
+                searches.append(args)
+            return super().uid(command, *args)
+
+    later = MailRule.objects.create(owner=owner, account=account, name="Second", order=2, filter_subject="statement",
+                                    after=MailRule.After.FLAG, max_age_days=7)
+    first = MailRule.objects.create(owner=owner, account=account, name="First", order=1, filter_body="policy number",
+                                    filter_attachment="*.pdf", after=MailRule.After.FLAG, max_age_days=30)
+    fake = RecordingMailbox({"INBOX": {
+        1: message(subject="Bank statement", attachments=(("statement.pdf", pdf_bytes("blue")),)),
+        2: message(subject="Insurance", body="Your policy number is 42", attachments=(("policy.pdf", pdf_bytes("green")), ("terms.docx", b"x"))),
+        3: message(subject="Newsletter", body="nothing relevant", attachments=(("flyer.pdf", pdf_bytes("red")),)),
+    }})
+    assert poll(fake, account, tmp_path) == 2
+    imported = list(Document.objects.filter(owner=owner, source=Document.Source.EMAIL).order_by("created_at", "id"))
+    # Rules run in their saved order: the body/attachment rule (order 1) imports before the subject rule (order 2).
+    assert [item.title for item in imported] == ["Insurance", "Bank statement"]
+    assert not Document.objects.filter(title__contains="terms").exists()  # *.pdf skipped the .docx attachment
+    assert fake.flags == {1: {"\\Flagged"}, 2: {"\\Flagged"}}  # flagged, not marked read
+    # Each rule only asks the server for mail newer than its age limit (and not just unread mail when flagging).
+    expected = {(timezone.now() - timedelta(days=days)).strftime("%d-%b-%Y") for days in (7, 30)}
+    assert {args[2] for args in searches} == expected and all("UNSEEN" not in args for args in searches)
+    assert ProcessedMail.objects.get(rule=first, uid=3).status == ProcessedMail.Status.NO_MATCH
+    assert ProcessedMail.objects.get(rule=later, uid=3).status == ProcessedMail.Status.NO_MATCH

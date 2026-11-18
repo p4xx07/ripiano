@@ -267,6 +267,9 @@ def apply_rules(document):
             current = filing_matches.get(rule.kind)
             if current is None or (-len(rule.pattern), rule.created_at, str(rule.id)) < (-len(current.pattern), current.created_at, str(current.id)):
                 filing_matches[rule.kind] = rule
+        from . import history
+
+        before = history.snapshot(locked)
         suppressed = set(TagOverride.objects.filter(document=locked).values_list("tag_id", flat=True))
         DocumentTag.objects.filter(document=locked, origin=DocumentTag.Origin.RULE).delete()
         for tag in matching:
@@ -290,4 +293,5 @@ def apply_rules(document):
                 changes.extend([field, origin_field])
         if changes:
             locked.save(update_fields=changes)
+        history.record(locked, before, action=history.Action.FILED_AUTOMATICALLY, actor_kind=history.Kind.MATCHING_RULES)
     return len(matching)

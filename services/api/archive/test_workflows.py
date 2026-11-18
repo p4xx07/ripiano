@@ -308,3 +308,44 @@ def test_pdf_passwords_are_write_only_and_need_an_added_trigger(owner):
     assert client.patch(f"/api/workflows/{flow_id}", {"pdf_passwords": [""]}, content_type="application/json").status_code == 400
     cleared = client.patch(f"/api/workflows/{flow_id}", {"pdf_passwords": [], "trigger": "updated"}, content_type="application/json")
     assert cleared.status_code == 200 and cleared.json()["pdf_password_count"] == 0
+
+
+@pytest.mark.django_db
+def test_sender_and_type_conditions_select_documents(owner, django_capture_on_commit_callbacks):
+    acme = Correspondent.objects.create(owner=owner, name="Acme")
+    bank = Correspondent.objects.create(owner=owner, name="Bank")
+    invoice = DocumentType.objects.create(owner=owner, name="Invoice")
+    tag = Tag.objects.create(owner=owner, name="Acme invoices")
+    flow = Workflow.objects.create(owner=owner, name="Acme invoices", trigger=Workflow.Trigger.ADDED,
+                                   filter_correspondent=acme, filter_document_type=invoice)
+    flow.add_tags.add(tag)
+    matching = document(owner, title="Acme bill", correspondent=acme, document_type=invoice)
+    wrong_sender = document(owner, title="Bank bill", correspondent=bank, document_type=invoice)
+    wrong_type = document(owner, title="Acme letter", correspondent=acme)
+    with django_capture_on_commit_callbacks():
+        for item in (matching, wrong_sender, wrong_type):
+            run_for_document(item, "added")
+    tagged = set(DocumentTag.objects.filter(tag=tag).values_list("document__title", flat=True))
+    assert tagged == {"Acme bill"}
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", EMAIL_HOST="smtp.example.test",
+                   PUBLIC_ORIGIN="https://ripiano.test", RIPIANO_EMAIL_ATTACH_MAX_BYTES=1024)
+def test_email_action_attaches_the_original_only_when_asked_and_small_enough(owner, tmp_path, django_capture_on_commit_callbacks):
+    path = tmp_path / "originals" / "aa"
+    path.mkdir(parents=True)
+    (path / "x.pdf").write_bytes(b"%PDF-1.4 tiny")
+    Workflow.objects.create(owner=owner, name="Forward", trigger=Workflow.Trigger.ADDED, email_to="me@example.test", email_attach=True)
+    small, large = document(owner, title="Small"), document(owner, title="Large")
+    Document.objects.filter(pk=large.pk).update(original_size=5000)
+    large.refresh_from_db()
+    with override_settings(MEDIA_ROOT=tmp_path), django_capture_on_commit_callbacks():
+        runs = [run_for_document(item, "added")[0] for item in (small, large)]
+        for run in runs:
+            send_notifications(run)
+    first, second = outbox.outbox[-2:]
+    assert first.attachments[0][0] == "Small.pdf" and first.attachments[0][1] == b"%PDF-1.4 tiny"
+    assert second.attachments == []
+    runs[1].refresh_from_db()
+    assert "without the file" in runs[1].detail

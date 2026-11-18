@@ -95,6 +95,7 @@ urlpatterns = [
     path("api/trash-retention", purge_views.trash_retention),
     path("api/purge-jobs/<uuid:job_id>/retry", purge_views.retry_purge_job),
     path("api/documents/<uuid:document_id>/notes", views.document_notes),
+    path("api/documents/<uuid:document_id>/history", views.document_history),
     path("api/documents/<uuid:document_id>/notes/<uuid:note_id>", views.document_note_detail),
     path("api/documents/<uuid:document_id>/links", link_views.document_links),
     path("api/documents/<uuid:document_id>/links/<uuid:target_id>", link_views.document_link_detail),

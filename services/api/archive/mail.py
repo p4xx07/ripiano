@@ -247,6 +247,9 @@ def _received_at(message):
 
 def _apply_filing(document, rule, tags, origin_values):
     """Idempotently give a document its rule filing and email origin (also repairs partial imports)."""
+    from . import history
+
+    before = history.snapshot(document)
     updates = []
     if rule.correspondent_id and document.correspondent_origin == Document.FilingOrigin.NONE:
         document.correspondent_id, document.correspondent_origin = rule.correspondent_id, Document.FilingOrigin.SOURCE
@@ -262,6 +265,7 @@ def _apply_filing(document, rule, tags, origin_values):
             link.origin = DocumentTag.Origin.SOURCE  # A phrase rule must not later remove an email rule's tag.
             link.save(update_fields=["origin"])
     DocumentEmail.objects.get_or_create(document=document, defaults=origin_values)
+    history.record(document, before, actor_label=rule.name, action=history.Action.FILED_AUTOMATICALLY, actor_kind=history.Kind.EMAIL_RULE)
 
 
 def import_message(rule, raw, *, uid_validity, uid, folder):

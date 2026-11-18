@@ -2,6 +2,8 @@
 
 EXACT = {
     "Invalid credentials": "Credenziali non valide",
+    "A backup is already queued or running": "Un backup è già in coda o in corso",
+    "API tokens cannot send documents out of Ripiano or change mail, sources, workflows, or backups": "I token API non possono inviare documenti fuori da Ripiano né modificare posta, sorgenti, flussi di lavoro o backup",
     "Sign in required": "Devi accedere",
     "Too many sign-in attempts. Wait a few minutes and try again.": "Troppi tentativi di accesso. Attendi qualche minuto e riprova.",
     "Enter the 6-digit code from your authenticator app": "Inserisci il codice a 6 cifre della tua app di autenticazione",
@@ -292,6 +294,7 @@ EXACT = {
     "Invalid filing kind": "Tipo di archiviazione non valido",
     "Invalid location name or description": "Nome o descrizione della posizione non validi",
     "Invalid media path": "Percorso del file multimediale non valido",
+    "Invalid history offset": "Posizione non valida nella cronologia",
     "Invalid note offset": "Posizione della nota non valida",
     "Invalid offset": "Offset non valido",
     "Invalid or conflicting tag IDs": "ID delle etichette non validi o in conflitto",
@@ -443,7 +446,8 @@ EXACT = {
     "Unknown tool": "Strumento sconosciuto",
     "Unsupported snapshot format": "Formato dello snapshot non supportato",
     "Use YYYY-MM-DD": "Usa il formato AAAA-MM-GG",
-    "Use YYYY-MM-DD after date:": "Usa AAAA-MM-GG dopo date:",
+    "Use a date after date: or added:, like 2026-03-01, 2026-03, 2026, a range 2026-01-01..2026-03-31, or >=2026-01-01": "Dopo date: o added: usa una data come 2026-03-01, 2026-03, 2026, un intervallo 2026-01-01..2026-03-31 oppure >=2026-01-01",
+    "The start of a date range must be before its end": "L'inizio di un intervallo di date deve precedere la fine",
     "Use a name (1–100 characters) and a supported field type": "Usa un nome (da 1 a 100 caratteri) e un tipo di campo supportato",
     "Use a number after asn:": "Usa un numero dopo asn:",
     "Use a snapshot name from the complete directory": "Usa il nome di uno snapshot presente nella cartella “complete”",

@@ -31,6 +31,15 @@ def test_api_tokens_act_as_their_owner_without_csrf_and_can_be_revoked():
     assert api.get("/api/account/tokens").status_code == 403
     assert api.post("/api/agents", {"name": "x"}, content_type="application/json").status_code == 403
     assert api.post("/api/share-bundles", {"document_ids": []}, content_type="application/json").status_code == 403
+    # Nothing that sends documents out of Ripiano, or reconfigures what does (judge 3, M1).
+    some_id = "00000000-0000-0000-0000-000000000001"
+    for method, path in (("post", f"/api/documents/{some_id}/email"), ("get", "/api/sources"), ("post", "/api/sources"),
+                         ("get", "/api/workflows"), ("post", "/api/workflows"), ("get", "/api/mail"), ("post", "/api/mail/accounts"),
+                         ("get", "/api/backups"), ("post", "/api/backups"), ("get", "/api/source-apps"), ("post", "/api/semantic-settings")):
+        response = getattr(api, method)(path, {}, content_type="application/json") if method == "post" else api.get(path)
+        assert response.status_code == 403, (method, path)
+        assert "send documents out" in response.json()["error"]
+    assert api.get("/api/documents").status_code == 200  # reading and filing still work
     assert Client(HTTP_AUTHORIZATION="Token rip_stale").get("/api/share-links/" + "a" * 43).status_code == 404  # public path, header ignored
     assert ApiToken.objects.get().last_used_at is not None
     assert Client(HTTP_AUTHORIZATION="Token rip_wrong").get("/api/tags").status_code == 401

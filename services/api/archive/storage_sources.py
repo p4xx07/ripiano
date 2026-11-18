@@ -219,6 +219,9 @@ def processed_folder(source):
 # --- running ---------------------------------------------------------------------------------
 
 def _file(document, source):
+    from . import history
+
+    before = history.snapshot(document)
     updates = []
     if source.correspondent_id and document.correspondent_origin == Document.FilingOrigin.NONE:
         document.correspondent_id, document.correspondent_origin = source.correspondent_id, Document.FilingOrigin.SOURCE
@@ -230,6 +233,7 @@ def _file(document, source):
         document.save(update_fields=updates)
     for tag in source.tags.all():
         DocumentTag.objects.get_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.SOURCE})
+    history.record(document, before, actor_label=source.name, action=history.Action.FILED_AUTOMATICALLY, actor_kind=history.Kind.SOURCE)
 
 
 def preview(source, backend=None):

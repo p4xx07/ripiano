@@ -101,6 +101,7 @@ def scenario(tmp_path, monkeypatch):
         api.call("get", "/api/account/tokens")
         api.call("post", "/api/documents/{document_id}/trash", f"{detail}/trash")
         api.call("post", "/api/documents/{document_id}/restore", f"{detail}/restore")
+        api.call("get", "/api/documents/{document_id}/history", f"{detail}/history")
 
         # The recipient's side of sharing.
         client.force_login(reader)

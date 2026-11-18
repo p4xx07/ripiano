@@ -462,6 +462,9 @@ def apply_barcodes(document, original, pdf, work_dir):
             _note(document, f"This scan has an ASN barcode, but only the first {scan.scanned} pages are checked, so its archive number was not assigned.")
     if document.is_split_source:
         return
+    from . import history
+
+    before = history.snapshot(document)
     suppressed = set(TagOverride.objects.filter(document=document).values_list("tag_id", flat=True))
     for name in scan.tags:
         tag = Tag.objects.filter(owner_id=document.owner_id, name__iexact=name).order_by("created_at").first()
@@ -484,6 +487,7 @@ def apply_barcodes(document, original, pdf, work_dir):
                 Document.objects.filter(pk=document.pk, asn__isnull=True).update(asn=scan.asn)
         except IntegrityError:
             _note(document, f"Barcode ASN {scan.asn} is already used by another document, so it was not assigned here.")
+    history.record(document, before, action=history.Action.FILED_AUTOMATICALLY, actor_kind=history.Kind.BARCODES)
 
 
 @shared_task(name="archive.tasks.send_workflow_notifications", soft_time_limit=40, time_limit=60)

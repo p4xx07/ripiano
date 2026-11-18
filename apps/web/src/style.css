@@ -2520,6 +2520,38 @@ button:disabled {
   color: var(--color-accent-strong);
   font: inherit;
 }
+.history-list {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-4) 0 var(--space-2);
+}
+.history-list > li {
+  border-left: 2px solid var(--color-border);
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
+  min-width: 0;
+}
+.history-list .note-meta strong {
+  color: var(--color-heading);
+  font-weight: 600;
+}
+.history-list ul {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-1) 0 0;
+  display: grid;
+  gap: var(--space-tight);
+  color: var(--color-heading);
+  font-size: var(--type-small);
+  overflow-wrap: anywhere;
+}
+.history-field {
+  color: var(--color-muted);
+}
+.document-history .text-action + .text-action {
+  margin-left: var(--space-3);
+}
 
 @media (max-width: 900px) {
   .tag-layout {

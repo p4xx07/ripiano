@@ -142,7 +142,7 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
   function focusForm() {
     requestAnimationFrame(() => {
       formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      formRef.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+      if (!formRef.current?.contains(document.activeElement)) formRef.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
     });
   }
 

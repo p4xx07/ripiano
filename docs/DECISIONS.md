@@ -24,7 +24,7 @@ Status keys: **Agreed** (decided, not started), **In progress**, **Done** (link 
 Ripiano finds passages; the MCP client's own model writes answers. Ripiano does not generate text.
 
 1. Postgres image moves from `postgres:17.6-bookworm` to the pgvector image for the same major version (`pgvector/pgvector:pg17`, digest-pinned). Same PostgreSQL major, so existing data carries over.
-2. Documents are split into passages; a background job creates embeddings for new and changed documents, plus a management command to rebuild all of them.
+2. Documents are split into passages; a background job creates embeddings for new and changed documents, plus a management command to rebuild all of them (`manage.py semantic_rebuild [--owner NAME]`).
 3. **Both embedding backends**, chosen by the owner in settings:
    - **NAS (default):** a small multilingual model inside the worker (fastembed/ONNX, e.g. multilingual-e5-small, Italian + English). No torch.
    - **Ollama on the Mac:** optional endpoint URL + model name; indexing pauses while the Mac is off.
@@ -114,10 +114,10 @@ The owner wants external storage to work like Synology Hyper Backup destinations
 
 In the owner's suggested order:
 
-1. ~~Task controls (cancel/requeue) for background jobs other than backups and NAS browse copies.~~ Done 2026-11-17 (`1aa3872`): Background jobs section on Overview; see README "Overview".
-2. ~~Permissions on tags, senders, types, and saved views.~~ Done 2026-11-17: `ObjectAccess` (view/edit per person or group), Share buttons, Shared with me filters, filing with shared objects; see README "People and sharing".
+1. ~~Task controls (cancel/requeue) for background jobs other than backups and NAS browse copies.~~ Done 2026-11-17 (`1aa3872`): Background jobs section on Overview; see [USER_GUIDE.md "Overview"](USER_GUIDE.md#overview).
+2. ~~Permissions on tags, senders, types, and saved views.~~ Done 2026-11-17: `ObjectAccess` (view/edit per person or group), Share buttons, Shared with me filters, filing with shared objects; see [USER_GUIDE.md "People and sharing"](USER_GUIDE.md#people-and-sharing).
 3. ~~API request/response body schemas in `/api/schema.json` and a versioned compatibility test suite.~~ Done 2026-11-17: `archive/api_contract.py`, `api_contract_v1.json`, `test_api_contract.py` (additions allowed; removals, type or status changes, and removed routes fail).
-4. ~~Italian translation of the remaining screens and API messages.~~ Done 2026-11-17: every screen has English/Italian message files; ~130 more API messages translated (see README "Language").
+4. ~~Italian translation of the remaining screens and API messages.~~ Done 2026-11-17: every screen has English/Italian message files; ~130 more API messages translated (see [USER_GUIDE.md "Interface language"](USER_GUIDE.md#interface-language)).
 5. ~~Keyboard shortcuts and an accessibility pass.~~ Done 2026-11-17: `?`, `G`+letter, `J`/`K`/Enter, skip link, heading/label fixes, `e2e/accessibility.spec.ts`. A full axe-core scan needs a new dev dependency the owner has not approved yet.
 
 Not possible without the owner's hardware: real iOS/Android device tests, Synology ACL/restore checks, published digest-pinned images, and the R4 parity verification.

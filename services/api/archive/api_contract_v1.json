@@ -731,6 +731,105 @@
     }
    }
   },
+  "GET /api/documents/{document_id}/history": {
+   "status": 200,
+   "response": {
+    "type": [
+     "object"
+    ],
+    "properties": {
+     "events": {
+      "type": [
+       "array"
+      ],
+      "items": {
+       "type": [
+        "object"
+       ],
+       "properties": {
+        "action": {
+         "type": [
+          "string"
+         ]
+        },
+        "actor": {
+         "type": [
+          "object"
+         ],
+         "properties": {
+          "kind": {
+           "type": [
+            "string"
+           ]
+          },
+          "name": {
+           "type": [
+            "string"
+           ]
+          },
+          "user": {
+           "type": [
+            "string"
+           ]
+          }
+         }
+        },
+        "changes": {
+         "type": [
+          "array"
+         ],
+         "items": {
+          "type": [
+           "object"
+          ],
+          "properties": {
+           "field": {
+            "type": [
+             "string"
+            ]
+           },
+           "from": {
+            "type": [
+             "array",
+             "null",
+             "string"
+            ]
+           },
+           "to": {
+            "type": [
+             "array",
+             "string"
+            ],
+            "items": {
+             "type": [
+              "string"
+             ]
+            }
+           }
+          }
+         }
+        },
+        "created_at": {
+         "type": [
+          "string"
+         ]
+        },
+        "id": {
+         "type": [
+          "string"
+         ]
+        }
+       }
+      }
+     },
+     "next_offset": {
+      "type": [
+       "null"
+      ]
+     }
+    }
+   }
+  },
   "GET /api/documents/{document_id}/notes": {
    "status": 200,
    "response": {

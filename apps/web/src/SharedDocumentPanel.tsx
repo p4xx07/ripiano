@@ -3,6 +3,7 @@ import { ArrowDownToLine, Eye, FileText, MessageSquare, Plus, Save, Users, X } f
 import { Document, DocumentNote, formatDate, request } from "./api";
 import { Button, Field, Modal } from "./ui";
 import { useMessages } from "./i18n";
+import DocumentHistory from "./DocumentHistory";
 import messages from "./locales/SharedDocumentPanel";
 
 /** A document someone else owns and shared with the signed-in person. */
@@ -205,6 +206,7 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
         </ol>}
         {nextNoteOffset !== null && <button type="button" className="text-action" disabled={notesLoading} onClick={() => void loadNotes(nextNoteOffset)}>{m.showOlder}</button>}
       </section>
+      <DocumentHistory documentId={current.id} refreshKey={current} />
       <div className="detail-files">
         <h3><FileText size={17} /> {m.files}</h3>
         <a href={`/api/documents/${current.id}/original`}><ArrowDownToLine size={17} /> {m.downloadOriginal}</a>

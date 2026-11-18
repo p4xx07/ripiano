@@ -185,7 +185,11 @@ def run_workflow(workflow, document, trigger):
                     run = WorkflowRun.objects.create(workflow=workflow, document=document, trigger=trigger)
             except IntegrityError:
                 return None  # Already ran for this document and trigger.
+            from . import history
+
+            before = history.snapshot(document)
             run.detail = _apply(workflow, document, first_time=first_time)[:500]
+            history.record(document, before, actor_label=workflow.name, actor_kind=history.Kind.WORKFLOW)
             run.save(update_fields=["detail"])
             if first_time and (workflow.webhook_url or workflow.email_to):
                 transaction.on_commit(lambda run_id=str(run.id): send_workflow_notifications.delay(run_id), robust=True)

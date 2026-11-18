@@ -18,10 +18,26 @@ PUBLIC_PREFIXES = ("/api/share-links/", "/api/share-bundles/")
 BLOCKED_PREFIXES = ("/api/account/", "/api/session", "/api/setup", "/api/agents", "/api/share-bundles", "/api/people", "/api/groups")
 
 
+# Tokens also cannot send documents out of Ripiano or change what does (mail, sources, workflows with
+# webhooks/email, backups). A leaked token can read and file, but not exfiltrate or reconfigure the archive.
+OUTBOUND_PREFIXES = ("/api/mail", "/api/sources", "/api/source-apps", "/api/workflows", "/api/backups", "/api/restore",
+                     "/api/browse-exports", "/api/semantic-settings", "/api/trash-retention")
+MESSAGES_ERRORS = {
+    "security": "API tokens cannot manage sign-in, security, agent access, or public links",
+    "outbound": "API tokens cannot send documents out of Ripiano or change mail, sources, workflows, or backups",
+}
+
+
 def _blocked(request):
-    if request.path.startswith(BLOCKED_PREFIXES):
-        return True
-    return request.method != "GET" and request.path.startswith("/api/documents/") and ("/shares" in request.path or "/access" in request.path)
+    """The reason a token may not use this route, or None."""
+    path = request.path
+    if path.startswith(BLOCKED_PREFIXES):
+        return "security"
+    if request.method != "GET" and path.startswith("/api/documents/") and ("/shares" in path or "/access" in path):
+        return "security"
+    if path.startswith(OUTBOUND_PREFIXES) or (path.startswith("/api/documents/") and path.endswith("/email")):
+        return "outbound"
+    return None
 
 
 def revoke_tokens_on_password_change(sender, instance, **kwargs):
@@ -54,8 +70,9 @@ class ApiTokenMiddleware:
             now = timezone.now()
             if record is None or record.revoked_at or record.expires_at <= now or not record.user.is_active:
                 return JsonResponse({"error": "Invalid or expired API token"}, status=401)
-            if _blocked(request):
-                return JsonResponse({"error": "API tokens cannot manage sign-in, security, agent access, or public links"}, status=403)
+            reason = _blocked(request)
+            if reason:
+                return JsonResponse({"error": MESSAGES_ERRORS[reason]}, status=403)
             request.user = record.user
             request._dont_enforce_csrf_checks = True
             if not record.last_used_at or now - record.last_used_at > timedelta(minutes=5):

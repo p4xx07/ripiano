@@ -32,6 +32,9 @@ def ingest_document(owner, upload, *, source=Document.Source.WEB, source_ref="",
             original_sha256=digest,
             original_size=size,
         )
+        from .history import created
+
+        created(document)
     except Exception:
         (Path(settings.MEDIA_ROOT) / original_path).unlink(missing_ok=True)
         raise

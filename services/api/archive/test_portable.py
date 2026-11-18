@@ -88,6 +88,9 @@ def test_export_then_import_restores_records_and_byte_identical_files(tmp_path):
     assert Document.objects.get(pk=copy.pk).duplicate_of_id == first.pk
     assert list(restored.tag_links.values_list("tag__name", "tag__parent__name", "origin")) == [("Bills", "Home", "manual")]
     assert DocumentNote.objects.get(document=restored).body == "Paid"
+    # The audit history travels with the archive.
+    assert list(restored.events.values_list("action", "actor_user__username", "changes")) == [
+        ("created", "owner", [{"field": "source", "from": None, "to": "web"}])]
     assert PhysicalCopy.objects.get(document=restored).location.parent.name == "Shelf"
     assert list(Workflow.objects.get(name="Tag").add_tags.values_list("name", flat=True)) == ["Bills"]
     assert get_user_model().objects.get(username="owner").check_password("secure-password-1")

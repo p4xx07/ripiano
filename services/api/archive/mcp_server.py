@@ -17,6 +17,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 from pydantic import AnyHttpUrl
 
+from . import history
 from .field_labels import label
 from .models import AgentAudit, AgentGrant, Correspondent, Document, DocumentTag, DocumentType, Tag, TagOverride
 
@@ -229,12 +230,14 @@ def _execute(grant, name, args):
             document = _documents(grant).select_for_update(of=("self",)).filter(pk=document_id).first()
             if document is None:
                 return None, {"error": "Document no longer within this grant"}
+            before = history.snapshot(document)
             for tag_id in remove:
                 DocumentTag.objects.filter(document=document, tag_id=tag_id).delete()
                 TagOverride.objects.get_or_create(document=document, tag_id=tag_id)
             suppressed = set(TagOverride.objects.filter(document=document, tag_id__in=add).values_list("tag_id", flat=True))
             for tag_id in add - suppressed:
                 DocumentTag.objects.get_or_create(document=document, tag_id=tag_id, defaults={"origin": DocumentTag.Origin.MODEL})
+            history.record(document, before, actor_label=grant.name, actor_kind=history.Kind.AGENT)
         return document, {"document_id": str(document.id), "added": [str(x) for x in add - suppressed], "suppressed": [str(x) for x in suppressed], "removed": [str(x) for x in remove]}
 
     if name == "set_document_filing":
@@ -260,9 +263,11 @@ def _execute(grant, name, args):
                 return document, {"error": "This filing field already has a value"}
             if getattr(document, origin_field) in (Document.FilingOrigin.MANUAL, Document.FilingOrigin.SOURCE):
                 return document, {"error": "A human or input rule already chose this field"}
+            before = history.snapshot(document)
             setattr(document, field, choice)
             setattr(document, origin_field, Document.FilingOrigin.MODEL)
             document.save(update_fields=[field, origin_field])
+            history.record(document, before, actor_label=grant.name, actor_kind=history.Kind.AGENT)
         return document, {"document_id": str(document.id), key: str(choice.id), "origin": Document.FilingOrigin.MODEL}
 
     return None, {"error": "Unknown tool"}

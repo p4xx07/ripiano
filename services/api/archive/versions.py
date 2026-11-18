@@ -135,6 +135,7 @@ def add_version(document_id, owner, upload, note, *, expected_version=None, expe
     try:
         with transaction.atomic():
             document = _locked(document_id, owner, expected_version)
+            previous_number = document.version_number
             DocumentVersion.objects.create(
                 document=document, number=document.version_number, note=document.version_note,
                 original_name=document.original_name, original_path=document.original_path, original_mime=document.original_mime,
@@ -150,6 +151,10 @@ def add_version(document_id, owner, upload, note, *, expected_version=None, expe
             document.error = ""
             document.save(update_fields=["original_name", "original_path", "original_mime", "original_sha256", "original_size",
                                          "version_number", "version_note", "version_created_at", "status", "error"])
+            from . import history
+
+            history.log(document, history.Action.VERSION_ADDED, owner,
+                        changes=[{"field": "version", "from": str(previous_number), "to": str(document.version_number)}])
             document.revoked_shares = ShareLink.objects.filter(document=document, revoked_at__isnull=True, expires_at__gt=timezone.now()).update(revoked_at=timezone.now())
             document.revoked_shares += revoke_bundles_containing([document.id])
             transaction.on_commit(lambda: process_document.delay(str(document.id)), robust=True)

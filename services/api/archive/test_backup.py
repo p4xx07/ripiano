@@ -67,3 +67,10 @@ def test_only_owner_can_trigger_backup():
         response = client.post("/api/backups")
     assert response.status_code == 202
     assert BackupRun.objects.get(pk=response.json()["id"]).trigger == "manual"
+    # A second request while one is queued or running gets the existing run, not another snapshot (judge 3, M4).
+    with patch("archive.views.backup_archive.delay") as queued:
+        again = client.post("/api/backups")
+    assert again.status_code == 409 and again.json()["id"] == response.json()["id"] and not queued.called
+    BackupRun.objects.filter(pk=response.json()["id"]).update(status=BackupRun.Status.COMPLETE)
+    with patch("archive.views.backup_archive.delay"):
+        assert client.post("/api/backups").status_code == 202

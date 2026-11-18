@@ -609,6 +609,46 @@ class DocumentVersion(models.Model):
         constraints = [models.UniqueConstraint(fields=["document", "number"], name="unique_document_version_number")]
 
 
+class DocumentEvent(models.Model):
+    """One entry in a document's audit history: who or what changed which details, and when.
+
+    ``changes`` is a list of ``{"field", "from", "to"}`` with readable values (names, ISO dates),
+    never document text. See ``archive/history.py``.
+    """
+
+    class Action(models.TextChoices):
+        CREATED = "created", "Added"
+        UPDATED = "updated", "Details changed"
+        FILED_AUTOMATICALLY = "filed_automatically", "Filed automatically"
+        VERSION_ADDED = "version_added", "New version"
+        TRASHED = "trashed", "Moved to Trash"
+        RESTORED = "restored", "Restored"
+
+    class ActorKind(models.TextChoices):
+        USER = "user", "Person"
+        AGENT = "agent", "Agent"
+        WORKFLOW = "workflow", "Workflow"
+        EMAIL_RULE = "email_rule", "Email rule"
+        SOURCE = "source", "Source"
+        MATCHING_RULES = "matching_rules", "Matching rules"
+        LEARNED_FILING = "learned_filing", "Local learned filing"
+        BARCODES = "barcodes", "Barcodes"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="events")
+    created_at = models.DateTimeField(auto_now_add=True)
+    actor_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    actor_kind = models.CharField(max_length=20, choices=ActorKind.choices, default=ActorKind.USER)
+    # The agent, workflow, email rule, or source name at the time of the change.
+    actor_label = models.CharField(max_length=200, blank=True)
+    action = models.CharField(max_length=20, choices=Action.choices, default=Action.UPDATED)
+    changes = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["document", "-created_at"], name="document_event_recent_idx")]
+
+
 
 class Workflow(models.Model):
     """An owner's automation: when a trigger fires and the conditions match, apply the actions once."""

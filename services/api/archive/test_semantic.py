@@ -310,3 +310,25 @@ def test_library_hybrid_ranks_a_document_found_both_ways_first(vectors, owner, m
     ])
     result = client.get("/api/documents", {"q": "electricity"}).json()
     assert [item["id"] for item in result["documents"]] == [str(both.pk), str(semantic_only.pk), str(keyword_only.pk)]
+
+
+@pytest.mark.django_db
+def test_rebuild_command_marks_every_indexed_document(owner, monkeypatch):
+    from django.core.management import CommandError, call_command
+    from archive.models import Document, SemanticDocument, SemanticSettings
+    from archive.semantic import model_name, pending_documents
+
+    queued = []
+    monkeypatch.setattr("archive.tasks.semantic_index.delay", lambda: queued.append(True))
+    with pytest.raises(CommandError):
+        call_command("semantic_rebuild")  # off by default
+    config = SemanticSettings.current()
+    config.mode = SemanticSettings.Mode.OLLAMA
+    config.save()
+    document = Document.objects.create(owner=owner, title="Lease", original_name="l.pdf", original_path="originals/l.pdf",
+                                       original_mime="application/pdf", original_sha256="0" * 64, original_size=1,
+                                       status=Document.Status.READY, processed_at=timezone.now())
+    SemanticDocument.objects.create(document=document, model_name=model_name(config), passages=1, indexed_at=timezone.now())
+    assert document not in pending_documents(config)
+    call_command("semantic_rebuild", owner=owner.username)
+    assert document in pending_documents(config) and queued == [True]

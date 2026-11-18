@@ -81,6 +81,9 @@ def _apply_once(document_id, *, require_opt_in, expected_owner_id):
                 or locked.title != snapshot["title"] or locked.extracted_text != snapshot["extracted_text"]):
             return _RETRY
 
+        from . import history
+
+        before = history.snapshot(locked)
         assignments = 0
         changed = []
         for kind, field, model_type in (
@@ -114,4 +117,5 @@ def _apply_once(document_id, *, require_opt_in, expected_owner_id):
                     )
                     added_tags += int(created)
             assignments += added_tags
+        history.record(locked, before, action=history.Action.FILED_AUTOMATICALLY, actor_kind=history.Kind.LEARNED_FILING)
         return assignments

@@ -204,7 +204,7 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
     setAccount({ name: item.name, host: item.host, port: item.port, security: item.security, username: item.username, password: "" });
     requestAnimationFrame(() => {
       accountFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      accountFormRef.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+      if (!accountFormRef.current?.contains(document.activeElement)) accountFormRef.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
     });
   }
 
@@ -226,7 +226,7 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
     setRule({ ...item, correspondent_id: item.correspondent_id ?? "", document_type_id: item.document_type_id ?? "" });
     requestAnimationFrame(() => {
       ruleFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      ruleFormRef.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+      if (!ruleFormRef.current?.contains(document.activeElement)) ruleFormRef.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
     });
   }
 

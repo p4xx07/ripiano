@@ -32,6 +32,9 @@ test("a workflow tags matching new documents and records what it did", async ({ 
   const form = page.getByRole("form", { name: "Workflow" });
   await form.getByLabel("Name", { exact: true }).fill(`Tag ${suffix}`);
   await form.getByLabel("Mention this word or phrase").fill(word);
+  // Regression: opening the form must not steal focus and send the phrase into the name field.
+  await expect(form.getByLabel("Name", { exact: true })).toHaveValue(`Tag ${suffix}`);
+  await expect(form.getByLabel("Mention this word or phrase")).toHaveValue(word);
   await form.getByRole("group", { name: "Add tags" }).getByRole("checkbox", { name: tag }).check();
   await form.getByRole("button", { name: "Create workflow" }).click();
   await expect(page.getByRole("status")).toContainText(`Workflow “Tag ${suffix}” saved`);
@@ -61,7 +64,8 @@ test("a workflow tags matching new documents and records what it did", async ({ 
 
   if (await menu.isVisible()) await menu.click();
   await page.getByRole("button", { name: "Workflows", exact: true }).click();
-  const run = page.locator(".agent-events > div").filter({ hasText: `receipt ${word}` });
+  // This workflow's run on this document (other workflows on a shared test account may also have run on it).
+  const run = page.locator(".agent-events > div").filter({ hasText: `Tag ${suffix} ·` }).filter({ hasText: `receipt ${word}` });
   await expect(run).toContainText(`added tag ${tag}`);
   await run.getByRole("button", { name: `receipt ${word} ${suffix}` }).click();
   await expect(page.getByRole("dialog", { name: "Keep it in place." })).toBeVisible();

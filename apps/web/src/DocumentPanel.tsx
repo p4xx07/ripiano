@@ -21,6 +21,7 @@ import {
 import { Document, DocumentNote, FilingItem, FilingSuggestion, FilingSuggestions, Location, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
+import DocumentHistory from "./DocumentHistory";
 import CustomFieldsPanel from "./CustomFieldsPanel";
 import ShareLinksPanel from "./ShareLinksPanel";
 import DocumentAccessPanel from "./DocumentAccessPanel";
@@ -580,7 +581,7 @@ export default function DocumentPanel({
             <Save size={17} /> {busy ? m.saving : m.saveChanges}
           </Button>
         </form>
-        <CustomFieldsPanel documentId={current.id} onChanged={() => onSaved(current)} />
+        <CustomFieldsPanel documentId={current.id} onChanged={() => { onSaved(current); setCurrent((value) => ({ ...value })); }} />
         <section className="detail-notes" aria-labelledby="document-notes-heading">
           <h3 id="document-notes-heading"><MessageSquare size={17} /> {m.notes}</h3>
           <p>{m.notesIntro}</p>
@@ -607,6 +608,7 @@ export default function DocumentPanel({
           </ol>}
           {nextNoteOffset !== null && <button type="button" className="text-action" disabled={notesLoading} onClick={() => void loadNotes(nextNoteOffset)}>{m.showOlderNotes}</button>}
         </section>
+        <DocumentHistory documentId={current.id} refreshKey={current} />
         <DocumentLinks documentId={current.id} onOpenDocument={onOpenDuplicate} />
         <div className="detail-files">
           <h3>

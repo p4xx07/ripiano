@@ -219,7 +219,9 @@ export async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(path, {
+  let response: Response;
+  try {
+    response = await fetch(path, {
     ...options,
     credentials: "same-origin",
     headers: {
@@ -233,10 +235,43 @@ export async function request<T>(
       ...options.headers,
     },
   });
-  const result = await response.json();
-  if (!response.ok)
-    throw new ApiError(result.error ?? `Request failed (${response.status})`, response.status, result);
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
+    throw new ApiError(transportMessage("offline"), 0, {});
+  }
+  // A proxy in front of Ripiano can answer with an HTML page (for example 413 for a large upload or 502 while the
+  // server restarts); never show "Unexpected token '<'" to the person.
+  let result: Record<string, unknown>;
+  try {
+    result = await response.json();
+  } catch {
+    if (response.ok) throw new ApiError(transportMessage("unexpected"), response.status, {});
+    result = {};
+  }
+  if (!response.ok) {
+    const fallback = response.status === 413 ? transportMessage("tooLarge") : response.status >= 502 && response.status <= 504 ? transportMessage("unavailable") : transportMessage("unexpected");
+    throw new ApiError(typeof result.error === "string" ? result.error : fallback, response.status, result);
+  }
   return result as T;
+}
+
+const TRANSPORT_MESSAGES = {
+  en: {
+    offline: "Ripiano can't be reached. Check your connection and try again.",
+    tooLarge: "This file is larger than the server accepts.",
+    unavailable: "Ripiano is restarting or unavailable. Try again in a minute.",
+    unexpected: "The server sent an unexpected reply. Try again.",
+  },
+  it: {
+    offline: "Impossibile raggiungere Ripiano. Controlla la connessione e riprova.",
+    tooLarge: "Questo file supera la dimensione accettata dal server.",
+    unavailable: "Ripiano si sta riavviando o non è disponibile. Riprova tra un minuto.",
+    unexpected: "Il server ha inviato una risposta inattesa. Riprova.",
+  },
+} as const;
+
+function transportMessage(key: keyof (typeof TRANSPORT_MESSAGES)["en"]) {
+  return TRANSPORT_MESSAGES[language() === "it" ? "it" : "en"][key];
 }
 
 export function formatDate(value: string) {

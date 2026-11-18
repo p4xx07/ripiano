@@ -46,6 +46,7 @@ import {
   X,
 } from "lucide-react";
 import { ApiError, CustomField, Document, FilingItem, formatDate, LibraryFilters, request, Session, Tag, tagPathLabel } from "./api";
+import * as uploadQueue from "./uploadQueue";
 import DocumentPanel from "./DocumentPanel";
 import ActionPanel from "./ActionPanel";
 import InboxPanel from "./InboxPanel";
@@ -561,6 +562,8 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
   const [uploadReport, setUploadReport] = useState<{ total: number; failures: string[] } | null>(null);
+  const [waitingUploads, setWaitingUploads] = useState(0);
+  const sendingWaiting = useRef(false);
   const [nativeScanner] = useState(() => Boolean(window.RipianoAndroid));
   const [dropActive, setDropActive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -964,6 +967,49 @@ function App() {
     return () => window.clearInterval(timer);
   }, [session?.authenticated, documents, query, loadDocuments]);
 
+  async function refreshWaiting() {
+    setWaitingUploads(session?.username ? (await uploadQueue.pending(session.username)).length : 0);
+  }
+
+  /** Send files kept while offline, oldest first. Stops at the first network failure; refused files are reported. */
+  async function sendWaiting() {
+    const owner = session?.username;
+    if (!owner || sendingWaiting.current) return;
+    sendingWaiting.current = true;
+    const failures: string[] = [];
+    let sent = 0;
+    try {
+      for (const item of await uploadQueue.pending(owner)) {
+        const form = new FormData();
+        form.append("document", new File([item.blob], item.name, { type: item.type }));
+        try {
+          await request<Document>("/api/documents", { method: "POST", body: form });
+          sent += 1;
+          await uploadQueue.forget(item.id);
+        } catch (cause) {
+          if (cause instanceof ApiError && uploadQueue.isRetryable(cause.status)) break;
+          failures.push(`${item.name}: ${cause instanceof Error ? cause.message : l.uploadFailed}`);
+          await uploadQueue.forget(item.id);
+        }
+      }
+    } finally {
+      sendingWaiting.current = false;
+      await refreshWaiting();
+    }
+    if (failures.length) setUploadReport({ total: sent + failures.length, failures });
+    if (sent) void loadDocuments(query);
+  }
+
+  useEffect(() => {
+    if (!session?.authenticated) return;
+    void sendWaiting();
+    const retry = () => void sendWaiting();
+    window.addEventListener("online", retry);
+    const timer = window.setInterval(retry, 60000);
+    return () => { window.removeEventListener("online", retry); window.clearInterval(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.authenticated, session?.username]);
+
   async function upload(files: FileList | File[] | null) {
     if (!files?.length) return;
     const chosen = Array.from(files);
@@ -986,9 +1032,15 @@ function App() {
             body: form,
           });
         } catch (cause) {
-          failures.push(`${file.name}: ${cause instanceof Error ? cause.message : l.uploadFailed}`);
+          // Offline or the server is restarting: keep the file and send it later instead of losing it.
+          if (cause instanceof ApiError && uploadQueue.isRetryable(cause.status) && session?.username && await uploadQueue.keep(session.username, file)) {
+            continue; // shown in the "waiting to upload" banner, not as a rejected file
+          } else {
+            failures.push(`${file.name}: ${cause instanceof Error ? cause.message : l.uploadFailed}`);
+          }
         }
       }
+      await refreshWaiting();
       await loadDocuments("");
       if (failures.length) setUploadReport({ total: chosen.length, failures });
     } catch (cause) {
@@ -1426,6 +1478,12 @@ function App() {
                 <div className="inline-error" role="alert">
                   {listError}
                   <button onClick={() => void loadDocuments(query)}>{l.retry}</button>
+                </div>
+              )}
+              {waitingUploads > 0 && (
+                <div className="upload-progress" role="status" aria-live="polite">
+                  <UploadCloud size={19} /> {l.waitingUploads(waitingUploads)}
+                  <button type="button" className="text-action" onClick={() => void sendWaiting()}>{l.sendWaitingNow}</button>
                 </div>
               )}
               {uploading && (

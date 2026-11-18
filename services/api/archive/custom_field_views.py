@@ -255,18 +255,24 @@ def document_custom_field_detail(request, document_id, field_id):
     document = Document.objects.select_for_update().filter(pk=document_id, owner=request.user, trashed_at__isnull=True).first()
     if document is None or field is None:
         return JsonResponse({"error": "Custom field not found"}, status=404)
+    from . import history
+
+    before = history.snapshot(document)
     if request.method == "DELETE":
         CustomFieldValue.objects.filter(document=document, field=field).delete()
+        history.record(document, before, actor_user=request.user)
         return JsonResponse(field_json(field))
     body = _body(request)
     if body is None or "value" not in body:
         return JsonResponse({"error": "Provide a value"}, status=400)
     if body["value"] is None:
         CustomFieldValue.objects.filter(document=document, field=field).delete()
+        history.record(document, before, actor_user=request.user)
         return JsonResponse(field_json(field))
     try:
         value = normalize_value(field.kind, body["value"])
     except ValueError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
     CustomFieldValue.objects.update_or_create(document=document, field=field, defaults={"value": value})
+    history.record(document, before, actor_user=request.user)
     return JsonResponse(field_json(field, value))

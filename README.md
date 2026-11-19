@@ -39,7 +39,7 @@ docker compose up --build -d
 
 Open <http://localhost:8080> and enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account. All settings are in the [user guide](docs/USER_GUIDE.md#install-and-run).
 
-- **Synology NAS with Portainer**: use [`deploy/compose.portainer.yaml`](deploy/compose.portainer.yaml) with [`deploy/portainer.env.example`](deploy/portainer.env.example), following [deploy/README.md](deploy/README.md).
+- **NAS with pre-built images**: follow [deploy/README.md](deploy/README.md); it works with plain `docker compose` or any tool that runs Compose files.
 - **Access from outside** behind one sign-in: the [Raspberry Pi gateway](deploy/gateway/README.md).
 
 ## Documentation

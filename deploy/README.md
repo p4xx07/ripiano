@@ -1,12 +1,12 @@
-# Portainer on Synology
+# NAS deployment with pre-built images
 
 `compose.portainer.yaml` is the pull-only stack for the DS923+ (`linux/amd64`). It serves the PWA, API, and MCP on one web port. PostgreSQL, Valkey, OCR worker, private LibreOffice converter, maintenance worker, scheduler, and MCP have no published port. The OCR worker handles new documents and retries; the maintenance worker handles rule rechecks and backups, so a long archive scan does not hold new uploads. Put Synology's HTTPS reverse proxy in front of the web port, then install the PWA from that HTTPS origin. To reach Ripiano and other services from outside through one sign-in, use the [Raspberry Pi gateway](gateway/README.md) (Traefik + Authelia) instead.
 
-The images are built and published to GHCR by `.github/workflows/verify-and-publish.yml` after a `v*` release tag passes the automated jobs. No release images are published by the draft PR. The workflow summary prints image digest references. Set `RIPIANO_API_IMAGE` and `RIPIANO_WEB_IMAGE` in Portainer to those full `ghcr.io/...@sha256:...` values. A digest pins exactly what the NAS runs. If the packages are private, give Portainer read access to GHCR; public packages can be pulled anonymously.
+The images are built and published to GHCR by `.github/workflows/verify-and-publish.yml` after a `v*` release tag passes the automated jobs. No release images are published by the draft PR. The workflow summary prints image digest references. Set `RIPIANO_API_IMAGE` and `RIPIANO_WEB_IMAGE` in the stack's environment to those full `ghcr.io/...@sha256:...` values. A digest pins exactly what the NAS runs. If the packages are private, log the NAS in to GHCR (`docker login ghcr.io`) or give your Compose tool read access; public packages can be pulled anonymously.
 
-Required Portainer environment variables:
+Required environment variables:
 
-The checked-in [environment example](portainer.env.example) collects the values in one place. Enter its variables in Portainer with your own secrets, paths, and published image digests; the file's image tags are placeholders and cannot deploy the current draft PR.
+The checked-in [environment example](portainer.env.example) collects the values in one place. Set its variables wherever your Compose tool reads them (for example an `.env` file next to the Compose file) with your own secrets, paths, and published image digests; the file's image tags are placeholders and cannot deploy the current draft PR.
 
 | Variable | Example | Purpose |
 | --- | --- | --- |

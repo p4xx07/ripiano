@@ -4,7 +4,7 @@ Ripiano writes daily snapshots to a mounted backup volume. The default schedule 
 
 ## NAS volume
 
-Set `RIPIANO_BACKUP_PATH` to a persistent Synology folder in Portainer, for example `/volume1/ripiano-backups`. Give container UID 10001 write access to it. The maintenance worker publishes snapshots only after validating the PostgreSQL dump and every copied media checksum:
+Set `RIPIANO_BACKUP_PATH` to a persistent NAS folder in the stack's environment, for example `/volume1/ripiano-backups`. Give container UID 10001 write access to it. The maintenance worker publishes snapshots only after validating the PostgreSQL dump and every copied media checksum:
 
 ```text
 /volume1/ripiano-backups/
@@ -20,7 +20,7 @@ Set `RIPIANO_BACKUP_PATH` to a persistent Synology folder in Portainer, for exam
 
 Configure Synology Hyper Backup to protect the `complete` folder. Its Backblaze B2 destination and credentials remain under your control. Each snapshot has a consistent PostgreSQL dump and immutable original files; unchanged media are hard-linked between local snapshots when the backup filesystem supports it. Snapshot files must not be edited in place.
 
-The `.env` or Portainer secrets are deliberately outside the snapshot. Keep a separate secure record of those values and replace credentials after recovery as needed. Backups made by this release require the same database migration set when restored; use a matching Ripiano image.
+The `.env` file and any secrets set in your stack manager are deliberately outside the snapshot. Keep a separate secure record of those values and replace credentials after recovery as needed. Backups made by this release require the same database migration set when restored; use a matching Ripiano image.
 
 ## Restore into an empty stack
 

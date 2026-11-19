@@ -45,7 +45,7 @@ The stack is a Docker Compose set of services (Django API, OCR workers, PostgreS
 - [Interface language and appearance](#interface-language)
 - [Install and run](#install-and-run)
   - [Run locally](#run-locally)
-  - [NAS deployment (Portainer)](#nas-deployment-portainer)
+  - [NAS deployment](#nas-deployment)
   - [Work on the services](#work-on-the-services)
 - [Adding documents](#adding-documents)
   - [Uploads and file types](#uploads-and-file-types)
@@ -110,9 +110,9 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 
 Required variables in `.env`: `RIPIANO_SECRET_KEY`, `RIPIANO_SETUP_KEY`, `RIPIANO_DB_PASSWORD`, `RIPIANO_PUBLIC_ORIGIN` (the exact URL in the browser), and `RIPIANO_ALLOWED_HOSTS` (its hostname). `RIPIANO_PORT` changes the published port (default 8080). Without path variables, data lives in Docker volumes.
 
-### NAS deployment (Portainer)
+### NAS deployment
 
-For a NAS deployment, use the [complete Portainer Compose example](../deploy/compose.portainer.yaml) and the [example environment values](../deploy/portainer.env.example). The example maps the database, media, and backup folders to persistent Synology paths and publishes only the web port; the API, OCR worker, maintenance worker, scheduler, broker, and MCP stay inside the stack. OCR work has its own queue so a long rule recheck or backup does not hold new uploads. Portainer should receive the complete Compose file and the environment variables, with real secrets and released image digests. A short excerpt shows the important mounts:
+For a NAS deployment, use the [complete pull-only Compose example](../deploy/compose.portainer.yaml) and the [example environment values](../deploy/portainer.env.example). The example maps the database, media, and backup folders to persistent Synology paths and publishes only the web port; the API, OCR worker, maintenance worker, scheduler, broker, and MCP stay inside the stack. OCR work has its own queue so a long rule recheck or backup does not hold new uploads. Whatever runs the stack (`docker compose` or a Compose-based manager) needs the complete Compose file and the environment variables, with real secrets and released image digests. A short excerpt shows the important mounts:
 
 ```yaml
 services:
@@ -513,7 +513,7 @@ The screenshots come from the running development stack with fictional PDF docum
 - [Implementation plan](IMPLEMENTATION_PLAN.md): build order and verification gates.
 - [Quality judges](QUALITY_JUDGES.md): the 9.5 target, independent review rubric, and release blockers.
 - [Design system](DESIGN_SYSTEM.md): Ripiano colors, shared controls, focus behavior, and mobile density.
-- [Portainer deployment](../deploy/README.md): digest-pinned images, NAS volumes, HTTPS, and backup mount.
+- [NAS deployment](../deploy/README.md): digest-pinned images, NAS volumes, HTTPS, and backup mount.
 - [Android app](../apps/android/README.md), [contributing](../CONTRIBUTING.md), and [security policy](../SECURITY.md).
 
 The planning documents remain the implementation baseline. No Paperless source code is included in this repository.

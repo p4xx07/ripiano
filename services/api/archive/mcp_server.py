@@ -91,6 +91,8 @@ GUARDED_TAG_ERROR = "This tag limits another agent's access; only a person can a
 PROTECTED_FIELD_ERROR = "A human or input rule already chose this field"
 # Refusals by policy are logged as "denied" (like a tool outside the grant), not as a failed call.
 REFUSALS = {GUARDED_TAG_ERROR, PROTECTED_FIELD_ERROR}
+# An owner's document outside the grant's filter is a refusal too (judge 3 round 8, L6); an unknown ID stays an error.
+OUT_OF_SCOPE = {"Document not found within this grant", "Document no longer within this grant"}
 
 
 def _active(grant):
@@ -351,7 +353,8 @@ def _call(name, args):
             document = Document.objects.filter(pk=UUID(str(args["document_id"])), owner=grant.owner).first()
         except (TypeError, ValueError, AttributeError):
             document = None
-    outcome = ("denied" if payload["error"] in REFUSALS else "error") if failure else "ok"
+    refused = failure and (payload["error"] in REFUSALS or (payload["error"] in OUT_OF_SCOPE and document is not None))
+    outcome = "denied" if refused else "error" if failure else "ok"
     AgentAudit.objects.create(grant=grant, action=name, document=document, outcome=outcome)
     return _result(payload, error=failure)
 

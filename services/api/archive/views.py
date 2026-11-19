@@ -35,7 +35,7 @@ from .custom_field_views import normalize_filter_range, normalize_filter_value
 from .physical_views import copy_json
 from .ingestion import ingest_document
 from .storage import InvalidDocument, download_name
-from .tasks import backup_archive
+from .tasks import PROCESSING_ERRORS, backup_archive
 
 logger = logging.getLogger(__name__)
 CURSOR_SALT = "ripiano-document-page-v2"
@@ -239,6 +239,11 @@ def _document_json(document, query="", access="owner"):
         "status": document.status,
         "archive_available": bool(document.archive_path) and document.status == Document.Status.READY,
         "error": document.error,
+        # Processed with a caveat the owner should check (judge 1 round 8, M2): "damaged_pdf" or None. `warning` is the
+        # message in the request's language; the document stays under Needs attention until the warning is reviewed.
+        "processing_warning": (document.processing_warning or None) if document.status == Document.Status.READY else None,
+        "warning": PROCESSING_ERRORS.get(document.processing_warning, "") if document.processing_warning and document.status == Document.Status.READY else "",
+        "processing_warning_reviewed_at": document.processing_warning_reviewed_at.isoformat() if document.processing_warning_reviewed_at else None,
         "created_at": document.created_at.isoformat(),
         "trashed_at": document.trashed_at.isoformat() if document.trashed_at else None,
         "document_date": document.document_date.isoformat() if document.document_date else None,
@@ -497,7 +502,8 @@ def documents(request):
         if view == "actions":
             queryset = queryset.filter(action_status=Document.ActionStatus.OPEN)
         elif view == "exceptions":
-            queryset = queryset.filter(Q(status=Document.Status.FAILED) | Q(duplicate_of__isnull=False, duplicate_of__trashed_at__isnull=True, duplicate_reviewed_at__isnull=True))
+            queryset = queryset.filter(Q(status=Document.Status.FAILED) | Q(duplicate_of__isnull=False, duplicate_of__trashed_at__isnull=True, duplicate_reviewed_at__isnull=True)
+                                       | (Q(status=Document.Status.READY) & ~Q(processing_warning="") & Q(processing_warning_reviewed_at__isnull=True)))
         # Preserve the owner/metadata filters before keyword matching so semantic-only hits obey them too.
         filtered_queryset = queryset
         if free_query:
@@ -1075,6 +1081,11 @@ def document_detail(request, document_id):
                 return JsonResponse({"error": "Only exact copies can be reviewed"}, status=400)
             document.duplicate_reviewed_at = timezone.now() if body["duplicate_reviewed"] else None
             changes.append("duplicate_reviewed_at")
+        if "processing_warning_reviewed" in body:
+            if not isinstance(body["processing_warning_reviewed"], bool) or not document.processing_warning:
+                return JsonResponse({"error": "Only documents with a processing warning can be reviewed"}, status=400)
+            document.processing_warning_reviewed_at = timezone.now() if body["processing_warning_reviewed"] else None
+            changes.append("processing_warning_reviewed_at")
         chosen = None
         added_tag = None
         if "add_tag_id" in body:

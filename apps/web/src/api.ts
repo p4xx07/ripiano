@@ -147,7 +147,17 @@ export type Document = {
   access: "owner" | "edit" | "view";
   shared_by: string | null;
   shared_by_id?: number;
+  /** Set when processing finished with a caveat, e.g. a damaged PDF whose readable pages were saved. */
+  processing_warning?: "damaged_pdf" | string | null;
+  /** The warning in the interface language ("" when none). */
+  warning?: string;
+  processing_warning_reviewed_at?: string | null;
 };
+
+/** A processing warning the owner has not marked as checked yet. */
+export function hasOpenWarning(doc: Pick<Document, "processing_warning" | "processing_warning_reviewed_at">): boolean {
+  return Boolean(doc.processing_warning) && !doc.processing_warning_reviewed_at;
+}
 
 export type Person = {
   id: number;
@@ -252,7 +262,17 @@ const PASSWORD_REFUSALS = new Set([
 
 /** The server refused the request because the password typed to confirm it is wrong. */
 export function isPasswordRefusal(cause: unknown): boolean {
-  return cause instanceof ApiError && (cause.status === 400 || cause.status === 429) && PASSWORD_REFUSALS.has(cause.message);
+  return cause instanceof ApiError && (cause.status === 400 || cause.status === 429)
+    && (PASSWORD_REFUSALS.has(cause.message) || PASSWORD_REFUSALS.has(cause.message.replace(/\.$/, "")));
+}
+
+/**
+ * Messages from the server are shown as sentences: a final period is added when one is missing, so they match the
+ * app's own messages ("La password non è corretta." — round-8 judge 2 L3).
+ */
+export function asSentence(text: string): string {
+  const trimmed = text.trim();
+  return !trimmed || /[.!?…:)»”"]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
 export async function request<T>(
@@ -309,7 +329,7 @@ export async function request<T>(
   }
   if (!response.ok) {
     const fallback = response.status === 413 ? transportMessage("tooLarge") : response.status >= 502 && response.status <= 504 ? transportMessage("unavailable") : transportMessage("unexpected");
-    throw new ApiError(typeof result.error === "string" ? result.error : fallback, response.status, result);
+    throw new ApiError(typeof result.error === "string" ? asSentence(result.error) : fallback, response.status, result);
   }
   return result as T;
 }

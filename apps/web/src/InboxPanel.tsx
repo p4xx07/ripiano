@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, Copy, FileText, Inbox, RotateCcw, Trash2 } from "lucide-react";
-import { Document, request } from "./api";
+import { AlertCircle, AlertTriangle, Check, Copy, FileText, Inbox, RotateCcw, Trash2 } from "lucide-react";
+import { Document, hasOpenWarning, request } from "./api";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/InboxPanel";
@@ -16,6 +16,9 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
   const [loadingMore, setLoadingMore] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // What the error's "Retry" does: the action that failed (retry OCR for that document), or reload the list.
+  const [errorRetry, setErrorRetry] = useState<{ label: string; run: () => void } | null>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState("");
   const [confirmResolve, setConfirmResolve] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -79,6 +82,27 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
     }
   }
 
+  /** A partly readable file (damaged PDF) the owner has checked: it leaves the Inbox (round-8 judge 1 M2). */
+  async function markChecked(document: Document) {
+    setBusyId(document.id);
+    setError("");
+    try {
+      await request(`/api/documents/${document.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ processing_warning_reviewed: true }),
+      });
+      moveFocusAfterLoad.current = true;
+      setNotice(m.warningChecked(document.title));
+      await load();
+    } catch (cause) {
+      moveFocusAfterLoad.current = false;
+      setError(cause instanceof Error ? cause.message : m.warningCheckError);
+      requestAnimationFrame(() => errorRef.current?.focus());
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function trashCopy(document: Document) {
     setBusyId(document.id);
     setError("");
@@ -136,6 +160,11 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
     if (confirmResolve) confirmResolveRef.current?.focus();
   }, [confirmResolve]);
 
+  // Errors from the list itself retry the load; set before each other action so its error retries that action.
+  useEffect(() => {
+    if (!error) setErrorRetry(null);
+  }, [error]);
+
   async function retry(document: Document) {
     setBusyId(document.id);
     setError("");
@@ -147,6 +176,15 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
     } catch (cause) {
       moveFocusAfterLoad.current = false;
       setError(cause instanceof Error ? cause.message : m.retryError);
+      // "Retry" in the message retries OCR for this document; focus goes to the message (round-8 judge 2 M3).
+      setErrorRetry({
+        label: m.retryOcrFor(document.title),
+        run: () => {
+          window.document.getElementById(`inbox-retry-${document.id}`)?.focus();
+          void retry(document);
+        },
+      });
+      requestAnimationFrame(() => errorRef.current?.focus());
     } finally {
       setBusyId(null);
     }
@@ -162,7 +200,11 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
       <Button type="button" variant="secondary" aria-label={m.refresh} title={m.refreshTitle} onClick={() => void load()}><RotateCcw size={16} /> <span className="refresh-label">{m.refresh}</span></Button>
     </div>
     <div className="visually-hidden" role="status" aria-live="polite">{notice}</div>
-    {error && <div className="inline-error" role="alert">{error}<button onClick={() => void load(documents.length ? nextCursor : null)}>{m.retry}</button></div>}
+    {error && <div ref={errorRef} className="inline-error" role="alert" tabIndex={-1}>{error}
+      {errorRetry
+        ? <button type="button" aria-label={errorRetry.label} onClick={errorRetry.run}>{m.retry}</button>
+        : <button type="button" onClick={() => void load(documents.length ? nextCursor : null)}>{m.retry}</button>}
+    </div>}
     <div ref={contentRef}>
     {loading ? <p>{m.loading}</p> : error && !documents.length ? null : documents.length === 0 ? (
       <div className="empty-state">
@@ -187,14 +229,16 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
       )}
       <div className="document-list">
         {documents.map((document) => <article className="document-row exception-row" key={document.id}>
-          <div className="document-icon">{document.status === "failed" ? <AlertCircle size={21} /> : <FileText size={21} />}</div>
+          <div className="document-icon">{document.status === "failed" ? <AlertCircle size={21} aria-hidden="true" /> : hasOpenWarning(document) ? <AlertTriangle size={21} aria-hidden="true" /> : <FileText size={21} aria-hidden="true" />}</div>
           <div className="document-info">
             <h3><button id={`inbox-title-${document.id}`} className="document-title-button" onClick={() => onOpenDocument(document)}>{document.title}</button></h3>
             {document.status === "failed" && <p className="doc-error">{m.ocrFailed(document.error)}</p>}
+            {document.status !== "failed" && hasOpenWarning(document) && <p className="doc-warning">{document.warning || m.partlyReadable}</p>}
             {document.duplicate_of && !document.duplicate_reviewed_at && <p className="inbox-copy-note"><Copy size={13} />{m.exactCopy(document.duplicate_of.title)}</p>}
           </div>
           <div className="exception-actions">
-            {document.status === "failed" && <Button type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} disabled={busyId === document.id} onClick={() => void retry(document)}><RotateCcw size={16} /> {m.tryOcrAgain}</Button>}
+            {document.status === "failed" && <Button id={`inbox-retry-${document.id}`} type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} pending={busyId === document.id} onClick={() => void retry(document)}><RotateCcw size={16} /> {m.tryOcrAgain}</Button>}
+            {document.status !== "failed" && hasOpenWarning(document) && (document.access ?? "owner") === "owner" && <Button type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} pending={busyId === document.id} onClick={() => void markChecked(document)}><Check size={16} /> {m.markChecked}</Button>}
             {document.duplicate_of && !document.duplicate_reviewed_at && <Button type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} disabled={busyId === document.id} onClick={() => void keepBoth(document)}><Check size={16} /> {m.keepBoth}</Button>}
             {isOpenCopy(document) && isSettled(document) && <Button type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} disabled={busyId === document.id || resolving} onClick={() => void trashCopy(document)}><Trash2 size={16} /> {m.trashCopy}</Button>}
           </div>

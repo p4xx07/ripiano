@@ -373,6 +373,7 @@ EXACT = {
     "Office converter is unavailable; retry this document when it is running": "Il convertitore Office non è disponibile; riprova con questo documento quando sarà attivo",
     "Office converter returned an invalid PDF": "Il convertitore Office ha restituito un PDF non valido",
     "Only exact copies can be reviewed": "Si possono esaminare solo le copie identiche",
+    "Only documents with a processing warning can be reviewed": "Si possono esaminare solo i documenti con un avviso di elaborazione",
     "Only failed file cleanup can be retried": "Puoi riprovare solo una pulizia dei file non riuscita",
     "Only the owner or the note's author can remove it": "Solo il proprietario o l'autore della nota può rimuoverla",
     "Original checksum changed": "Il checksum dell'originale è cambiato",
@@ -630,6 +631,7 @@ VALUES = {
 DISPLAY = {
     "No type": "Nessun tipo",
     "Initial placement": "Prima collocazione",
+    "Sticker created": "Adesivo creato",
     "Move": "Spostamento",
     "Marked missing": "Segnalata come mancante",
     "Marked found": "Segnalata come ritrovata",

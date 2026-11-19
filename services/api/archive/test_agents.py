@@ -188,7 +188,8 @@ def test_semantic_tool_is_hidden_while_off_and_refused_documents_are_kept_in_the
         text_tool = next(name for name in names if "text" in name)
         assert async_to_sync(_call)(text_tool, {"document_id": str(outside.id)}).is_error
     entry = AgentAudit.objects.filter(grant=grant).latest("created_at")
-    assert entry.document_id == outside.id and entry.outcome == "error"  # the owner sees which document was probed
+    # The owner sees which document was probed; outside the filter is a refusal (judge 3 round 8, L6).
+    assert entry.document_id == outside.id and entry.outcome == "denied"
 
 
 def test_low_level_errors_become_readable_messages():

@@ -17,7 +17,7 @@
 - **Scan or upload**: phone camera, photos, PDFs, Office files, and emails; the text is recognised automatically.
 - **Find anything fast**: search the words inside every document, or filter by sender, tag, type, or date.
 - **Filed for you**: tags, senders, and document types are suggested and filled in from your own past choices.
-- **Paper originals**: a QR sticker on each paper copy tells you which shelf or box it is in.
+- **Paper originals**: a QR sticker on each paper copy tells you which shelf or box it is in. Scan it with the phone camera (in Ripiano where the browser can read QR codes, or with the phone's camera app).
 - **Works on your phone**: install it from the browser on iPhone or Android; an Android app adds a document scanner.
 - **Family accounts**: everyone gets a private archive, and you can share single documents or send a link that expires.
 - **Automatic imports**: optionally pull in files from email, a NAS folder, cloud storage, or a Telegram bot.

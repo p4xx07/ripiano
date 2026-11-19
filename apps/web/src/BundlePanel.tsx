@@ -5,7 +5,7 @@ import { Button, Field } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/BundlePanel";
 
-type Bundle = { id: string; title: string; documents: { id: string; title: string }[]; expires_at: string; downloads: number; active: boolean; status: "building" | "ready" | "failed" };
+type Bundle = { id: string; title: string; documents: { id: string; title: string }[]; expires_at: string; revoked_at?: string | null; revoked_reason?: string | null; downloads: number; active: boolean; status: "building" | "ready" | "failed" };
 
 export default function BundlePanel({ selectedIds }: { selectedIds: string[] }) {
   const m = useMessages(messages);
@@ -17,6 +17,8 @@ export default function BundlePanel({ selectedIds }: { selectedIds: string[] }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  // Bundles Ripiano revoked by itself that would otherwise still be live (only until their expiry date).
+  const revokedBundles = (bundles ?? []).filter((item) => item.revoked_at && item.revoked_reason && Date.parse(item.expires_at) > Date.now()).slice(0, 10);
   // A link belongs to the selection it was made for.
   useEffect(() => { setUrl(""); setCopied(false); }, [selectedIds.join(",")]);
   useEffect(() => {
@@ -98,6 +100,16 @@ export default function BundlePanel({ selectedIds }: { selectedIds: string[] }) 
                   <small className="bundle-documents">{item.documents.map((document) => document.title).join(", ")}</small>
                 </span>
                 <Button type="button" variant="secondary" disabled={busy} onClick={() => void revoke(item)} aria-label={m.revokeLabel(item.title)}>{m.revoke}</Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {/* Links Ripiano ended by itself say why, so the owner can decide again (round-8 judge 3 L4, D9). */}
+        {revokedBundles.length > 0 && (
+          <ul className="bundle-list bundle-revoked">
+            {revokedBundles.map((item) => (
+              <li key={item.id}>
+                <span><strong>{item.title}</strong> · {item.revoked_reason === "password_changed" ? m.revokedPassword : item.revoked_reason === "account_off" ? m.revokedAccountOff : m.revokedState}</span>
               </li>
             ))}
           </ul>

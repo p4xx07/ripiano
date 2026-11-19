@@ -26,6 +26,8 @@ def overview(request):
         needs_action=Count("id", filter=Q(action_status=Document.ActionStatus.OPEN)),
         overdue=Count("id", filter=Q(action_status=Document.ActionStatus.OPEN, action_due_date__lt=timezone.localdate())),
         duplicates=Count("id", filter=Q(duplicate_of__isnull=False, duplicate_reviewed_at__isnull=True)),
+        # Processed with a caveat to check, such as a damaged PDF whose readable pages were kept.
+        warnings=Count("id", filter=Q(status=Document.Status.READY) & ~Q(processing_warning="") & Q(processing_warning_reviewed_at__isnull=True)),
         bytes=Sum("original_size"),
     )
     # Counted on its own: joining tag links into the aggregate above would multiply the other totals.

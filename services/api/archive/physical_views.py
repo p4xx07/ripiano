@@ -316,6 +316,8 @@ def document_copies(request, document_id):
                 copy = PhysicalCopy.objects.create(document=document, sticker_code=code, location=location)
                 if location:
                     Movement.objects.create(physical_copy=copy, kind=Movement.Kind.PLACEMENT, to_location=location, moved_by=request.user, note="Initial placement")
+                else:
+                    Movement.objects.create(physical_copy=copy, kind=Movement.Kind.CREATED, moved_by=request.user, note="Sticker created")
             return JsonResponse(copy_json(copy), status=201)
         except IntegrityError:
             continue

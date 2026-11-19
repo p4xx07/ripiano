@@ -42,7 +42,7 @@ def _blocked(request):
 
 
 def revoke_tokens_on_password_change(sender, instance, **kwargs):
-    """A new password ends every API token and agent grant, like it ends other sessions."""
+    """A new password ends every API token, agent grant, public share link and bundle (D11), like it ends other sessions."""
     if not instance.pk:
         return
     # Only a password someone set (set_password keeps the raw value in `_password` until save). Django also re-saves
@@ -54,9 +54,21 @@ def revoke_tokens_on_password_change(sender, instance, **kwargs):
     if previous is not None and previous != instance.password:
         ApiToken.objects.filter(user_id=instance.pk, revoked_at__isnull=True).update(revoked_at=timezone.now())
         # Agent grants too: a stolen session or password must not leave a year-long agent token behind.
-        from .models import AgentGrant
+        from .models import AgentGrant, ShareBundle, ShareLink
 
-        AgentGrant.objects.filter(owner_id=instance.pk, revoked_at__isnull=True).update(revoked_at=timezone.now())
+        now = timezone.now()
+        AgentGrant.objects.filter(owner_id=instance.pk, revoked_at__isnull=True).update(revoked_at=now)
+        # D11: public share links and bundles end too, so a stolen session cannot keep anonymous download access after
+        # the owner (or an admin reset) changes the password. They stay ended; the owner creates new ones if needed.
+        ShareLink.objects.filter(owner_id=instance.pk, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="password_changed")
+        bundles = list(ShareBundle.objects.filter(owner_id=instance.pk, revoked_at__isnull=True))
+        ShareBundle.objects.filter(pk__in=[item.pk for item in bundles]).update(revoked_at=now, revoked_reason="password_changed")
+        if bundles:
+            from django.db import transaction
+
+            from .bundle_views import remove_bundle_files
+
+            transaction.on_commit(lambda: remove_bundle_files(bundles))  # their ZIPs go at once, not at the next sweep
 
 
 def _hash(token):

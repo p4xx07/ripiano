@@ -39,9 +39,11 @@ def _preview_dir(document):
 
 
 def page_source(document):
-    """The PDF page tools work on: the original when it is a PDF, otherwise the searchable PDF."""
-    if document.original_mime == "application/pdf":
+    """The PDF page tools work on: the original when it is a readable PDF, otherwise the searchable PDF."""
+    if document.original_mime == "application/pdf" and not (
+            document.processing_warning == "damaged_pdf" and document.archive_path and document.status == Document.Status.READY):
         return _media(document.original_path), "original"
+    # A damaged original cannot be opened; its readable pages live in the searchable PDF (judge 1 round 8, M2).
     if document.archive_path and document.status == Document.Status.READY:
         return _media(document.archive_path), "searchable"
     raise VersionError("Page tools need a PDF. Wait until this document has finished processing.", 409)
@@ -81,10 +83,11 @@ def page_info(document):
 
 def render_page(document, number):
     """PNG preview of one page (1-based), cached per version."""
-    cache = _preview_dir(document) / f"v{document.version_number}-{number}.png"
+    path, source = page_source(document)
+    # Keyed by source too: a damaged original's previews are never served once the searchable PDF is the source.
+    cache = _preview_dir(document) / f"v{document.version_number}-{source}-{number}.png"
     if cache.exists():
         return cache
-    path, _ = page_source(document)
     _, count = _open_reader(path)
     if not 1 <= number <= count:
         raise VersionError("Page not found", 404)

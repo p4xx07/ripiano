@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   ArrowDownToLine,
   Building2,
   Copy,
@@ -18,7 +19,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Document, DocumentNote, FilingItem, FilingSuggestion, FilingSuggestions, formatDateTime, Location, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
+import { Document, DocumentNote, hasOpenWarning, FilingItem, FilingSuggestion, FilingSuggestions, formatDateTime, Location, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 
@@ -27,6 +28,63 @@ import DocumentLinks from "./DocumentLinks";
  * (and asks first) when there are unsaved edits; `then` runs if the person chooses to discard them.
  */
 export const documentLeaveGuard: { current: ((then: () => void) => boolean) | null } = { current: null };
+
+const DRAFT_FIELDS = ["title", "date", "asn", "correspondentId", "documentTypeId", "storagePathId", "actionStatus", "actionDueDate", "actionNote"] as const;
+type DraftField = typeof DRAFT_FIELDS[number];
+type FieldValues = Record<DraftField, string>;
+
+/**
+ * The unsaved edits of an open document: kept by the app when the session ends, put back after signing in again.
+ * Only what the person changed is kept, each field with the value it replaced, and tags as additions and removals,
+ * so restoring never writes back fields that changed on the server meanwhile (round-8 review M2).
+ */
+export type DocumentDraft = {
+  documentId: string;
+  /** When the draft was kept (ms since epoch); drafts older than a day are dropped. */
+  keptAt: number;
+  changes: Partial<Record<DraftField, { from: string; to: string }>>;
+  tagsAdded: string[];
+  tagsRemoved: string[];
+  note: string;
+};
+
+/** The form values of a saved document. */
+function savedValues(doc: Document): FieldValues {
+  return {
+    title: doc.title,
+    date: doc.document_date ?? "",
+    asn: doc.asn ? String(doc.asn) : "",
+    correspondentId: doc.correspondent?.id ?? "",
+    documentTypeId: doc.document_type?.id ?? "",
+    storagePathId: doc.storage_path?.id ?? "",
+    actionStatus: doc.action_status,
+    actionDueDate: doc.action_due_date ?? "",
+    actionNote: doc.action_note,
+  };
+}
+
+/**
+ * Puts a draft onto the freshly loaded document. A change is applied only where the server still has the value it
+ * replaced; where someone (or a workflow) changed that field meanwhile, the newer server value is kept and the field
+ * is reported as a conflict.
+ */
+function applyDraft(doc: Document, draft: DocumentDraft) {
+  const values = savedValues(doc);
+  const conflicts: DraftField[] = [];
+  for (const field of DRAFT_FIELDS) {
+    const change = draft.changes[field];
+    if (!change || values[field] === change.to) continue;
+    if (values[field] === change.from) values[field] = change.to;
+    else conflicts.push(field);
+  }
+  const tags = new Set(doc.tags.map((tag) => tag.id));
+  draft.tagsAdded.forEach((id) => tags.add(id));
+  draft.tagsRemoved.forEach((id) => tags.delete(id));
+  return { values, tags: [...tags], note: draft.note, conflicts };
+}
+
+/** Set while a document dialog is open: returns its unsaved edits, or null when there are none (round-8 judge 2 M1). */
+export const documentDraftSnapshot: { current: (() => DocumentDraft | null) | null } = { current: null };
 import DocumentHistory from "./DocumentHistory";
 import CustomFieldsPanel from "./CustomFieldsPanel";
 import ShareLinksPanel from "./ShareLinksPanel";
@@ -46,8 +104,11 @@ export default function DocumentPanel({
   onOpenLocations,
   onOpenDuplicate,
   onTrashed,
+  restoredDraft,
 }: {
   initial: Document;
+  /** Edits not saved before the session ended: shown again in the form, not saved until the person presses Save. */
+  restoredDraft?: DocumentDraft | null;
   onClose: () => void;
   onSaved: (document: Document, closing?: boolean) => void;
   onOpenTags: () => void;
@@ -58,12 +119,14 @@ export default function DocumentPanel({
 }) {
   const m = useMessages(messages);
   const [current, setCurrent] = useState(initial);
-  const [title, setTitle] = useState(initial.title);
-  const [date, setDate] = useState(initial.document_date ?? "");
-  const [asn, setAsn] = useState(initial.asn ? String(initial.asn) : "");
-  const [correspondentId, setCorrespondentId] = useState(initial.correspondent?.id ?? "");
-  const [documentTypeId, setDocumentTypeId] = useState(initial.document_type?.id ?? "");
-  const [storagePathId, setStoragePathId] = useState(initial.storage_path?.id ?? "");
+  const [restored] = useState(() => restoredDraft ? applyDraft(initial, restoredDraft) : null);
+  const start = restored?.values ?? savedValues(initial);
+  const [title, setTitle] = useState(start.title);
+  const [date, setDate] = useState(start.date);
+  const [asn, setAsn] = useState(start.asn);
+  const [correspondentId, setCorrespondentId] = useState(start.correspondentId);
+  const [documentTypeId, setDocumentTypeId] = useState(start.documentTypeId);
+  const [storagePathId, setStoragePathId] = useState(start.storagePathId);
   const [storagePaths, setStoragePaths] = useState<FilingItem[]>([]);
   const [correspondents, setCorrespondents] = useState<FilingItem[]>([]);
   const [documentTypes, setDocumentTypes] = useState<FilingItem[]>([]);
@@ -77,11 +140,11 @@ export default function DocumentPanel({
   // Bumped when a change that is not a document save (a rejected suggestion) adds a history entry.
   const [historyKey, setHistoryKey] = useState(0);
   const historyRefresh = useMemo(() => ({ current, historyKey }), [current, historyKey]);
-  const [actionStatus, setActionStatus] = useState(initial.action_status);
-  const [actionDueDate, setActionDueDate] = useState(initial.action_due_date ?? "");
-  const [actionNote, setActionNote] = useState(initial.action_note);
+  const [actionStatus, setActionStatus] = useState(start.actionStatus as Document["action_status"]);
+  const [actionDueDate, setActionDueDate] = useState(start.actionDueDate);
+  const [actionNote, setActionNote] = useState(start.actionNote);
   const [selected, setSelected] = useState<string[]>(
-    initial.tags.map((tag) => tag.id),
+    restored?.tags ?? initial.tags.map((tag) => tag.id),
   );
   const [available, setAvailable] = useState<Tag[]>([]);
   const [suggestions, setSuggestions] = useState<FilingSuggestions | null>(null);
@@ -97,7 +160,7 @@ export default function DocumentPanel({
     Record<string, { from: string[]; to: string[]; note: string; at: string; by?: string }[]>
   >({});
   const [notes, setNotes] = useState<DocumentNote[]>([]);
-  const [noteDraft, setNoteDraft] = useState("");
+  const [noteDraft, setNoteDraft] = useState(restored?.note ?? "");
   const [nextNoteOffset, setNextNoteOffset] = useState<number | null>(null);
   const [notesBusy, setNotesBusy] = useState(false);
   const [notesLoading, setNotesLoading] = useState(true);
@@ -127,8 +190,37 @@ export default function DocumentPanel({
   // What "Discard changes" does: close by default, or open the document, screen or step the person asked for.
   const afterDiscard = useRef<() => void>(() => onClose());
   const noteFieldRef = useRef<HTMLTextAreaElement>(null);
+  const confirmBoxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (confirmClose) keepEditingRef.current?.focus();
+  }, [confirmClose]);
+  // The question is modal (round-8 judge 2 M2): the rest of the document dialog is inert while it shows, and Tab /
+  // Shift+Tab cycle between its two buttons. Esc and the backdrop mean "keep editing" (requestClose).
+  useEffect(() => {
+    const box = confirmBoxRef.current;
+    const panel = box?.parentElement;
+    if (!confirmClose || !box || !panel) return;
+    const madeInert: HTMLElement[] = [];
+    for (const child of Array.from(panel.children)) {
+      if (child === box || !(child instanceof HTMLElement) || child.inert) continue;
+      child.inert = true;
+      madeInert.push(child);
+    }
+    function trapTab(event: KeyboardEvent) {
+      if (event.key !== "Tab" || !box) return;
+      const items = Array.from(box.querySelectorAll<HTMLElement>("button"));
+      if (!items.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const index = items.indexOf(document.activeElement as HTMLElement);
+      const next = index < 0 ? (event.shiftKey ? items.length - 1 : 0) : (index + (event.shiftKey ? -1 : 1) + items.length) % items.length;
+      items[next].focus();
+    }
+    document.addEventListener("keydown", trapTab, true);
+    return () => {
+      document.removeEventListener("keydown", trapTab, true);
+      for (const element of madeInert) element.inert = false;
+    };
   }, [confirmClose]);
   // The last saved version on screen. When the server changes the document by itself (OCR finishing,
   // auto-filing, page edits), fields the user has not touched follow it; edited fields keep the edit. This
@@ -274,6 +366,24 @@ export default function DocumentPanel({
       setReprocessNotice(m.ocrQueued);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.queueOcrError);
+    } finally {
+      setBusy(false);
+    }
+  }
+  // A partly salvaged file (damaged PDF): the owner checks the pages, then marks the warning as checked (round-8 J1 M2).
+  const warningRef = useRef<HTMLDivElement>(null);
+  async function markWarningChecked() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await request<Document>(`/api/documents/${current.id}`, { method: "PATCH", body: JSON.stringify({ processing_warning_reviewed: true }) });
+      adopt(updated);
+      onSaved(updated);
+      // The button goes away: focus moves to the notice, which now reads "(checked)" and is announced with it.
+      requestAnimationFrame(() => warningRef.current?.focus());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.warningCheckError);
     } finally {
       setBusy(false);
     }
@@ -448,6 +558,8 @@ export default function DocumentPanel({
         body: JSON.stringify({ location_id: target || null }),
       });
       await refreshCopies();
+      // An open history shows the move too (round-8 judge 1 L1).
+      if (histories[copy.id]) await showHistory(copy);
       setMoveChoices(({ [copy.id]: _moved, ...others }) => others);
       // A printed sticker shows the location it had when printed (round-6 judge 1 L6).
       setCopyNotice(target ? m.copyMovedReprint(copy.sticker_code) : m.copyMoved(copy.sticker_code));
@@ -581,6 +693,40 @@ export default function DocumentPanel({
   }
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
+  const draftRef = useRef<() => DocumentDraft | null>(() => null);
+  draftRef.current = () => {
+    const base = savedValues(current);
+    const now: FieldValues = { title, date, asn: asn.trim(), correspondentId, documentTypeId, storagePathId, actionStatus, actionDueDate, actionNote };
+    const changes: DocumentDraft["changes"] = {};
+    for (const field of DRAFT_FIELDS) if (now[field] !== base[field]) changes[field] = { from: base[field], to: now[field] };
+    const savedTags = current.tags.map((tag) => tag.id);
+    return {
+      documentId: current.id, keptAt: Date.now(), changes,
+      tagsAdded: selected.filter((id) => !savedTags.includes(id)),
+      tagsRemoved: savedTags.filter((id) => !selected.includes(id)),
+      note: noteDraft,
+    };
+  };
+  useEffect(() => {
+    const snapshot = () => dirtyRef.current ? draftRef.current() : null;
+    documentDraftSnapshot.current = snapshot;
+    return () => { if (documentDraftSnapshot.current === snapshot) documentDraftSnapshot.current = null; };
+  }, []);
+  // Edits put back after signing in again: say so, and put focus on that message so it is read out first.
+  const [draftNotice, setDraftNotice] = useState(Boolean(restoredDraft));
+  // Changes that were not put back because the field changed on the server meanwhile: named until the dialog closes.
+  const draftConflicts = restored?.conflicts ?? [];
+  const fieldLabels: Record<DraftField, string> = {
+    title: m.title, date: m.documentDate, asn: m.asn, correspondentId: m.from, documentTypeId: m.documentType,
+    storagePathId: m.storagePath, actionStatus: m.followUp, actionDueDate: m.dueDate, actionNote: m.whatNeedsDoing,
+  };
+  const draftNoticeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (restoredDraft) draftNoticeRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    if (!dirty) setDraftNotice(false);
+  }, [dirty]);
   // Reload and tab close cannot use the in-app question: let the browser ask (round-7 judge 1 L1). Only while
   // something is unsaved, so ordinary reloads are never interrupted.
   useEffect(() => {
@@ -618,7 +764,7 @@ export default function DocumentPanel({
         </button>
         {confirmClose && (
           // An alert dialog with its own heading (round-7 judge 2 L4): announced as a question that needs an answer.
-          <div className="unsaved-confirm" role="alertdialog" aria-labelledby="unsaved-confirm-title" aria-describedby="unsaved-confirm-text">
+          <div ref={confirmBoxRef} className="unsaved-confirm" role="alertdialog" aria-modal="true" aria-labelledby="unsaved-confirm-title" aria-describedby="unsaved-confirm-text">
             <h3 id="unsaved-confirm-title">{m.unsavedTitle}</h3>
             <p id="unsaved-confirm-text">{m.unsavedBody}</p>
             <div className="unsaved-confirm-actions">
@@ -661,6 +807,26 @@ export default function DocumentPanel({
               <small>{current.email.account}{current.email.received_at ? ` · ${new Date(current.email.received_at).toLocaleString()}` : ""}</small>
             </span>
           </p>
+        )}
+        {(draftNotice || draftConflicts.length > 0) && (
+          <div ref={draftNoticeRef} className="draft-restored" tabIndex={-1}>
+            {draftNotice && <p>{m.draftRestored}</p>}
+            {draftConflicts.length > 0 && <p className="draft-conflicts">{m.draftConflicts(draftConflicts.map((field) => fieldLabels[field]).join(", "))}</p>}
+          </div>
+        )}
+        {current.processing_warning && (
+          <div ref={warningRef} tabIndex={-1} className={`processing-warning${hasOpenWarning(current) ? "" : " processing-warning-checked"}`}>
+            <AlertTriangle size={18} aria-hidden="true" />
+            <p>
+              {current.warning || m.warningFallback}
+              {!hasOpenWarning(current) && <small> {m.warningChecked}</small>}
+            </p>
+            {/* Only the owner can mark it checked; others are told who does (round-8 review L4). */}
+            {hasOpenWarning(current) && (current.access ?? "owner") !== "owner" && <small>{m.warningOwnerChecks}</small>}
+            {hasOpenWarning(current) && (current.access ?? "owner") === "owner" && (
+              <Button type="button" variant="secondary" pending={busy} onClick={() => void markWarningChecked()}>{m.markChecked}</Button>
+            )}
+          </div>
         )}
         {error && (
           <div className="inline-error" role="alert">

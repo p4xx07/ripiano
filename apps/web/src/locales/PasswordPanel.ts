@@ -2,8 +2,8 @@ import { defineMessages } from "../i18n";
 
 export default defineMessages({
   mismatch: "The two new passwords are different",
-  changed: "Password changed. Your other devices were signed out, and your API tokens and agents were disconnected.",
-  warning: "Changing your password signs out your other devices and disconnects your API tokens and agents.",
+  changed: "Password changed. Your other devices were signed out, your API tokens and agents were disconnected, and your share links and bundles were revoked.",
+  warning: "Changing your password signs out your other devices, disconnects your API tokens and agents, and revokes your share links and bundles.",
   changeError: "Could not change your password",
   heading: "Password",
   current: "Current password",
@@ -14,8 +14,8 @@ export default defineMessages({
   change: "Change password",
 }, {
   mismatch: "Le due nuove password non coincidono",
-  changed: "Password cambiata. Gli altri dispositivi sono stati disconnessi, così come i tuoi token API e i tuoi agenti.",
-  warning: "Cambiare la password disconnette gli altri dispositivi, i token API e gli agenti.",
+  changed: "Password cambiata. Gli altri dispositivi sono stati disconnessi, così come i tuoi token API e i tuoi agenti, e i tuoi link e pacchetti condivisi sono stati revocati.",
+  warning: "Cambiare la password disconnette gli altri dispositivi, i token API e gli agenti, e revoca i tuoi link e pacchetti condivisi.",
   changeError: "Impossibile cambiare la password",
   heading: "Password",
   current: "Password attuale",

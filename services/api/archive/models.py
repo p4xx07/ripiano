@@ -69,6 +69,10 @@ class Document(models.Model):
     error = models.TextField(blank=True)
     # Processing failures in a row (reset when processing succeeds): a repeated failure gets different guidance.
     processing_failures = models.PositiveSmallIntegerField(default=0)
+    # Processed, but something about the result needs a person's check: "damaged_pdf" (a damaged PDF of which only
+    # the readable pages were made searchable). Listed under Needs attention until reviewed (judge 1 round 8, M2).
+    processing_warning = models.CharField(max_length=30, blank=True, default="")
+    processing_warning_reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
     trashed_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -115,7 +119,7 @@ class ShareLink(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
-    # Why the link ended when Ripiano ended it, not the owner: "account_off" (the owner's account was turned off).
+    # Why the link ended when Ripiano ended it, not the owner: "account_off" (the owner's account was turned off, D9) or "password_changed" (the owner's password was changed or reset, D11).
     revoked_reason = models.CharField(max_length=20, blank=True, default="")
 
     class Meta:
@@ -422,6 +426,8 @@ class PhysicalCopy(models.Model):
 
 class Movement(models.Model):
     class Kind(models.TextChoices):
+        # A sticker made without a location still gets a first history entry (judge 1 round 8, L2).
+        CREATED = "created", "Sticker created"
         PLACEMENT = "placement", "Initial placement"
         MOVE = "move", "Move"
         MISSING = "missing", "Marked missing"
@@ -746,6 +752,8 @@ class Workflow(models.Model):
 class WorkflowRun(models.Model):
     class Status(models.TextChoices):
         APPLIED = "applied", "Applied"
+        # Conditions matched but every action was held back (for example a guarded or hand-added tag).
+        SKIPPED = "skipped", "Skipped"
         FAILED = "failed", "Failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

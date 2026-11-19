@@ -145,7 +145,14 @@ def _end_access(user):
     ApiToken.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=now)
     AgentGrant.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now)
     ShareLink.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="account_off")
-    ShareBundle.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="account_off")
+    bundles = list(ShareBundle.objects.filter(owner=user, revoked_at__isnull=True))
+    ShareBundle.objects.filter(pk__in=[item.pk for item in bundles]).update(revoked_at=now, revoked_reason="account_off")
+    if bundles:
+        from django.db import transaction
+
+        from .bundle_views import remove_bundle_files
+
+        transaction.on_commit(lambda: remove_bundle_files(bundles))  # their ZIPs go at once, not at the next sweep
     user_id = str(user.pk)
     for session in Session.objects.filter(expire_date__gt=now).iterator():
         if str(session.get_decoded().get("_auth_user_id")) == user_id:

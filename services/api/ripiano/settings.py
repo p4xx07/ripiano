@@ -34,6 +34,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "archive.cache_headers.PrivateApiCacheMiddleware",
     "archive.api_language.ApiLanguageMiddleware",
+    "archive.cache_headers.ApiNotFoundMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",

@@ -6,7 +6,7 @@ import { useMessages } from "./i18n";
 import messages from "./locales/OverviewPanel";
 
 type Overview = {
-  documents: { total: number; ready: number; waiting: number; failed: number; needs_action: number; overdue: number; untagged: number; duplicates: number; bytes: number };
+  documents: { total: number; ready: number; waiting: number; failed: number; warnings?: number; needs_action: number; overdue: number; untagged: number; duplicates: number; bytes: number };
   monthly: { month: string; count: number }[];
   by_type: { name: string; count: number }[];
   by_source: Record<string, number>;
@@ -71,6 +71,7 @@ export default function OverviewPanel({ onNavigate, onOpenUntagged, onOpenDocume
   const max = Math.max(1, ...(data?.monthly ?? []).map((row) => row.count));
   const attention = docs ? [
     { count: docs.failed, label: m.attentionFailed(docs.failed), view: "inbox" as const },
+    { count: docs.warnings ?? 0, label: m.attentionWarnings(docs.warnings ?? 0), view: "inbox" as const },
     { count: docs.overdue, label: m.attentionOverdue(docs.overdue), view: "actions" as const },
     { count: docs.duplicates, label: m.attentionDuplicates(docs.duplicates), view: "inbox" as const },
     { count: data?.health.mailboxes.with_errors ?? 0, label: m.attentionMailboxes(data?.health.mailboxes.with_errors ?? 0), view: "integrations" as const },

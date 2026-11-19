@@ -351,6 +351,16 @@
           "array"
          ]
         },
+        "processing_warning": {
+         "type": [
+          "null"
+         ]
+        },
+        "processing_warning_reviewed_at": {
+         "type": [
+          "null"
+         ]
+        },
         "shared_by": {
          "type": [
           "null",
@@ -438,6 +448,11 @@
         "version_number": {
          "type": [
           "integer"
+         ]
+        },
+        "warning": {
+         "type": [
+          "string"
          ]
         }
        }
@@ -592,6 +607,16 @@
        "array"
       ]
      },
+     "processing_warning": {
+      "type": [
+       "null"
+      ]
+     },
+     "processing_warning_reviewed_at": {
+      "type": [
+       "null"
+      ]
+     },
      "shared_by": {
       "type": [
        "null"
@@ -672,6 +697,11 @@
      "version_number": {
       "type": [
        "integer"
+      ]
+     },
+     "warning": {
+      "type": [
+       "string"
       ]
      }
     }
@@ -1218,6 +1248,11 @@
         ]
        },
        "waiting": {
+        "type": [
+         "integer"
+        ]
+       },
+       "warnings": {
         "type": [
          "integer"
         ]
@@ -2091,6 +2126,16 @@
        "array"
       ]
      },
+     "processing_warning": {
+      "type": [
+       "null"
+      ]
+     },
+     "processing_warning_reviewed_at": {
+      "type": [
+       "null"
+      ]
+     },
      "shared_by": {
       "type": [
        "null"
@@ -2171,6 +2216,11 @@
      "version_number": {
       "type": [
        "integer"
+      ]
+     },
+     "warning": {
+      "type": [
+       "string"
       ]
      }
     }
@@ -2518,6 +2568,16 @@
        "array"
       ]
      },
+     "processing_warning": {
+      "type": [
+       "null"
+      ]
+     },
+     "processing_warning_reviewed_at": {
+      "type": [
+       "null"
+      ]
+     },
      "shared_by": {
       "type": [
        "null"
@@ -2571,6 +2631,11 @@
      "version_number": {
       "type": [
        "integer"
+      ]
+     },
+     "warning": {
+      "type": [
+       "string"
       ]
      }
     }

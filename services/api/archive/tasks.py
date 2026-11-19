@@ -141,19 +141,22 @@ def process_document(document_id):
         document.archive_path = str(archive.relative_to(media_root))
         document.extracted_text = text
         if damaged:
-            # Keep the original and the readable text, but list the document among those that could not be read
-            # (Inbox, Overview) rather than calling it ready with pages silently missing.
+            # Keep the original and the readable pages, and file the document like any other, but flag it so the
+            # owner checks it against the paper (Needs attention) instead of offering a retry that cannot help
+            # (judge 1 round 8, M2).
             logger.warning("Document %s is a damaged PDF; OCR recovered %s page(s)", document.id, page_count)
-            document.status = Document.Status.FAILED
-            document.error = PROCESSING_ERRORS["damaged_pdf"]
-            document.processing_failures = min(document.processing_failures + 1, 1000)
-            document.save(update_fields=["archive_path", "extracted_text", "status", "error", "processing_failures"])
-            return
+            if document.processing_warning != "damaged_pdf":
+                document.processing_warning_reviewed_at = None
+            document.processing_warning = "damaged_pdf"
+        else:
+            document.processing_warning = ""
+            document.processing_warning_reviewed_at = None
         document.status = Document.Status.READY
         document.error = ""
         document.processing_failures = 0
         document.processed_at = timezone.now()
-        document.save(update_fields=["archive_path", "extracted_text", "status", "error", "processed_at", "processing_failures"])
+        document.save(update_fields=["archive_path", "extracted_text", "status", "error", "processed_at", "processing_failures",
+                                     "processing_warning", "processing_warning_reviewed_at"])
     except Exception as exc:
         if isinstance(exc, LockedPdfError):
             logger.info("Document %s is a locked PDF with no matching workflow password", document.id)
@@ -163,10 +166,12 @@ def process_document(document_id):
             logger.error("OCR diagnostic: %s", (exc.stderr or "")[-2000:])
         document.status = Document.Status.FAILED
         document.processing_failures = min(document.processing_failures + 1, 1000)
+        # A warning from an earlier run no longer describes this file (judge round 8 review, L5).
+        document.processing_warning, document.processing_warning_reviewed_at = "", None
         diagnostic = (exc.stderr or "").strip() if isinstance(exc, subprocess.CalledProcessError) else ""
         fallback = PROCESSING_ERRORS["generic_again" if document.processing_failures > 1 else "generic"]
         document.error = readable_error((diagnostic.splitlines()[-1] if diagnostic else str(exc)), fallback)[:500]
-        document.save(update_fields=["status", "error", "processing_failures"])
+        document.save(update_fields=["status", "error", "processing_failures", "processing_warning", "processing_warning_reviewed_at"])
         return
     try:
         apply_rules(document)

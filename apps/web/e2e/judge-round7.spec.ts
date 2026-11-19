@@ -117,10 +117,10 @@ test("a refused agent token or password change keeps focus on the field it is ab
   const create = form.getByRole("button", { name: "Create agent token" });
   await create.focus();
   await page.keyboard.press("Enter");
-  await expect(form.getByRole("alert")).toHaveText("Your password is not correct");
+  await expect(form.getByRole("alert")).toHaveText("Your password is not correct.");
   await expect(agentPassword).toBeFocused();
   await expect(agentPassword).toHaveAttribute("aria-invalid", "true");
-  await expect(agentPassword).toHaveAccessibleDescription("Your password is not correct");
+  await expect(agentPassword).toHaveAccessibleDescription("Your password is not correct.");
 
   await page.goto("/security");
   const panel = page.getByRole("form", { name: "Password" });
@@ -130,10 +130,10 @@ test("a refused agent token or password change keeps focus on the field it is ab
   await panel.getByLabel("Repeat new password").fill("a-new-password-for-r7");
   await panel.getByRole("button", { name: "Change password" }).focus();
   await page.keyboard.press("Enter");
-  await expect(panel.getByRole("alert")).toHaveText("Your password is not correct");
+  await expect(panel.getByRole("alert")).toHaveText("Your password is not correct.");
   await expect(current).toBeFocused();
   await expect(current).toHaveAttribute("aria-invalid", "true");
-  await expect(current).toHaveAccessibleDescription("Your password is not correct");
+  await expect(current).toHaveAccessibleDescription("Your password is not correct.");
   // A mismatch is caught before sending and marks the repeat field.
   await panel.getByLabel("Repeat new password").fill("something-else-entirely");
   await panel.getByRole("button", { name: "Change password" }).click();
@@ -318,10 +318,10 @@ test("removing a revoked agent with its activity log asks for the password (D10)
     await field.fill("not-the-password");
     await confirm.getByRole("button", { name: "Yes, remove" }).focus();
     await page.keyboard.press("Enter");
-    await expect(confirm.getByRole("alert")).toHaveText("Your password is not correct");
+    await expect(confirm.getByRole("alert")).toHaveText("Your password is not correct.");
     await expect(field).toBeFocused();
     await expect(field).toHaveAttribute("aria-invalid", "true");
-    await expect(field).toHaveAccessibleDescription("Your password is not correct");
+    await expect(field).toHaveAccessibleDescription("Your password is not correct.");
     expect(((await (await page.request.get("/api/agents")).json()).grants as { id: string }[]).some((item) => item.id === id)).toBe(true);
   }
   await field.fill(password!);

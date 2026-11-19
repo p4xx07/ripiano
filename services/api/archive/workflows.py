@@ -236,12 +236,12 @@ def guarded_tags(agent_grant):
                      .exclude(pk=agent_grant.pk).values_list("filter_tag_id", flat=True))
 
 
-def _apply(workflow, document, *, first_time=True, access_changes=None, guarded=frozenset()):
+def _apply(workflow, document, *, first_time=True, access_changes=None, guarded=frozenset(), outcome=None):
     """Apply metadata actions; return a short description of what changed.
 
     Notes, webhooks, and emails happen only the first time a workflow applies to a document.
     ``access_changes`` collects sharing changes for the document history (the snapshot does not track grants).
-    ``guarded`` tags are left alone (see ``guarded_tags``).
+    ``guarded`` tags are left alone (see ``guarded_tags``). ``outcome["skipped"]`` is set when every action was held back.
     """
     changes = []
     access_changes = [] if access_changes is None else access_changes
@@ -296,7 +296,15 @@ def _apply(workflow, document, *, first_time=True, access_changes=None, guarded=
         changes.append("queued webhook")
     if workflow.email_to and first_time:
         changes.append("queued email")
+    if outcome is not None:
+        # Every action held back (a guarded or hand-added tag, an unusable field value, a full sharing list): the run
+        # did not apply anything, so it must not say "applied" (judge 3 round 8, L2).
+        outcome["skipped"] = bool(changes) and all(entry.startswith(SKIPPED_PREFIXES) for entry in changes)
     return ", ".join(changes) or "conditions matched; nothing needed changing"
+
+
+# Run detail entries that describe an action held back rather than done.
+SKIPPED_PREFIXES = ("skipped ", "kept tag ", "could not share with ")
 
 
 def run_workflow(workflow, document, trigger, *, agent_grant=None):
@@ -323,9 +331,13 @@ def run_workflow(workflow, document, trigger, *, agent_grant=None):
 
             before = history.snapshot(document)
             access_changes = []
-            run.detail = _apply(workflow, document, first_time=first_time, access_changes=access_changes, guarded=guarded_tags(agent_grant))[:500]
+            outcome = {}
+            run.detail = _apply(workflow, document, first_time=first_time, access_changes=access_changes, guarded=guarded_tags(agent_grant),
+                                outcome=outcome)[:500]
+            if outcome.get("skipped"):
+                run.status = WorkflowRun.Status.SKIPPED
             history.record(document, before, actor_label=workflow.name, actor_kind=history.Kind.WORKFLOW, extra=access_changes)
-            run.save(update_fields=["detail"])
+            run.save(update_fields=["detail", "status"])
             if first_time and (workflow.webhook_url or workflow.email_to):
                 transaction.on_commit(lambda run_id=str(run.id): send_workflow_notifications.delay(run_id), robust=True)
     except Exception:

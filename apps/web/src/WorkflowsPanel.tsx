@@ -17,7 +17,7 @@ type Flow = {
   add_note: string; webhook_url: string; email_to: string; email_attach: boolean; pdf_password_count: number;
   title_template: string; set_storage_path_id: string | null; set_custom_fields: FieldValue[]; share_with: Share[];
 };
-type Run = { id: string; workflow: string; document: { id: string; title: string }; trigger: Trigger; status: "applied" | "failed"; detail: string; created_at: string };
+type Run = { id: string; workflow: string; document: { id: string; title: string }; trigger: Trigger; status: "applied" | "failed" | "skipped"; detail: string; created_at: string };
 type Draft = Omit<Flow, "id" | "filter_tag_id" | "filter_correspondent_id" | "filter_document_type_id" | "set_correspondent_id" | "set_document_type_id" | "set_storage_path_id"> & {
   filter_tag_id: string; filter_correspondent_id: string; filter_document_type_id: string; set_correspondent_id: string; set_document_type_id: string;
   set_storage_path_id: string;
@@ -304,7 +304,7 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                 <li key={item.id}>
                   <span className="workflow-run-head">
                     <span className="workflow-run-name">{item.workflow}</span>
-                    <span className={`workflow-run-status${item.status === "failed" ? " workflow-run-failed" : ""}`}>{item.status === "failed" ? m.problem : m.applied}</span>
+                    <span className={`workflow-run-status${item.status === "failed" ? " workflow-run-failed" : item.status === "skipped" ? " workflow-run-skipped" : ""}`}>{item.status === "failed" ? m.problem : item.status === "skipped" ? m.skipped : m.applied}</span>
                   </span>
                   <time className="workflow-run-time" dateTime={item.created_at}>{formatDateTime(item.created_at)}</time>
                   <button type="button" className="text-action workflow-run-document" onClick={() => onOpenDocument(item.document.id)}>{item.document.title}</button>

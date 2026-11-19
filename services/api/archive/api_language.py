@@ -120,7 +120,7 @@ def _translate_errors(value):
     changed = False
     if isinstance(value, dict):
         for key, item in value.items():
-            if key == "error" and isinstance(item, str):
+            if key in ("error", "warning") and isinstance(item, str):
                 translated = to_italian(item)
                 if translated != item:
                     value[key] = translated

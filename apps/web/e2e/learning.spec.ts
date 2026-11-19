@@ -28,7 +28,9 @@ test("learned suggestions can be relearned on demand and explain how reliable th
   await reopened.getByRole("checkbox", { name: /File new documents automatically when very confident/ }).click();
   await expect.poll(async () => (await (await page.request.get("/api/filing-model")).json()).auto_apply).toBe(false);
   await reopened.getByRole("button", { name: "Learn now" }).click();
-  await expect(reopened.getByText("Learning started")).toBeVisible();
+  // The server refuses a second run within 10 minutes of the last one (a stack restart or the nightly run may have
+  // just trained); either answer is correct, and the model's status below is checked the same way.
+  await expect(reopened.getByText("Learning started").or(reopened.getByText("Ripiano learned a few minutes ago. Try again in 10 minutes."))).toBeVisible();
   await expect(reopened.getByText(/^Last learned /)).toBeVisible({ timeout: 150000 });
   await expect(reopened.getByText("Senders", { exact: true })).toBeVisible();
   await expect(reopened.getByRole("button", { name: "Learn now" })).toBeEnabled();

@@ -133,6 +133,12 @@ Removing a revoked or expired agent together with its activity log (`DELETE /api
 
 Implemented 2026-11-19: the request carries `{"password": "..."}` in its JSON body and uses the same check, sign-in throttle, and messages as creating an agent (see [AGENT_ACCESS.md](AGENT_ACCESS.md)).
 
+## D11 — Password changes end public share links (2026-11-19) — Agreed
+
+A password change (`POST /api/account/password`) or an admin password reset (`PATCH /api/people/<id>` with `password`) ends that person's public share links and bundles, exactly as it already ends their API tokens and agents. Changing the password is the documented way to recover from a stolen session, and a link or bundle made from that session must not keep anonymous download access afterwards (judge 3 round 8, M1).
+
+Implemented 2026-11-19: the same `pre_save` signal that revokes tokens and agents (`api_tokens.revoke_tokens_on_password_change`) marks the person's active links and bundles revoked with `revoked_reason: "password_changed"`. They answer exactly like an unknown link (404 `Link not found`) and are not revived; the share-link and bundle lists return the reason so the owner sees why they ended, and creates new links if still needed. Re-saving the same password hash (a Django hasher upgrade) revokes nothing.
+
 ## Remaining work that needs no further decision
 
 In the owner's suggested order:

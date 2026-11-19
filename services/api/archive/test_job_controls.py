@@ -134,13 +134,14 @@ def _doc(owner, title, status, **values):
 @pytest.mark.django_db
 def test_queued_document_can_be_cancelled_and_the_worker_then_skips_it():
     from archive.job_views import CANCELLED_PROCESSING
-    from archive.models import Document
+    from archive.models import Document, ProcessingClaim
     from archive.tasks import process_document
 
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     stranger = get_user_model().objects.create_user("stranger", password="secure-password-2")
     queued = _doc(owner, "queued", Document.Status.PENDING)
-    running = _doc(owner, "running", Document.Status.PROCESSING)
+    running = _doc(owner, "running", Document.Status.PROCESSING, processing_started_at=timezone.now())
+    ProcessingClaim.objects.create(document=running)  # a worker is on it right now
     client = Client()
     client.force_login(stranger)
     assert client.post(f"/api/documents/{queued.id}/cancel-processing").status_code == 404
@@ -161,12 +162,12 @@ def test_queued_document_can_be_cancelled_and_the_worker_then_skips_it():
 
 @pytest.mark.django_db
 def test_jobs_overview_lists_only_my_waiting_and_failed_work():
-    from archive.models import Document, FilingModel, PurgeJob, Workflow, WorkflowRun
+    from archive.models import Document, FilingModel, ProcessingClaim, PurgeJob, Workflow, WorkflowRun
 
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     stranger = get_user_model().objects.create_user("stranger", password="secure-password-2")
     _doc(owner, "waiting", Document.Status.PENDING)
-    _doc(owner, "busy", Document.Status.PROCESSING, processing_started_at=timezone.now())
+    ProcessingClaim.objects.create(document=_doc(owner, "busy", Document.Status.PROCESSING, processing_started_at=timezone.now()))
     failed = _doc(owner, "broken", Document.Status.FAILED, error="OCR failed")
     _doc(owner, "fine", Document.Status.READY)
     _doc(owner, "binned", Document.Status.FAILED, trashed_at=timezone.now())

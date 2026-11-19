@@ -102,7 +102,9 @@ CELERY_BROKER_URL = os.environ.get("RIPIANO_BROKER_URL", "redis://localhost:6379
 # Shared cache (sign-in throttling) in the same Valkey as the queue when the stack provides it.
 if os.environ.get("RIPIANO_BROKER_URL"):
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache",
-                          "LOCATION": os.environ["RIPIANO_BROKER_URL"].rsplit("/", 1)[0] + "/1", "KEY_PREFIX": "ripiano"}}
+                          "LOCATION": os.environ["RIPIANO_BROKER_URL"].rsplit("/", 1)[0] + "/1", "KEY_PREFIX": "ripiano",
+                          # Fail fast when Valkey is down: sign-in throttling then fails open (archive/throttle.py).
+                          "OPTIONS": {"socket_connect_timeout": 2, "socket_timeout": 2}}}
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 3600

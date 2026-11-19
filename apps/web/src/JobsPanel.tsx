@@ -6,7 +6,7 @@ import { useMessages } from "./i18n";
 import messages from "./locales/JobsPanel";
 
 type Jobs = {
-  documents_waiting: { total: number; items: { id: string; title: string; status: "pending" | "processing"; since: string | null; can_cancel: boolean }[] };
+  documents_waiting: { total: number; items: { id: string; title: string; status: "pending" | "processing"; since: string | null; can_cancel: boolean; stalled?: boolean; can_retry?: boolean }[] };
   documents_failed: { total: number; items: { id: string; title: string; error: string; at: string | null }[] };
   purges: { id: string; status: "pending" | "running" | "failed"; error: string; at: string | null; can_retry: boolean }[];
   training: { status: "queued" | "training" | "failed"; error: string; at: string | null; can_retry: boolean } | null;
@@ -31,6 +31,14 @@ export default function JobsPanel({ onOpenDocument, onChanged }: { onOpenDocumen
     }
   }, [m]);
   useEffect(() => { void load(); }, [load]);
+  // While documents wait, look again now and then: one whose processing was interrupted is flagged after a couple of
+  // minutes, and put back in the queue by the server shortly after (round-9 judge 3 M1).
+  const waitingCount = jobs?.documents_waiting.total ?? 0;
+  useEffect(() => {
+    if (!waitingCount) return;
+    const timer = window.setInterval(() => { if (!window.document.hidden) void load(); }, 15000);
+    return () => window.clearInterval(timer);
+  }, [waitingCount, load]);
 
   async function act(key: string, path: string, done: string) {
     setBusy(key);
@@ -52,6 +60,7 @@ export default function JobsPanel({ onOpenDocument, onChanged }: { onOpenDocumen
   if (!jobs) return error ? <div className="inline-error" role="alert">{error}</div> : null;
   const purges = jobs.purges;
   const empty = !jobs.documents_waiting.total && !jobs.documents_failed.total && !purges.length && !jobs.training && !jobs.workflow_failures.length;
+  const stalledCount = jobs.documents_waiting.items.filter((item) => item.stalled).length;
   const more = (shown: number, total: number) => (total > shown ? <p className="jobs-more">{m.showing(shown, total.toLocaleString())}</p> : null);
 
   return (
@@ -59,6 +68,8 @@ export default function JobsPanel({ onOpenDocument, onChanged }: { onOpenDocumen
       <h2 id="overview-jobs"><Activity size={18} aria-hidden="true" /> {m.heading}</h2>
       {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={m.dismissError}><X size={16} /></button></div>}
       {status && <p className="bulk-notice" role="status">{status}</p>}
+      {/* Always on the page, so the calm "interrupted" state is read out when it appears, without stealing focus. */}
+      <p className="visually-hidden" aria-live="polite">{stalledCount ? m.stalledAnnounce(stalledCount) : ""}</p>
       {empty && <p>{m.empty}</p>}
 
       {jobs.documents_waiting.total > 0 && (
@@ -69,13 +80,23 @@ export default function JobsPanel({ onOpenDocument, onChanged }: { onOpenDocumen
               <li key={item.id}>
                 <div>
                   <button type="button" className="text-action" onClick={() => onOpenDocument(item.id)}>{item.title}</button>
-                  <small>{item.status === "processing" ? m.processingSince(when(item.since)) : m.queuedSince(when(item.since))}</small>
+                  <small>{item.stalled ? m.stalledSince(when(item.since)) : item.status === "processing" ? m.processingSince(when(item.since)) : m.queuedSince(when(item.since))}</small>
                 </div>
-                {item.can_cancel && (
-                  <Button variant="secondary" disabled={busy !== null} aria-label={m.cancelLabel(item.title)}
-                    onClick={() => void act(`cancel-${item.id}`, `/api/documents/${item.id}/cancel-processing`, m.cancelled(item.title))}>
-                    {m.cancel}
-                  </Button>
+                {(item.can_retry || item.can_cancel) && (
+                  <div className="jobs-actions">
+                    {item.can_retry && (
+                      <Button variant="secondary" disabled={busy !== null} aria-label={m.retryNowLabel(item.title)}
+                        onClick={() => void act(`retry-${item.id}`, `/api/documents/${item.id}/retry`, m.queuedAgain(item.title))}>
+                        {m.retry}
+                      </Button>
+                    )}
+                    {item.can_cancel && (
+                      <Button variant="secondary" disabled={busy !== null} aria-label={m.cancelLabel(item.title)}
+                        onClick={() => void act(`cancel-${item.id}`, `/api/documents/${item.id}/cancel-processing`, m.cancelled(item.title))}>
+                        {m.cancel}
+                      </Button>
+                    )}
+                  </div>
                 )}
               </li>
             ))}

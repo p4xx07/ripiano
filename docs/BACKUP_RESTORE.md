@@ -42,6 +42,17 @@ Originals and archive outputs are immutable until an owner confirms permanent de
 
 Trash retention settings live in the database and return with a restored snapshot. If you restore an older archive, inspect the setting before starting the scheduler: documents that have already exceeded the chosen age can be queued at its next daily run. Snapshot retention and Synology Hyper Backup retention are separate from this Trash setting.
 
+## Health checks
+
+| Endpoint | Where | Answers |
+| --- | --- | --- |
+| `GET /healthz` | api, port 8000 inside the stack | 200 `{"status":"ok","database":"ok","broker":"ok"}`; 503 with `"status":"unavailable"` and `"down"` for the database or the queue server (Valkey) when either cannot answer. One `SELECT 1` and one `PING` (1 s timeout); the answer is reused for 5 seconds. |
+| `GET /healthz` | through the web container at `https://<your-origin>/healthz`, no sign-in | The same status codes, but only `{"status":"ok"}` or `{"status":"unavailable"}`: it does not say which part is down. |
+| `GET /livez` | api, and through the web container at `https://<your-origin>/livez` | 200 while the web process answers; checks nothing else. Use it for a "restart if dead" monitor. The app uses it to tell "Ripiano can't be reached" from "busy". |
+| `GET /healthz` | mcp, port 8001 inside the stack only | 200 `{"status":"ok","database":"ok"}` or 503. One query on its own connection with a 2.5 s limit, so a slow agent call cannot make the check fail. |
+
+The `api` container's healthcheck uses `/healthz`, so Docker shows `api` as unhealthy while the database or the queue server is down (after 15 failed checks, about 2.5 minutes, so short blips do not flip it). Compose never restarts a container because it is unhealthy; `restart: unless-stopped` only restarts one that exits, so a broker outage cannot cause a restart loop. If you add a tool that restarts unhealthy containers, point it at `/livez` instead. The `mcp` container has its own healthcheck. As before, the `api`, worker, `mcp`, and `web` containers are only started once the database and the queue server are healthy, so an update while Valkey cannot start leaves the interface down until Valkey is fixed. After the database restarts (an update, or PostgreSQL killed for memory), agents work again with their next request: the MCP server, like the api, replaces a broken database connection before each request, so no container needs restarting.
+
 ## NAS browse copies
 
 The on-demand **Build browse copy** action writes ordinary files under `<RIPIANO_BACKUP_PATH>/browse/owners/<owner-id>/complete/<run-id>`. These copies are separate from checksum-verified restore snapshots under `<RIPIANO_BACKUP_PATH>/complete`. Keep Synology Hyper Backup pointed at the snapshot `complete` folder. Browse copies can be rebuilt from the managed archive and are not a restore source. Give the browse folder the same NAS access controls as the archive because it contains originals, OCR text, and metadata.

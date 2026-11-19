@@ -45,7 +45,7 @@ Open <http://localhost:8080> and enter the `RIPIANO_SETUP_KEY` from `.env` to cr
 ## Documentation
 
 - [User guide](docs/USER_GUIDE.md): every feature, setting, and how-to, plus development commands.
-- [Backup and restore](docs/BACKUP_RESTORE.md) and [AI agent access (MCP)](docs/AGENT_ACCESS.md)
+- [Backup and restore](docs/BACKUP_RESTORE.md) (with the `/healthz` and `/livez` health checks) and [AI agent access (MCP)](docs/AGENT_ACCESS.md)
 - [Android app](apps/android/README.md) and [architecture](docs/ARCHITECTURE.md)
 - [Contributing](CONTRIBUTING.md) and [security policy](SECURITY.md)
 

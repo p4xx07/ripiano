@@ -3,6 +3,8 @@ import { defineMessages } from "../i18n";
 export default defineMessages({
   loadError: "Could not load locations",
   stickerNotFound: "Sticker not found",
+  stickerFound: (title: string, place: string, missing: boolean) => `Found “${title}”. ${missing ? "Marked missing; last known place" : "Place"}: ${place || "not assigned yet"}.`,
+  locationFound: (name: string, count: number) => `Found location “${name}”: ${count === 1 ? "1 paper copy" : `${count} paper copies`} present.`,
   createError: "Could not create location",
   loadMoreError: "Could not load more contents",
   eyebrow: "PAPER, FOUND",
@@ -64,6 +66,8 @@ export default defineMessages({
 }, {
   loadError: "Impossibile caricare le posizioni",
   stickerNotFound: "Adesivo non trovato",
+  stickerFound: (title: string, place: string, missing: boolean) => `Trovato “${title}”. ${missing ? "Segnato come mancante; ultima posizione nota" : "Posizione"}: ${place || "non ancora assegnata"}.`,
+  locationFound: (name: string, count: number) => `Trovata la posizione “${name}”: ${count === 1 ? "1 copia cartacea presente" : `${count} copie cartacee presenti`}.`,
   createError: "Impossibile creare la posizione",
   loadMoreError: "Impossibile caricare altri contenuti",
   eyebrow: "CARTA, RITROVATA",

@@ -3,6 +3,7 @@
 import logging
 import re
 from collections import Counter
+from pathlib import PurePath
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -25,6 +26,17 @@ def _terms(value):
     return {term for term in re.findall(r"[^\W_]{4,}", value.casefold()) if not term.isdecimal() and term not in STOPWORDS}
 
 
+def _evidence(title, original_name, text):
+    """The words that say what a document is about: its text, and its title once someone has given it one.
+
+    A title that is still the file name ("scan mobile batch 3") describes the upload, not the document,
+    so it neither supports a suggestion nor appears among the reasons shown for it.
+    """
+    if title.strip().casefold() == PurePath(original_name).stem.strip().casefold():
+        title = ""
+    return _terms(title + " " + text)
+
+
 def filing_suggestions(document):
     """Suggest labels from this owner's manual examples; never mutate a document.
 
@@ -34,7 +46,7 @@ def filing_suggestions(document):
     if document.status != Document.Status.READY or document.trashed_at:
         return {"tags": [], "correspondents": [], "document_types": []}
     text_start = document.text_start if hasattr(document, "text_start") else document.extracted_text[:1800]
-    target = _terms(document.title + " " + text_start)
+    target = _evidence(document.title, document.original_name, text_start)
     if len(target) < 2:
         return {"tags": [], "correspondents": [], "document_types": []}
     rows = list(
@@ -47,7 +59,7 @@ def filing_suggestions(document):
         )
         .order_by("-created_at", "-id")[:300]
         .annotate(text_start=Substr("extracted_text", 1, 1800))
-        .values("id", "title", "text_start", "correspondent_id", "correspondent__name", "correspondent_origin", "document_type_id", "document_type__name", "document_type_origin")
+        .values("id", "title", "original_name", "text_start", "correspondent_id", "correspondent__name", "correspondent_origin", "document_type_id", "document_type__name", "document_type_origin")
     )
     ids = [row["id"] for row in rows]
     tags_by_document = {}
@@ -63,7 +75,7 @@ def filing_suggestions(document):
             dismissed["correspondents"].add(str(correspondent_id))
         if document_type_id:
             dismissed["document_types"].add(str(document_type_id))
-    sources = [_terms(row["title"] + " " + row["text_start"]) for row in rows]
+    sources = [_evidence(row["title"], row["original_name"], row["text_start"]) for row in rows]
     # Words in many examples (letterhead, scanner boilerplate) do not tell documents apart.
     frequency = Counter(term for terms in sources for term in terms)
     common = {term for term, count in frequency.items() if count > max(4, len(rows) // 4)}
@@ -269,7 +281,7 @@ def apply_rules(document):
             return 0
         live_tag_rules = set(ClassificationRule.objects.filter(owner_id=document.owner_id, enabled=True).values_list("id", flat=True))
         live_filing_rules = set(FilingRule.objects.filter(owner_id=document.owner_id, enabled=True).values_list("id", flat=True))
-        matching = [rule.tag for rule in ClassificationRule.objects.filter(pk__in=[rule.pk for rule in tag_rules if rule.pk in live_tag_rules]).select_related("tag")]
+        matching = [rule.tag_id for rule in tag_rules if rule.pk in live_tag_rules]
         filing_matches = {}
         for rule in filing_rules:
             if rule.pk not in live_filing_rules:
@@ -281,11 +293,15 @@ def apply_rules(document):
 
         before = history.snapshot(locked)
         suppressed = set(TagOverride.objects.filter(document=locked).values_list("tag_id", flat=True))
-        DocumentTag.objects.filter(document=locked, origin=DocumentTag.Origin.RULE).delete()
-        for tag in matching:
-            if tag.id in suppressed:
-                continue
-            DocumentTag.objects.get_or_create(document=locked, tag=tag, defaults={"origin": DocumentTag.Origin.RULE})
+        # Change only the links that differ: a recheck of thousands of documents mostly finds nothing to do.
+        wanted = set(matching) - suppressed
+        linked = dict(DocumentTag.objects.filter(document=locked).values_list("tag_id", "origin"))
+        stale = [tag_id for tag_id, origin in linked.items() if origin == DocumentTag.Origin.RULE and tag_id not in wanted]
+        if stale:
+            DocumentTag.objects.filter(document=locked, origin=DocumentTag.Origin.RULE, tag_id__in=stale).delete()
+        DocumentTag.objects.bulk_create(
+            DocumentTag(document=locked, tag_id=tag_id, origin=DocumentTag.Origin.RULE) for tag_id in sorted(wanted - linked.keys())
+        )
         changes = []
         for kind, field in ((FilingRule.Kind.CORRESPONDENT, "correspondent"), (FilingRule.Kind.DOCUMENT_TYPE, "document_type")):
             origin_field = f"{field}_origin"

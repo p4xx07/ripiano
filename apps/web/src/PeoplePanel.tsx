@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { KeyRound, Plus, RotateCcw, Trash2, UserPlus, Users } from "lucide-react";
 import { ApiError, isPasswordRefusal, People, Person, PersonGroup, request } from "./api";
-import { Button, Field, useFieldError } from "./ui";
+import { Button, Field, tooShortMessage, useFieldError } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/PeoplePanel";
 
@@ -120,7 +120,7 @@ export default function PeoplePanel({ currentUsername }: { currentUsername: stri
             }}>
               <p className="password-warning" id={`reset-warning-${person.id}`}>{m.resetWarning(person.username)}</p>
               <Field label={m.newPasswordFor(person.username)} hint={m.atLeast12}>
-                <input type="password" autoComplete="new-password" minLength={12} required autoFocus {...invalid.props("reset")} value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} />
+                <input type="password" autoComplete="new-password" minLength={12} required autoFocus {...tooShortMessage(m.tooShort)} {...invalid.props("reset")} value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} />
               </Field>
               <Button aria-describedby={`reset-warning-${person.id}`} pending={busy || !adminPassword}>{m.setPassword}</Button>
               <Button type="button" variant="secondary" onClick={() => { setResetFor(null); setResetPassword(""); }}>{m.cancel}</Button>
@@ -140,7 +140,7 @@ export default function PeoplePanel({ currentUsername }: { currentUsername: stri
         <p>{m.addPersonIntro}</p>
         <Field label={m.username}><input required maxLength={150} autoComplete="off" {...invalid.props("username")} value={username} onChange={(event) => setUsername(event.target.value)} /></Field>
         <Field label={m.name} hint={m.optional}><input maxLength={150} value={name} onChange={(event) => setName(event.target.value)} /></Field>
-        <Field label={m.password} hint={m.passwordHint}><input type="password" required minLength={12} autoComplete="new-password" {...invalid.props("password")} value={password} onChange={(event) => setPassword(event.target.value)} /></Field>
+        <Field label={m.password} hint={m.passwordHint}><input type="password" required minLength={12} autoComplete="new-password" {...tooShortMessage(m.tooShort)} {...invalid.props("password")} value={password} onChange={(event) => setPassword(event.target.value)} /></Field>
         {data.groups.length > 0 && <fieldset className="person-groups">
           <legend>{m.groups}</legend>
           {data.groups.map((group) => <label key={group.id}>

@@ -321,6 +321,11 @@
           "null"
          ]
         },
+        "edit_version": {
+         "type": [
+          "string"
+         ]
+        },
         "email": {
          "type": [
           "null"
@@ -575,6 +580,11 @@
      "duplicate_reviewed_at": {
       "type": [
        "null"
+      ]
+     },
+     "edit_version": {
+      "type": [
+       "string"
       ]
      },
      "email": {
@@ -2096,6 +2106,11 @@
        "null"
       ]
      },
+     "edit_version": {
+      "type": [
+       "string"
+      ]
+     },
      "email": {
       "type": [
        "null"
@@ -2536,6 +2551,11 @@
      "duplicate_reviewed_at": {
       "type": [
        "null"
+      ]
+     },
+     "edit_version": {
+      "type": [
+       "string"
       ]
      },
      "email": {

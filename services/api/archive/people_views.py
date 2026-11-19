@@ -143,7 +143,7 @@ def _end_access(user):
 
     now = timezone.now()
     ApiToken.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=now)
-    AgentGrant.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now)
+    AgentGrant.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="account_off")
     ShareLink.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="account_off")
     bundles = list(ShareBundle.objects.filter(owner=user, revoked_at__isnull=True))
     ShareBundle.objects.filter(pk__in=[item.pk for item in bundles]).update(revoked_at=now, revoked_reason="account_off")

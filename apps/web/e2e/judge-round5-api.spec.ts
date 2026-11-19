@@ -94,6 +94,9 @@ test("an exact copy can be moved to Trash from the Inbox, and the note is not cu
 
 test("resolving all exact copies asks first, then keeps originals and trashes copies", async ({ page }, testInfo) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
+  // "Resolve all" acts on every exact copy in the one account both projects share, so the desktop and mobile runs
+  // of this test resolved each other's copies. The dialog and the request are the same at every width: run it once.
+  test.skip(testInfo.project.name !== "desktop", "Acts on the whole shared account; runs in the desktop project only");
   await signIn(page);
   const name = `r5-bulk-${Date.now()}-${testInfo.project.name}`;
   const bytes = uniquePng(name);

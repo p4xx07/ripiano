@@ -136,7 +136,7 @@ test("a kept draft puts back only what was edited: newer server changes win and 
   await expect(reopened.getByRole("textbox", { name: "Title" })).toHaveValue(`${name} theirs`); // the newer value
   await expect(reopened.getByLabel("Document date")).toHaveValue("2026-03-14"); // the edit nobody else touched
   await expect(reopened.locator("#detail-correspondent")).toHaveValue(sender.id); // not reverted
-  await expect(reopened.locator(".draft-conflicts")).toContainText("the document changed since then");
+  await expect(reopened.locator(".draft-conflicts")).toContainText("Changed by someone else too");
   await expect(reopened.locator(".draft-conflicts")).toContainText("Title");
   await reopened.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

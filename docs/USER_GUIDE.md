@@ -137,6 +137,8 @@ services:
 
 This excerpt illustrates storage and exposure; use the linked full stack for deployment. Set an HTTPS `RIPIANO_PUBLIC_ORIGIN`, the reverse proxy hostname in `RIPIANO_ALLOWED_HOSTS`, and give container UID 10001 write access to the media and backup folders. Point Synology's HTTPS reverse proxy at the web port and Hyper Backup at the backup folder's `complete/` subfolder. [Deployment details](../deploy/README.md) include image pinning and NAS permissions; [backup/restore instructions](BACKUP_RESTORE.md) cover recovery. Backblaze B2 configuration stays in Synology. A local clean-stack restore passed with documents, locations, duplicate links, and revoked agent grants, but NAS-specific permissions and restore still need verification before storing real documents. No release images have been published from this draft PR yet.
 
+For monitoring, `/healthz` answers 200 while the database and the queue server are reachable and 503 otherwise; `/livez` only says Ripiano itself is answering. Details are in [Backup and restore](BACKUP_RESTORE.md#health-checks).
+
 To reach Ripiano from outside the home network through one sign-in, see the [Raspberry Pi gateway](../deploy/gateway/README.md) (Traefik + Authelia).
 
 ### Work on the services
@@ -262,7 +264,7 @@ Dialogs keep focus inside until closed and return it afterwards. `apps/web/e2e/a
 
 Documents can optionally be marked **Needs action** with a due date and note. The separate action list shows only open follow-ups; completing one keeps the document in the archive. Uploading and automatic tags do not require this step.
 
-The **Inbox** shows exceptions only: failed OCR, exact copies that have not been reviewed, and damaged PDFs of which only the readable pages could be kept. Such a PDF is searchable and previewable from what was saved; compare it with the paper, re-scan it if pages are missing, and mark it checked to take it off the list. Retry OCR, keep both copies, or choose **Move this copy to Trash**. **Resolve all exact copies** asks first, then keeps every original and moves every listed copy to the Trash, where you can restore it. Ordinary uploads go straight to the Library.
+The **Inbox** shows exceptions only: failed OCR, exact copies that have not been reviewed, and damaged PDFs of which only the readable pages could be kept. Such a PDF is searchable and previewable from what was saved; compare it with the paper, re-scan it if pages are missing, and mark it checked to take it off the list. Retry OCR, keep both copies, or choose **Move this copy to Trash**. After **Retry OCR** the card stays until the new attempt ends, and the result is announced. If that attempt is interrupted, the card says it is taking longer than usual and will be tried again by itself. **Resolve all exact copies** asks first, then keeps every original and moves every listed copy to the Trash, where you can restore it. Ordinary uploads go straight to the Library.
 
 <img src="../qa-artifacts/5252d3e/inbox/mobile/failed-ocr.png" alt="Mobile Inbox showing a failed OCR document and retry action" width="260">
 
@@ -292,12 +294,13 @@ Some limits apply:
 - **Similar spelling** compares up to 6 words against the first 20,000 words of a document, at 85% similarity. One wrong letter in a word of six letters or fewer is not tolerated.
 - **Every mode:** rules are evaluated before any database lock is taken.
 
-Existing documents are rechecked in the background when you add a rule.
+Existing documents are rechecked in the background when you add or delete a rule. A large archive is rechecked in short steps, so email, source imports, and backups are not held up meanwhile.
 
 ### Learned suggestions
 
 Ripiano learns from the senders, document types, and tags you set by hand, on your own server. It learns again every night, or when you press **Tags & filing → Learned suggestions → Learn now**.
 - **When it suggests:** only when it is at least 60% likely to be right. The probability is calibrated on documents the model had not seen.
+- **Suggestions from similar documents** list the words both documents share. The words come from the document text, and from the title once you have given it one; a title that is still the file name is ignored.
 - **Automatic filing is optional:** in **Tags & filing → Learned suggestions**, turn on **File new documents automatically when very confident**. It applies only after OCR on new documents. Each assignment needs at least 90% calibrated confidence, at least 95% measured precision and at least 20 tested suggestions among held-out predictions above that same 90% threshold for that field. It fills empty sender/type fields and adds at most three tags; manual choices, input rules, and removed tags stay in control. You can correct the result in the document dialog. With the option off, suggestions only appear in the dialog and need a tap.
 - **File an existing selection:** in **Library → Select documents → File with local model**, choose up to 100 documents and run the same confidence checks once. Documents with no confident new detail stay selected. This one-time action works even when automatic filing for future documents is off; it never changes manual sender/type choices or re-adds a removed tag.
 - **A wrong suggestion:** the **×** next to it ("Not right") rejects it for that document, on every device. A rejected tag counts as removed by hand, so rules, workflows, agents, and automatic filing do not add it either; a rejected sender or type is not suggested or filed automatically for that document again. The rejection is listed in the document's **Changes**. Adding the tag or choosing the sender yourself later still works. The learned model does not use rejections as training examples; it keeps learning only from how you file documents.
@@ -354,6 +357,8 @@ Under **Custom details**, create a text, number, date, or yes/no field once and 
 ## Working with a document
 
 ### Notes and change history
+
+If someone else (or you, in another tab or device) saves a document while you are editing it, your **Save changes** is not applied over theirs. Details only they changed are merged in; for a detail you both changed, the form shows the newer value with yours below it and a **Use my value** button. Check, then save again.
 
 The document panel keeps dated notes separate from follow-ups. Notes can be added or deleted, found through Library search (including `note:`), and retrieved in older pages when the history grows.
 
@@ -444,6 +449,7 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 
 **Background job controls:**
 - **Cancel** takes a *queued* document out of the processing queue. It stays in your archive, marked as not processed, and **Retry OCR** queues it again. A document already being processed cannot be stopped midway.
+- **Stopped workers:** the Library row, the open document, the Overview, and a retried Inbox card show the same "taking longer than usual" note. While a document is processed, the worker reports every 30 seconds. If it stops reporting for 2 minutes (the worker was restarted, killed, or ran out of memory), the document is marked as stalled and you can **Retry OCR** or **Cancel** it. The scheduler checks every minute and puts it back in the queue once two checks in a row find it stalled, so about 3–4 minutes after the worker stopped; one late report (a clock change, a short database outage) is not counted. A document that stops its worker three times in a row is marked as failed instead of being retried again; **Retry OCR** starts that count afresh, and it is kept apart from failed text recognition. If the worker was alive after all, its late result is discarded: it cannot undo your Cancel or run workflows a second time. Processing again never creates duplicate parts of a barcode-split scan, and files left behind by a stopped run are removed after two hours.
 - **Retry OCR**, **Retry** (permanent deletion), and **Retry** (learning) restart failed work.
 - Failed workflow runs are listed for information; workflows never retry a run by themselves.
 - Backups and NAS browse copies keep their own cancel and retry controls under **Backups**.
@@ -462,7 +468,7 @@ Open **Security**, confirm your password, and scan the QR code with any authenti
 - **Storage:** the authenticator secret is encrypted with the same key as mailbox passwords (`RIPIANO_MAIL_KEY`, or one derived from `RIPIANO_SECRET_KEY`). When rotating it, keep the old key listed after the new one in `RIPIANO_MAIL_KEY`.
 - **Agents:** agent tokens are separate and unaffected.
 - **Admin:** Django admin (`/admin/`) has no separate password form. Sign in to Ripiano first, then open it.
-- **Throttling:** failed sign-ins are limited per username and per client address.
+- **Throttling:** failed sign-ins are limited per username and per client address. The counters live in the queue server (Valkey); while it is unreachable, sign-in keeps working, each web process counts failures itself with the same limits, and the api log says `Sign-in throttle unavailable`.
 - **Lost phone, no recovery codes:** run `manage.py reset_two_factor <username>`.
 
 ### API tokens
@@ -470,13 +476,16 @@ Open **Security**, confirm your password, and scan the QR code with any authenti
 Under **Security → API tokens**, create a personal token for your scripts. It is shown once, and you choose an expiry of 7–365 days. Send it as `Authorization: Token rip_…` on `/api/` requests.
 - **Access:** the token acts with your access to read, upload, and file documents, and needs no CSRF token. To limit the damage of a leaked token, it cannot: sign in or change account security, other tokens, or agents; manage people or groups; share documents, tags, senders, types, or saved views with other people, or create public links; or send documents out of Ripiano or change what does (document email, mail accounts and rules, Sources, workflows, backups, semantic-search and Trash-retention settings). Those requests get 403 with an explanation; do them in the app.
 - **Revoking:** revoke a token at any time. Last use is shown next to each token.
+- **Editing from a stale copy:** every document carries an `edit_version`. Send it back on `PATCH /api/documents/<id>` as `base_version` in the body (or as an `If-Match` header). If a detail you are changing was changed by someone else in the meantime, the change is refused with 409, `code: "edit_conflict"`, the changed details in `conflicting_fields` and `changed_fields`, and the current `document`; details nobody else touched still save. Requests without it work as before.
 - **Reference:** `/api/schema.json` is OpenAPI 3.1 for every route. The 40 most-used operations (documents, upload, notes, tags, senders, types, saved views, sharing, workflows, sources, jobs, overview, tokens, and others) include request and response body schemas and are marked `x-ripiano-contract: v1`.
 - **Compatibility promise (API version 1):** for contract operations, fields may be added but existing fields never disappear or gain a new type (including `null`), and routes never disappear, without a new API version. `services/api/archive/test_api_contract.py` enforces this on every test run against the recorded `archive/api_contract_v1.json`; after an intended, compatible change, regenerate it with `RIPIANO_WRITE_CONTRACT=1 RIPIANO_DEBUG=1 .venv/bin/pytest -q archive/test_api_contract.py`.
 - **Agents:** MCP agents keep their own, more limited grants (see Agents and [Agent access](AGENT_ACCESS.md)).
 
 ## Backups and moving
 
-Scheduled or manual checksum-verified backups are written to the mounted backup volume; see [Backup and restore](BACKUP_RESTORE.md) for the layout, schedule, and clean-stack recovery.
+Scheduled or manual checksum-verified backups are written to the mounted backup volume. After **Back up now**, the screen shows that the backup is running and announces when it finishes, fails, or is cancelled; a second click while one is running starts nothing new.
+
+See [Backup and restore](BACKUP_RESTORE.md) for the layout, schedule, and clean-stack recovery.
 
 ### NAS browse copy
 

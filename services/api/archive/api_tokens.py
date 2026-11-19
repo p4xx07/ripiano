@@ -57,7 +57,7 @@ def revoke_tokens_on_password_change(sender, instance, **kwargs):
         from .models import AgentGrant, ShareBundle, ShareLink
 
         now = timezone.now()
-        AgentGrant.objects.filter(owner_id=instance.pk, revoked_at__isnull=True).update(revoked_at=now)
+        AgentGrant.objects.filter(owner_id=instance.pk, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="password_changed")
         # D11: public share links and bundles end too, so a stolen session cannot keep anonymous download access after
         # the owner (or an admin reset) changes the password. They stay ended; the owner creates new ones if needed.
         ShareLink.objects.filter(owner_id=instance.pk, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="password_changed")

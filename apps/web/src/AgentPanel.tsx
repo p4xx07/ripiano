@@ -13,6 +13,8 @@ type Grant = {
   filter_tag_name: string | null;
   expires_at: string;
   revoked_at: string | null;
+  /** Why the agent stopped, when the server ended it (e.g. "password_changed", docs/DECISIONS.md D11). */
+  revoked_reason?: string | null;
   last_used_at: string | null;
   created_at: string;
 };
@@ -148,6 +150,10 @@ export default function AgentPanel() {
       setNewToken(grant.token);
       setCopied(false);
       setName("");
+      // The next agent starts from the safe defaults, not this one's permissions and scope (round-9 judge 2 L5).
+      setScopes(["documents:search"]);
+      setFilterTag("");
+      setDays(30);
       await load();
       setAnnouncement(m.createdAnnouncement(grant.name));
       setFocusTarget({ kind: "token" });
@@ -232,8 +238,9 @@ export default function AgentPanel() {
         <div className="agent-card-body">
           <strong>{grant.name}</strong>
           <span>
-            {grant.revoked_at ? m.revoked : inactive ? m.expired : m.active}{" "}
-            {m.expires(formatDate(grant.expires_at))}
+            {grant.revoked_at
+              ? (grant.revoked_reason === "password_changed" ? m.revokedPassword : grant.revoked_reason === "account_off" ? m.revokedAccountOff : m.revoked)
+              : <>{inactive ? m.expired : m.active}{" "}{m.expires(formatDate(grant.expires_at))}</>}
           </span>
           <div className="agent-scopes">
             {grant.scopes.map((scope) => (

@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowDownToLine, Eye, FileText, MessageSquare, Plus, Save, Users, X } from "lucide-react";
-import { Document, DocumentNote, formatDate, request } from "./api";
+import { ApiError, Document, DocumentNote, formatDate, request } from "./api";
 import { Button, Field, Modal } from "./ui";
 import { useMessages } from "./i18n";
 import DocumentHistory from "./DocumentHistory";
@@ -8,6 +8,21 @@ import messages from "./locales/SharedDocumentPanel";
 
 /** A document someone else owns and shared with the signed-in person. */
 type SharedItem = { id: string; name: string; level: "view" | "edit"; owner: { id: number; name: string } };
+
+/** The details a shared editor can change in this dialog, as form values. */
+const FIELDS = ["title", "date", "actionStatus", "actionDueDate", "actionNote", "senderId", "typeId"] as const;
+type FieldName = typeof FIELDS[number];
+type Values = Record<FieldName, string>;
+/** A detail this person changed that someone else also changed: the form shows `theirs`, `mine` can be put back. */
+type Conflict = { field: FieldName; mine: string; theirs: string };
+
+function savedValues(doc: Document): Values {
+  return {
+    title: doc.title, date: doc.document_date ?? "", actionStatus: doc.action_status,
+    actionDueDate: doc.action_due_date ?? "", actionNote: doc.action_note,
+    senderId: doc.correspondent?.id ?? "", typeId: doc.document_type?.id ?? "",
+  };
+}
 
 export default function SharedDocumentPanel({ initial, username, onClose, onSaved }: {
   initial: Document;
@@ -30,10 +45,14 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
       setFiling({ tags: mine(all.tags), correspondents: mine(all.correspondents), document_types: mine(all.document_types) });
     }).catch(() => undefined);
   }, [canEdit, current.shared_by_id]);
+  // Set when a refused save was merged with the newer document: the merged filing choices, not the server's.
+  const mergedFiling = useRef<{ tags: string[]; senderId: string; typeId: string } | null>(null);
   useEffect(() => {
-    setSharedTagIds(current.tags.map((tag) => tag.id));
-    setSenderId(current.correspondent?.id ?? "");
-    setTypeId(current.document_type?.id ?? "");
+    const merged = mergedFiling.current;
+    mergedFiling.current = null;
+    setSharedTagIds(merged?.tags ?? current.tags.map((tag) => tag.id));
+    setSenderId(merged?.senderId ?? current.correspondent?.id ?? "");
+    setTypeId(merged?.typeId ?? current.document_type?.id ?? "");
   }, [current]);
   const filingShared = filing.tags.length + filing.correspondents.length + filing.document_types.length > 0;
   const [title, setTitle] = useState(initial.title);
@@ -44,6 +63,13 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [saveConflict, setSaveConflict] = useState(false);
+  const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [conflictStatus, setConflictStatus] = useState("");
+  const conflictRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (saveConflict) conflictRef.current?.focus();
+  }, [saveConflict, current]);
   const [notes, setNotes] = useState<DocumentNote[]>([]);
   const [nextNoteOffset, setNextNoteOffset] = useState<number | null>(null);
   const [notesLoading, setNotesLoading] = useState(true);
@@ -68,31 +94,129 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
 
   useEffect(() => { void loadNotes(0); }, [current.id]);
 
+  /** What the form holds now. Due date and note belong to an open follow-up; closing one clears them. */
+  function formValues(base: Document): Values {
+    const before = savedValues(base);
+    const open = actionStatus === "open";
+    const statusChanged = actionStatus !== before.actionStatus;
+    return {
+      title, date, actionStatus,
+      actionDueDate: open ? actionDueDate : statusChanged ? "" : before.actionDueDate,
+      actionNote: open ? actionNote : statusChanged ? "" : before.actionNote,
+      // "Not set" in these lists means "leave as it is": a shared editor cannot clear the sender or type.
+      senderId: senderId || before.senderId, typeId: typeId || before.typeId,
+    };
+  }
+
+  function setFieldValue(field: FieldName, value: string) {
+    const setters: Record<FieldName, (value: string) => void> = {
+      title: setTitle, date: setDate, actionStatus: (next) => setActionStatus(next as Document["action_status"]),
+      actionDueDate: setActionDueDate, actionNote: setActionNote, senderId: setSenderId, typeId: setTypeId,
+    };
+    setters[field](value);
+  }
+
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
     setNotice("");
+    // What is being saved and the saved document it was edited from. Only changed details are sent, with the
+    // version they were loaded with, so the owner's (or another editor's) newer changes are never overwritten.
+    let base = current;
+    let mine = formValues(base);
+    const shared = (ids: string[]) => ids.filter((id) => filing.tags.some((tag) => tag.id === id)).sort();
+    let tags = sharedTagIds;
     try {
-      const updated = await request<Document>(`/api/documents/${current.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          title, document_date: date || null, action_status: actionStatus,
-          action_due_date: actionStatus === "open" && actionDueDate ? actionDueDate : null,
-          action_note: actionStatus === "open" ? actionNote : "",
-          ...(filing.tags.length ? { tags: sharedTagIds.filter((id) => filing.tags.some((tag) => tag.id === id)) } : {}),
-          ...(senderId && senderId !== (current.correspondent?.id ?? "") ? { correspondent_id: senderId } : {}),
-          ...(typeId && typeId !== (current.document_type?.id ?? "") ? { document_type_id: typeId } : {}),
-        }),
-      });
-      setCurrent(updated);
-      onSaved(updated);
-      setNotice(m.saved);
+      for (let attempt = 0; ; attempt += 1) {
+        const before = savedValues(base);
+        const changes: Record<string, unknown> = {};
+        if (mine.title !== before.title) changes.title = mine.title;
+        if (mine.date !== before.date) changes.document_date = mine.date || null;
+        if (mine.actionStatus !== before.actionStatus) changes.action_status = mine.actionStatus;
+        if (mine.actionDueDate !== before.actionDueDate) changes.action_due_date = mine.actionDueDate || null;
+        if (mine.actionNote !== before.actionNote) changes.action_note = mine.actionNote;
+        if (mine.senderId !== before.senderId) changes.correspondent_id = mine.senderId;
+        if (mine.typeId !== before.typeId) changes.document_type_id = mine.typeId;
+        const chosen = shared(tags);
+        const previous = shared(base.tags.map((tag) => tag.id));
+        if (filing.tags.length && (chosen.length !== previous.length || chosen.some((id, index) => id !== previous[index]))) changes.tags = chosen;
+        if (typeof base.edit_version === "string" && base.edit_version) changes.base_version = base.edit_version;
+        try {
+          const updated = await request<Document>(`/api/documents/${base.id}`, { method: "PATCH", body: JSON.stringify(changes) });
+          setCurrent(updated);
+          for (const field of FIELDS) setFieldValue(field, savedValues(updated)[field]);
+          onSaved(updated);
+          setSaveConflict(false);
+          setConflicts([]);
+          setConflictStatus("");
+          setNotice(m.saved);
+          return;
+        } catch (cause) {
+          // Only an edit conflict; other refusals are ordinary errors.
+          if (!(cause instanceof ApiError && cause.status === 409 && cause.data.code === "edit_conflict")) throw cause;
+          let server: Document;
+          try {
+            const sent = cause.data.document as Document | undefined;
+            server = sent && typeof sent === "object" && sent.id === base.id ? sent : await request<Document>(`/api/documents/${base.id}`);
+          } catch {
+            throw cause;
+          }
+          // Details only this person changed keep their value, details only the other person changed take the newer
+          // one, and details both changed show the newer value with this person's offered beside it.
+          const newer = savedValues(server);
+          const values = { ...newer };
+          const clashes: Conflict[] = [];
+          for (const field of FIELDS) {
+            if (mine[field] === before[field]) continue;
+            if (newer[field] === before[field] || newer[field] === mine[field]) values[field] = mine[field];
+            else clashes.push({ field, mine: mine[field], theirs: newer[field] });
+          }
+          const baseTags = base.tags.map((tag) => tag.id);
+          const merged = new Set(server.tags.map((tag) => tag.id));
+          chosen.filter((id) => !baseTags.includes(id)).forEach((id) => merged.add(id));
+          previous.filter((id) => !chosen.includes(id)).forEach((id) => merged.delete(id));
+          if (!clashes.length && attempt < 2) {
+            base = server;
+            mine = values;
+            tags = [...merged];
+            continue;
+          }
+          mergedFiling.current = { tags: [...merged], senderId: values.senderId, typeId: values.typeId };
+          setCurrent(server);
+          for (const field of FIELDS) setFieldValue(field, values[field]);
+          onSaved(server);
+          setConflicts(clashes);
+          setConflictStatus("");
+          setSaveConflict(true);
+          return;
+        }
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.saveError);
     } finally {
       setBusy(false);
     }
+  }
+
+  const fieldLabels: Record<FieldName, string> = {
+    title: m.title, date: m.documentDate, actionStatus: m.followUp, actionDueDate: m.dueDate,
+    actionNote: m.whatNeedsDoing, senderId: m.sender, typeId: m.type,
+  };
+  function conflictValue(field: FieldName, value: string) {
+    if (!value) return m.conflictEmpty;
+    if (field === "actionStatus") return value === "open" ? m.needsAction : value === "done" ? m.completed : m.nothingToDo;
+    if (field === "date" || field === "actionDueDate") return formatDate(`${value}T00:00:00`);
+    if (field === "senderId") return filing.correspondents.find((item) => item.id === value)?.name ?? (current.correspondent?.id === value ? current.correspondent.name : value);
+    if (field === "typeId") return filing.document_types.find((item) => item.id === value)?.name ?? (current.document_type?.id === value ? current.document_type.name : value);
+    return value;
+  }
+  function chooseMine(conflict: Conflict) {
+    setFieldValue(conflict.field, conflict.mine);
+    setConflicts((all) => all.filter((item) => item.field !== conflict.field));
+    setConflictStatus(m.conflictUsedMine(fieldLabels[conflict.field]));
+    conflictRef.current?.focus();
   }
 
   async function noteAction(action: () => Promise<unknown>, message: string) {
@@ -127,6 +251,23 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
       </dl>
       {error && <div className="inline-error" role="alert">{error}</div>}
       {notice && <p className="bulk-notice" role="status">{notice}</p>}
+      {(saveConflict || conflicts.length > 0 || conflictStatus) && (
+        <div ref={conflictRef} className="draft-restored" tabIndex={-1}>
+          {saveConflict && <p>{m.saveConflict}</p>}
+          {conflicts.length > 0 && <>
+            <p className="draft-conflicts">{m.conflictFields(conflicts.map((item) => fieldLabels[item.field]).join(", "))}</p>
+            <ul className="draft-conflict-list">
+              {conflicts.map((item) => <li key={item.field}>
+                <strong>{fieldLabels[item.field]}</strong>
+                <span>{m.conflictNewer(conflictValue(item.field, item.theirs))}</span>
+                <span>{m.conflictMine(conflictValue(item.field, item.mine))}</span>
+                <Button type="button" variant="secondary" aria-label={m.useMineFor(fieldLabels[item.field])} onClick={() => chooseMine(item)}>{m.useMine}</Button>
+              </li>)}
+            </ul>
+          </>}
+          <p aria-live="polite">{conflictStatus}</p>
+        </div>
+      )}
       {canEdit ? (
         <form onSubmit={(event) => void save(event)}>
           <Field label={m.title} className="detail-label">

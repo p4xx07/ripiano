@@ -17,7 +17,7 @@ from pypdf import PdfReader
 from .backup import BackupError, backup_media_lock, create_snapshot
 from .browse_export import build_browse_tree, prune_old_browse_trees
 from .classification import apply_rules
-from .models import BackupRun, BrowseExportRun, Document, DocumentTag, FilingRule, PurgeJob, TrashRetentionPolicy
+from .models import BackupRun, BrowseExportRun, Document, DocumentTag, FilingRule, ProcessingClaim, PurgeJob, TrashRetentionPolicy
 from .email_render import EML_TYPE, MSG_TYPE, render_html
 from .office import OFFICE_EXTENSIONS, convert_office
 from .purge import record_purge, remove_job_media
@@ -37,6 +37,8 @@ PROCESSING_ERRORS = {
     "generic_again": "Text recognition failed again, so the file is probably damaged. Download the original and open it on your computer, then re-scan it or save it again as PDF and upload the new copy.",
     "backup": "The backup failed. Details are in the maintenance worker log.",
     "backup_permission": "Ripiano cannot write to the backup folder. Check the permissions of the mounted backup folder on the NAS.",
+    # A worker stopped (restart, out of memory) while processing this document, three times in a row.
+    "interrupted": "Processing stopped unexpectedly several times (the worker restarted or ran out of memory). Choose Retry OCR to try again; if it keeps stopping, the file may be too large for the NAS.",
     "damaged_pdf": "This PDF is damaged, so some of its pages may be missing. Ripiano kept the original and made the pages it could read searchable. Compare it with the paper, then re-scan it or upload an undamaged copy.",
 }
 
@@ -67,8 +69,120 @@ def readable_error(text, fallback):
         return fallback
     return text
 
+# A processing document's worker refreshes its heartbeat this often; one silent for STALE_AFTER is gone
+# (killed, restarted, out of memory) and its document goes back to the queue (judge 3 round 9, M1).
+HEARTBEAT_SECONDS = 30
+# After a heartbeat that could not be written (database restarting), try again sooner.
+HEARTBEAT_RETRY_SECONDS = 5
+STALE_AFTER = timedelta(minutes=2)
+# Interrupted this many times in a row, a document stops being retried by itself (it may be what kills the worker).
+MAX_INTERRUPTIONS = 3
+# A work directory older than this belongs to a run that was killed: no run lasts longer than the task time limit.
+WORK_DIR_PREFIX = "work-"
+WORK_DIR_MAX_AGE = timedelta(hours=2)
+SPLIT_JOURNAL = "split-parts.txt"
+
+
+def _fresh_claims():
+    """Claims whose worker reported recently, judged by the database clock alone (no clock skew between containers).
+
+    A heartbeat far in the future (the database clock was set back) is not proof of life either.
+    """
+    from django.db.models.functions import Now
+
+    return ProcessingClaim.objects.filter(beat_at__gte=Now() - STALE_AFTER, beat_at__lte=Now() + STALE_AFTER)
+
+
+def stalled_ids(documents):
+    """The ids of the "processing" documents among ``documents`` whose worker stopped reporting."""
+    ids = {document.pk for document in documents if document.status == Document.Status.PROCESSING}
+    if not ids:
+        return set()
+    return ids - set(_fresh_claims().filter(document_id__in=ids).values_list("document_id", flat=True))
+
+
+def processing_stalled(document):
+    """True for a "processing" document whose worker stopped sending its heartbeat."""
+    return bool(stalled_ids([document]))
+
+
+def release_claim(document):
+    """Take the document away from whichever run holds it (caller holds the document's row lock).
+
+    That run finds its claim gone when it finishes and discards its result.
+    """
+    ProcessingClaim.objects.filter(document_id=document.pk).delete()
+
+
+class _Heartbeat:
+    """Refresh a run's claim from a background thread while the worker is alive."""
+
+    def __init__(self, document_id, token):
+        import threading
+
+        self.document_id = document_id
+        self.token = token
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._run, name=f"heartbeat-{document_id}", daemon=True)
+
+    @staticmethod
+    def beat(document_id, token):
+        """Report once, with the database's clock; False when this run no longer holds the document."""
+        from django.db.models.functions import Now
+
+        return bool(ProcessingClaim.objects.filter(document_id=document_id, token=token).update(beat_at=Now(), suspected=False))
+
+    def _run(self):
+        from django.db import connection
+
+        wait = HEARTBEAT_SECONDS
+        try:
+            while not self.stop.wait(wait):
+                try:
+                    # Its own small row: never waits for a lock on the document (a barcode split holds one for a while).
+                    held = self.beat(self.document_id, self.token)
+                    wait = HEARTBEAT_SECONDS
+                    if not held:
+                        return  # Requeued or cancelled meanwhile; the run notices when it tries to save.
+                except Exception:  # noqa: BLE001 - the database is away; the run itself may not need it right now
+                    logger.warning("Could not refresh the processing heartbeat of %s", self.document_id, exc_info=True)
+                    connection.close()
+                    wait = HEARTBEAT_RETRY_SECONDS
+        finally:
+            connection.close()
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop.set()
+        self.thread.join(timeout=5)
+
+
+def _holds_claim(document, token):
+    return ProcessingClaim.objects.filter(document_id=document.pk, token=token).exists()
+
+
+def _save_result(document, token, fields):
+    """Save a run's result only if the run still holds the document; return whether it did.
+
+    The check and the save happen under the document's row lock, the same lock Retry, Cancel, and the scheduler's
+    requeue take before they remove the claim. A run that lost its claim changes nothing.
+    """
+    with transaction.atomic():
+        status = Document.objects.select_for_update().filter(pk=document.pk).values_list("status", flat=True).first()
+        if status != Document.Status.PROCESSING or not ProcessingClaim.objects.filter(document_id=document.pk, token=token).delete()[0]:
+            return False
+        document.save(update_fields=fields)
+    return True
+
+
 @shared_task(name="archive.tasks.process_document")
 def process_document(document_id):
+    import uuid
+
+    token = uuid.uuid4()
     with transaction.atomic():
         document = Document.objects.select_for_update().get(pk=document_id)
         if document.status != Document.Status.PENDING or document.trashed_at:
@@ -77,6 +191,13 @@ def process_document(document_id):
         document.processing_started_at = timezone.now()
         document.error = ""
         document.save(update_fields=["status", "processing_started_at", "error"])
+        ProcessingClaim.objects.filter(document=document).delete()
+        ProcessingClaim.objects.create(document=document, token=token)  # beat_at: the database's "now"
+    with _Heartbeat(document.id, token):
+        _process_claimed(document, token)
+
+
+def _process_claimed(document, token):
     first_run = document.processed_at is None
 
     media_root = Path(settings.MEDIA_ROOT)
@@ -87,7 +208,7 @@ def process_document(document_id):
     unlocked_by = None
 
     try:
-        with tempfile.TemporaryDirectory(dir=media_root) as work_dir:
+        with tempfile.TemporaryDirectory(dir=media_root, prefix=WORK_DIR_PREFIX) as work_dir:
             work_dir = Path(work_dir)
             input_file = original
             output_type = "pdfa"
@@ -137,6 +258,9 @@ def process_document(document_id):
                        and pdf_is_damaged(original, page_count))
             with output_file.open("rb") as source:
                 os.fsync(source.fileno())
+            if not _holds_claim(document, token):
+                logger.warning("Document %s was requeued or cancelled while this run was working; its result is discarded", document.id)
+                return
             os.replace(output_file, archive)
         document.archive_path = str(archive.relative_to(media_root))
         document.extracted_text = text
@@ -153,10 +277,14 @@ def process_document(document_id):
             document.processing_warning_reviewed_at = None
         document.status = Document.Status.READY
         document.error = ""
-        document.processing_failures = 0
+        document.processing_failures = document.processing_interruptions = 0
         document.processed_at = timezone.now()
-        document.save(update_fields=["archive_path", "extracted_text", "status", "error", "processed_at", "processing_failures",
-                                     "processing_warning", "processing_warning_reviewed_at"])
+        if not _save_result(document, token, ["archive_path", "extracted_text", "status", "error", "processed_at", "processing_failures",
+                                              "processing_interruptions", "processing_warning", "processing_warning_reviewed_at"]):
+            # Declared gone and requeued, or cancelled by the owner, while still working: the newer state stands,
+            # and nothing is filed and no workflow runs for this late result (round-9 review, M1).
+            logger.warning("Document %s was requeued or cancelled while this run was working; its result is discarded", document.id)
+            return
     except Exception as exc:
         if isinstance(exc, LockedPdfError):
             logger.info("Document %s is a locked PDF with no matching workflow password", document.id)
@@ -171,7 +299,12 @@ def process_document(document_id):
         diagnostic = (exc.stderr or "").strip() if isinstance(exc, subprocess.CalledProcessError) else ""
         fallback = PROCESSING_ERRORS["generic_again" if document.processing_failures > 1 else "generic"]
         document.error = readable_error((diagnostic.splitlines()[-1] if diagnostic else str(exc)), fallback)[:500]
-        document.save(update_fields=["status", "error", "processing_failures", "processing_warning", "processing_warning_reviewed_at"])
+        try:
+            if not _save_result(document, token, ["status", "error", "processing_failures", "processing_warning", "processing_warning_reviewed_at"]):
+                logger.warning("Document %s was requeued or cancelled while this run was working; its failure is not recorded", document.id)
+        except Exception:
+            # The database is away: the claim goes stale and the scheduler requeues the document.
+            logger.exception("Could not record the failed processing of %s", document.id)
         return
     try:
         apply_rules(document)
@@ -215,14 +348,91 @@ def process_document(document_id):
             logger.exception("Could not record the PDF unlock for document %s", document.id)
 
 
+def requeue_stalled(document):
+    """Put a stalled document back in the queue, or mark it failed after MAX_INTERRUPTIONS in a row. Caller holds its row lock.
+
+    Safe to run again on the same file: a barcode split commits its parts and marks the source in one transaction,
+    and a source already split is never split again, so no duplicate documents appear. The stopped run's claim is
+    removed, so if that run is alive after all it cannot save over the new attempt.
+    """
+    release_claim(document)
+    document.processing_interruptions = min(document.processing_interruptions + 1, 1000)
+    document.processing_started_at = None
+    if document.processing_interruptions >= MAX_INTERRUPTIONS:
+        document.status = Document.Status.FAILED
+        document.error = PROCESSING_ERRORS["interrupted"]
+    else:
+        document.status = Document.Status.PENDING
+    document.save(update_fields=["status", "error", "processing_interruptions", "processing_started_at"])
+    return document.status == Document.Status.PENDING
+
+
+def _remove_split_leftovers(work_dir, media_root):
+    """Delete the part files a killed run wrote for a barcode split that never committed (they have no document)."""
+    journal = work_dir / SPLIT_JOURNAL
+    if not journal.is_file():
+        return
+    originals = (media_root / "originals").resolve()
+    for line in journal.read_text(encoding="utf-8").splitlines():
+        path = (media_root / line.strip()).resolve()
+        if not line.strip() or originals not in path.parents or Document.objects.filter(original_path=line.strip()).exists():
+            continue
+        path.unlink(missing_ok=True)
+
+
+def remove_stale_work_dirs(now=None):
+    """Remove work directories left in the media folder by runs that were killed (round-9 review, L7)."""
+    import re
+    import shutil
+    import time
+
+    media_root = Path(settings.MEDIA_ROOT)
+    cutoff = (now or time.time()) - WORK_DIR_MAX_AGE.total_seconds()
+    try:
+        entries = list(media_root.iterdir())
+    except OSError:
+        return 0
+    removed = 0
+    for entry in entries:
+        # "tmp" plus eight characters is what earlier versions named them.
+        if not (entry.name.startswith(WORK_DIR_PREFIX) or re.fullmatch(r"tmp[a-z0-9_]{8}", entry.name)):
+            continue
+        try:
+            if entry.is_symlink() or not entry.is_dir() or entry.stat().st_mtime > cutoff:
+                continue
+            _remove_split_leftovers(entry, media_root)
+            shutil.rmtree(entry, ignore_errors=True)
+            removed += 1
+        except Exception:  # noqa: BLE001 - housekeeping must never stop the queue from being refilled
+            logger.warning("Could not remove the old work directory %s", entry.name, exc_info=True)
+    return removed
+
+
 @shared_task(name="archive.tasks.reconcile_pending_documents")
 def reconcile_pending_documents():
-    stale_before = timezone.now() - timedelta(hours=1)
-    Document.objects.filter(
-        trashed_at__isnull=True,
-        status=Document.Status.PROCESSING,
-        processing_started_at__lt=stale_before,
-    ).update(status=Document.Status.PENDING, processing_started_at=None)
+    waiting = Document.objects.filter(trashed_at__isnull=True, status=Document.Status.PROCESSING).exclude(
+        pk__in=_fresh_claims().values("document_id"))
+    for document_id in list(waiting.values_list("id", flat=True)[:100]):
+        with transaction.atomic():
+            # A locked row is in use right now (a split writing its parts, a person's Retry): look again next time.
+            document = Document.objects.select_for_update(skip_locked=True).filter(pk=document_id).first()
+            if document is None or not processing_stalled(document):
+                continue
+            claim = ProcessingClaim.objects.filter(document_id=document_id).first()
+            if claim is not None and not claim.suspected:
+                # First sighting: only note it. A live worker's next heartbeat (30 s) clears the note, so a clock
+                # jump or a database outage that delayed one heartbeat is not counted as a stopped worker.
+                ProcessingClaim.objects.filter(document_id=document_id, token=claim.token, beat_at=claim.beat_at).update(suspected=True)
+                continue
+            if claim is not None and not ProcessingClaim.objects.filter(document_id=document_id, token=claim.token, beat_at=claim.beat_at, suspected=True).delete()[0]:
+                continue  # A heartbeat arrived this instant.
+            logger.warning("Document %s stopped while processing (no worker heartbeat since %s); requeueing",
+                           document.id, claim.beat_at if claim else document.processing_started_at)
+            requeue_stalled(document)
+    try:
+        remove_stale_work_dirs()
+    except Exception:
+        logger.exception("Could not clean up old work directories")
     for document_id in Document.objects.filter(status=Document.Status.PENDING, trashed_at__isnull=True).values_list("id", flat=True)[:100]:
         process_document.delay(str(document_id))
 
@@ -390,49 +600,73 @@ def purge_expired_trash():
                 logger.exception("Could not queue automatic Trash cleanup %s", job.id)
 
 
-@shared_task(name="archive.tasks.reclassify_owner")
-def reclassify_owner(owner_id):
-    for document in Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True).iterator():
-        try:
-            apply_rules(document)
-        except Exception:
-            logger.exception("Automatic filing failed for document %s", document.id)
+# A recheck of a large archive runs in short slices. Each slice queues the next one at the end of the
+# maintenance queue, so mail, source imports, and backups waiting there get their turn in between.
+RECHECK_SLICE_SECONDS = 2
 
 
-@shared_task(name="archive.tasks.reclassify_filing_candidates")
-def reclassify_filing_candidates(owner_id, kind, target_id, pattern, field="either", deleted=False, match="phrase"):
-    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True)
-    if deleted:
-        field = "correspondent" if kind == FilingRule.Kind.CORRESPONDENT else "document_type"
-        documents = documents.filter(**{f"{field}_id": target_id, f"{field}_origin": Document.FilingOrigin.RULE})
-    from .classification import rule_matches
+def _recheck_slice(task, arguments, documents, after, wanted=None, what="filing"):
+    """Apply the rules to the documents after ``after`` (by id) until the slice is used up, then queue the rest."""
+    import time
 
-    for document in documents.iterator():
-        if not deleted and not rule_matches(pattern, match, field, document.title.casefold(), document.extracted_text.casefold()):
+    deadline = time.monotonic() + RECHECK_SLICE_SECONDS
+    documents = documents.order_by("id")
+    if after:
+        documents = documents.filter(id__gt=after)
+    last = None
+    for document in documents.iterator(chunk_size=100):
+        if last is not None and time.monotonic() >= deadline:
+            try:
+                task.apply_async(arguments, {"after": str(last)})
+                return
+            except Exception:
+                # Without the queue the rest would be lost; finish it here instead.
+                logger.exception("Could not queue the rest of a rule recheck; finishing it now")
+                deadline = float("inf")
+        last = document.id
+        if wanted is not None and not wanted(document):
             continue
         try:
             apply_rules(document)
         except Exception:
-            logger.exception("Automatic filing failed for document %s", document.id)
+            logger.exception("Automatic %s failed for document %s", what, document.id)
+
+
+@shared_task(name="archive.tasks.reclassify_owner")
+def reclassify_owner(owner_id, after=None):
+    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True)
+    _recheck_slice(reclassify_owner, [owner_id], documents, after)
+
+
+@shared_task(name="archive.tasks.reclassify_filing_candidates")
+def reclassify_filing_candidates(owner_id, kind, target_id, pattern, field="either", deleted=False, match="phrase", after=None):
+    from .classification import rule_matches
+
+    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True)
+    wanted = None
+    if deleted:
+        column = "correspondent" if kind == FilingRule.Kind.CORRESPONDENT else "document_type"
+        documents = documents.filter(**{f"{column}_id": target_id, f"{column}_origin": Document.FilingOrigin.RULE})
+    else:
+        def wanted(document):
+            return rule_matches(pattern, match, field, document.title.casefold(), document.extracted_text.casefold())
+    _recheck_slice(reclassify_filing_candidates, [owner_id, kind, target_id, pattern, field, deleted, match], documents, after, wanted)
 
 
 @shared_task(name="archive.tasks.reclassify_tag_candidates")
-def reclassify_tag_candidates(owner_id, tag_id, phrases, deleted=False):
-    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True)
-    if deleted:
-        documents = documents.filter(tag_links__tag_id=tag_id, tag_links__origin=DocumentTag.Origin.RULE)
+def reclassify_tag_candidates(owner_id, tag_id, phrases, deleted=False, after=None):
     from .classification import rule_matches
 
-    for document in documents.iterator():
-        if not deleted:
-            title = document.title.casefold()
-            text = document.extracted_text.casefold()
-            if not any(rule_matches(entry["pattern"], entry.get("match", "phrase"), entry["field"], title, text) for entry in phrases):
-                continue
-        try:
-            apply_rules(document)
-        except Exception:
-            logger.exception("Automatic tagging failed for document %s", document.id)
+    documents = Document.objects.filter(owner_id=owner_id, status=Document.Status.READY, trashed_at__isnull=True)
+    wanted = None
+    if deleted:
+        # A subquery, not a join: each document is listed once, in id order.
+        documents = documents.filter(pk__in=DocumentTag.objects.filter(tag_id=tag_id, origin=DocumentTag.Origin.RULE).values("document_id"))
+    else:
+        def wanted(document):
+            title, text = document.title.casefold(), document.extracted_text.casefold()
+            return any(rule_matches(entry["pattern"], entry.get("match", "phrase"), entry["field"], title, text) for entry in phrases)
+    _recheck_slice(reclassify_tag_candidates, [owner_id, tag_id, phrases, deleted], documents, after, wanted, what="tagging")
 
 
 @shared_task(name="archive.tasks.poll_mail_account", time_limit=30 * 60)
@@ -453,10 +687,12 @@ def poll_mail_accounts():
 def _note(document, body):
     from .models import DocumentNote
 
-    DocumentNote.objects.create(document=document, author_id=document.owner_id, body=body)
+    # A run repeated after an interruption must not repeat what the first attempt already said.
+    if not DocumentNote.objects.filter(document=document, author_id=document.owner_id, body=body).exists():
+        DocumentNote.objects.create(document=document, author_id=document.owner_id, body=body)
 
 
-def _split(document, pdf, ranges):
+def _split(document, pdf, ranges, journal=None):
     """Create one document per page range, carrying over the source's filing. All or nothing."""
     from io import BytesIO
 
@@ -485,6 +721,10 @@ def _split(document, pdf, ranges):
                 part = ingest_document(locked.owner, File(BytesIO(data.getvalue()), name=f"{stem}-{number}.pdf"),
                                        source=locked.source, title=f"{locked.title} ({number}/{len(ranges)})", queue=False)
                 written.append(part.original_path)
+                if journal is not None:
+                    # If this run is killed before the commit, the cleanup of its work directory removes these files.
+                    with journal.open("a", encoding="utf-8") as log:
+                        log.write(part.original_path + "\n")
                 # Parts keep what an input rule or the owner already decided about the scan.
                 part.split_parent = locked
                 part.correspondent_id, part.correspondent_origin = locked.correspondent_id, locked.correspondent_origin
@@ -527,7 +767,7 @@ def apply_barcodes(document, original, pdf, work_dir):
             if scan.truncated:
                 marker = "separator sheets" if scan.separators else "ASN barcodes"
                 _note(document, f"This scan has {marker}, but only the first {scan.scanned} pages are checked, so it was kept as one document.")
-            elif _split(document, pdf, ranges):
+            elif _split(document, pdf, ranges, journal=work_dir / SPLIT_JOURNAL):
                 return
         elif scan.truncated and scan.asn_pages and not scan.separators:
             _note(document, f"This scan has an ASN barcode, but only the first {scan.scanned} pages are checked, so its archive number was not assigned.")

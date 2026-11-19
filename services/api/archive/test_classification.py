@@ -442,3 +442,96 @@ def test_phrase_edit_only_rechecks_affected_documents():
         assert classify.call_count == 1
     matching.refresh_from_db()
     assert matching.correspondent == sender
+
+
+@pytest.mark.django_db
+def test_suggestion_reasons_ignore_words_that_come_only_from_the_file_name():
+    """Judge 1 round 9, L2: "mobile" and "batch" came from the upload's file name, not from the document."""
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    text = "Separator sheet with barcode for the scanner"
+
+    def upload(name, body, title=None):
+        document = ready_document(owner, body)
+        document.original_name = f"{name}.pdf"
+        document.title = title or name
+        document.save(update_fields=["original_name", "title"])
+        return document
+
+    source = upload("mobile batch upload 1", text + " printed in April")
+    target = upload("mobile batch upload 2", text + " printed in June")
+    # Only the file names are alike: that is no reason to suggest anything.
+    unrelated = upload("mobile batch upload 3", "Minutes of the residents meeting about heating costs")
+    tag = Tag.objects.create(owner=owner, name="Separators")
+    DocumentTag.objects.create(document=source, tag=tag, origin=DocumentTag.Origin.MANUAL)
+
+    from archive.classification import filing_suggestions
+
+    suggestion = filing_suggestions(target)["tags"][0]
+    assert suggestion["name"] == "Separators"
+    assert {"separator", "barcode"}.issubset(set(suggestion["shared_terms"]))
+    assert not {"mobile", "batch", "upload"} & set(suggestion["shared_terms"])
+    assert filing_suggestions(unrelated)["tags"] == []
+
+    # A title the owner wrote still counts.
+    renamed = upload("mobile batch upload 4", text, title="Separator sheet warranty")
+    source.title = "Warranty separator"
+    source.save(update_fields=["title"])
+    assert "warranty" in filing_suggestions(renamed)["tags"][0]["shared_terms"]
+
+
+@pytest.mark.django_db
+def test_long_recheck_runs_in_slices_so_other_maintenance_work_is_not_held_up():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    documents = sorted((ready_document(owner, text="Annual tax notice") for _ in range(5)), key=lambda item: item.id)
+    tag = Tag.objects.create(owner=owner, name="Tax")
+    rule = ClassificationRule.objects.create(owner=owner, tag=tag, pattern="tax")
+    phrases = [{"pattern": rule.pattern, "field": rule.field}]
+
+    # No time left after the first document: the rest is queued, not done in this turn.
+    with patch("archive.tasks.RECHECK_SLICE_SECONDS", 0), patch.object(reclassify_tag_candidates, "apply_async") as queued:
+        reclassify_tag_candidates(owner.id, str(tag.id), phrases)
+    assert DocumentTag.objects.filter(tag=tag).count() == 1
+    queued.assert_called_once_with([owner.id, str(tag.id), phrases, False], {"after": str(documents[0].id)})
+
+    # Following the queued slices covers every document exactly once.
+    with patch("archive.tasks.RECHECK_SLICE_SECONDS", 0), patch("archive.tasks.apply_rules", wraps=apply_rules) as classify:
+        def run_next(arguments, options):
+            reclassify_tag_candidates(*arguments, **options)
+        with patch.object(reclassify_tag_candidates, "apply_async", side_effect=run_next):
+            reclassify_tag_candidates(owner.id, str(tag.id), phrases, after=str(documents[0].id))
+        assert classify.call_count == 4
+    assert DocumentTag.objects.filter(tag=tag, origin=DocumentTag.Origin.RULE).count() == 5
+
+    # If the next slice cannot be queued, the recheck finishes in place instead of stopping half way.
+    rule.delete()
+    with patch("archive.tasks.RECHECK_SLICE_SECONDS", 0), patch.object(reclassify_tag_candidates, "apply_async", side_effect=OSError("queue down")):
+        reclassify_tag_candidates(owner.id, str(tag.id), [], deleted=True)
+    assert not DocumentTag.objects.filter(tag=tag).exists()
+
+    for task, arguments in ((reclassify_owner, [owner.id]), (reclassify_filing_candidates, [owner.id, "correspondent", "x", "tax", "either", False, "phrase"])):
+        with patch("archive.tasks.RECHECK_SLICE_SECONDS", 0), patch.object(task, "apply_async") as queued:
+            task(*arguments)
+        queued.assert_called_once_with(arguments, {"after": str(documents[0].id)})
+
+
+@pytest.mark.django_db
+def test_recheck_keeps_unchanged_rule_tags_and_never_touches_manual_ones():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    document = ready_document(owner, text="Annual tax notice for the house")
+    tax, house, manual, gone = (Tag.objects.create(owner=owner, name=name) for name in ("Tax", "House", "Manual", "Gone"))
+    ClassificationRule.objects.create(owner=owner, tag=tax, pattern="tax")
+    ClassificationRule.objects.create(owner=owner, tag=manual, pattern="notice")
+    DocumentTag.objects.create(document=document, tag=manual, origin=DocumentTag.Origin.MANUAL)
+    DocumentTag.objects.create(document=document, tag=gone, origin=DocumentTag.Origin.RULE)
+    apply_rules(document)
+    first = DocumentTag.objects.get(document=document, tag=tax)
+    assert first.origin == DocumentTag.Origin.RULE
+
+    ClassificationRule.objects.create(owner=owner, tag=house, pattern="house")
+    ClassificationRule.objects.create(owner=owner, tag=house, pattern="annual")  # two rules, one tag
+    apply_rules(document)
+    links = {link.tag_id: link for link in DocumentTag.objects.filter(document=document)}
+    assert set(links) == {tax.id, house.id, manual.id}
+    assert links[tax.id].pk == first.pk  # not deleted and re-created
+    assert links[manual.id].origin == DocumentTag.Origin.MANUAL
+    assert links[house.id].origin == DocumentTag.Origin.RULE

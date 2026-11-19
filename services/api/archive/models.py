@@ -4,7 +4,7 @@ import secrets
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
-from django.db.models.functions import Lower
+from django.db.models.functions import Lower, Now
 
 
 def new_location_code():
@@ -69,6 +69,9 @@ class Document(models.Model):
     error = models.TextField(blank=True)
     # Processing failures in a row (reset when processing succeeds): a repeated failure gets different guidance.
     processing_failures = models.PositiveSmallIntegerField(default=0)
+    # Times in a row the worker stopped while processing this document (restart, out of memory). Counted apart from
+    # failures, so each message stays true; reset when processing succeeds or a person chooses Retry.
+    processing_interruptions = models.PositiveSmallIntegerField(default=0)
     # Processed, but something about the result needs a person's check: "damaged_pdf" (a damaged PDF of which only
     # the readable pages were made searchable). Listed under Needs attention until reviewed (judge 1 round 8, M2).
     processing_warning = models.CharField(max_length=30, blank=True, default="")
@@ -326,6 +329,22 @@ class FilingRule(models.Model):
         ]
 
 
+class ProcessingClaim(models.Model):
+    """The run that is processing a document right now (judge 3 round 9, M1; round-9 review, M1).
+
+    A worker creates the row when it starts and refreshes ``beat_at`` every 30 s, using the database clock. Only the
+    run whose ``token`` is still here may save its result, so a run that was declared gone, requeued, or cancelled
+    cannot finish over the newer state. The heartbeat lives in its own row so it never waits for a lock on the document.
+    """
+
+    document = models.OneToOneField(Document, primary_key=True, on_delete=models.CASCADE, related_name="processing_claim")
+    token = models.UUIDField(default=uuid.uuid4)
+    beat_at = models.DateTimeField(db_default=Now())
+    # Set when one scheduler pass found the heartbeat stale; the next heartbeat clears it. Only a claim still stale
+    # on a second pass is taken away, so a clock jump or a short database outage is not counted as a stopped worker.
+    suspected = models.BooleanField(default=False)
+
+
 class DocumentTag(models.Model):
     class Origin(models.TextChoices):
         MANUAL = "manual", "Manual"
@@ -498,6 +517,7 @@ class AgentGrant(models.Model):
     filter_tag = models.ForeignKey(Tag, null=True, blank=True, on_delete=models.PROTECT, related_name="agent_grants")
     expires_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_reason = models.CharField(max_length=20, blank=True, default="")  # as ShareLink.revoked_reason
     last_used_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

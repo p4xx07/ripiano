@@ -32,6 +32,8 @@ def grant_json(grant):
         "filter_tag_name": grant.filter_tag.name if grant.filter_tag_id else None,
         "expires_at": grant.expires_at.isoformat() if grant.expires_at else None,
         "revoked_at": grant.revoked_at.isoformat() if grant.revoked_at else None,
+        # Why Ripiano ended the grant (not the owner): "password_changed" (D11) or "account_off" (D9); null otherwise.
+        "revoked_reason": grant.revoked_reason or None,
         "last_used_at": grant.last_used_at.isoformat() if grant.last_used_at else None,
         "created_at": grant.created_at.isoformat(),
     }

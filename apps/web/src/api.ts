@@ -152,6 +152,8 @@ export type Document = {
   /** The warning in the interface language ("" when none). */
   warning?: string;
   processing_warning_reviewed_at?: string | null;
+  /** Opaque token of the editable details as loaded; sent back as `base_version` so a stale save gets a 409. */
+  edit_version?: string;
 };
 
 /** A processing warning the owner has not marked as checked yet. */

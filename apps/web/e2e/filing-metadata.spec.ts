@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { removeLeftovers } from "./cleanup";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -14,6 +15,13 @@ async function navigate(page: Page, name: string) {
   if (mobile) await expect.poll(() => page.locator(".sidebar").evaluate((element) => element.getBoundingClientRect().right)).toBeLessThan(1);
 }
 
+// The e2e account is shared: remove this spec's saved searches even when it fails.
+let leftovers = "";
+test.afterEach(async ({ page }) => {
+  await removeLeftovers(page, leftovers);
+  leftovers = "";
+});
+
 test("sender and document type can be managed, assigned, and found", async ({ page }, testInfo) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
   await page.goto("/");
@@ -23,6 +31,7 @@ test("sender and document type can be managed, assigned, and found", async ({ pa
   await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
 
   const suffix = `${Date.now()}-${testInfo.project.name}`;
+  leftovers = suffix;
   const senderName = `Town office ${suffix}`;
   const renamedSender = `City office ${suffix}`;
   const typeName = `Permit notice ${suffix}`;

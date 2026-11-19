@@ -11,6 +11,11 @@ export default defineMessages({
   waitingHeading: "Waiting for text recognition",
   processingSince: (when: string) => `Being processed since ${when}`,
   queuedSince: (when: string) => `Queued since ${when}`,
+  stalledSince: (when: string) => `Taking longer than usual (started ${when}). It was interrupted and will be tried again by itself.`,
+  stalledAnnounce: (count: number) => count === 1
+    ? "One document is taking longer than usual. It was interrupted and will be tried again by itself; you can also retry or cancel it."
+    : `${count} documents are taking longer than usual. They were interrupted and will be tried again by themselves; you can also retry or cancel them.`,
+  retryNowLabel: (title: string) => `Retry processing of ${title} now`,
   cancelLabel: (title: string) => `Cancel processing of ${title}`,
   cancelled: (title: string) => `“${title}” was taken out of the queue. It stays in your archive; choose Retry OCR to process it later.`,
   cancel: "Cancel",
@@ -42,6 +47,11 @@ export default defineMessages({
   waitingHeading: "In attesa del riconoscimento del testo",
   processingSince: (when: string) => `In elaborazione dal ${when}`,
   queuedSince: (when: string) => `In coda dal ${when}`,
+  stalledSince: (when: string) => `Ci vuole più del solito (iniziato il ${when}). L'elaborazione si è interrotta e verrà ripetuta da sola.`,
+  stalledAnnounce: (count: number) => count === 1
+    ? "Un documento richiede più tempo del solito. L'elaborazione si è interrotta e verrà ripetuta da sola; puoi anche riprovare o annullarla."
+    : `${count} documenti richiedono più tempo del solito. L'elaborazione si è interrotta e verrà ripetuta da sola; puoi anche riprovare o annullarla.`,
+  retryNowLabel: (title: string) => `Riprova subito l'elaborazione di ${title}`,
   cancelLabel: (title: string) => `Annulla l'elaborazione di ${title}`,
   cancelled: (title: string) => `“${title}” è stato tolto dalla coda. Resta nel tuo archivio; scegli Riprova l'OCR per elaborarlo più tardi.`,
   cancel: "Annulla",

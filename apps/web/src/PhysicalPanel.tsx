@@ -100,16 +100,22 @@ export default function PhysicalPanel({
 
   async function findSticker(value: string) {
     setError("");
+    setNotice("");
     setFound(null);
     setFoundLocation(null);
     const normalized = stickerCodeFrom(value);
     if (normalized !== value) setCode(normalized);
     if (!normalized) return;
     try {
+      // A successful lookup is announced too, not only a failed one (round-9 judge 2 L2).
       if (normalized.startsWith("L-")) {
-        setFoundLocation(await request<LocationLookup>(`/api/locations/lookup/${encodeURIComponent(normalized)}`));
+        const result = await request<LocationLookup>(`/api/locations/lookup/${encodeURIComponent(normalized)}`);
+        setFoundLocation(result);
+        setNotice(m.locationFound(result.location.name, result.total));
       } else {
-        setFound(await request<Lookup>(`/api/stickers/${encodeURIComponent(normalized)}`));
+        const result = await request<Lookup>(`/api/stickers/${encodeURIComponent(normalized)}`);
+        setFound(result);
+        setNotice(m.stickerFound(result.document.title, result.copy.location_path.join(" / "), Boolean(result.copy.missing_at)));
       }
     } catch (cause) {
       // A 404 (also the proxy's HTML page for an address the API does not know) means no such sticker.

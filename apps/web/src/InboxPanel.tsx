@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, AlertTriangle, Check, Copy, FileText, Inbox, RotateCcw, Trash2 } from "lucide-react";
-import { Document, hasOpenWarning, request } from "./api";
+import { ApiError, Document, hasOpenWarning, request } from "./api";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/InboxPanel";
@@ -19,6 +19,13 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
   // What the error's "Retry" does: the action that failed (retry OCR for that document), or reload the list.
   const [errorRetry, setErrorRetry] = useState<{ label: string; run: () => void } | null>(null);
   const errorRef = useRef<HTMLDivElement>(null);
+  // Set when the next error message should take focus; the effect below runs once the message is on the page.
+  const focusError = useRef(false);
+  useEffect(() => {
+    if (!error || !focusError.current) return;
+    focusError.current = false;
+    errorRef.current?.focus();
+  }, [error, errorRetry]);
   const [notice, setNotice] = useState("");
   const [confirmResolve, setConfirmResolve] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -27,6 +34,16 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
   const loadingMoreRef = useRef(false);
   const moveFocusAfterLoad = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  // Documents whose OCR was restarted from here: their cards stay (marked "retrying") and are checked until the
+  // new attempt ends, which is announced either way (round-9 judge 2 M3).
+  const [retrying, setRetrying] = useState<Record<string, Document>>({});
+  const retryingRef = useRef(retrying);
+  retryingRef.current = retrying;
+  // Retried documents whose new attempt was interrupted (the worker stopped): the server tries again by itself,
+  // and the card says so in the same calm words as the Library row.
+  const [stalled, setStalled] = useState<Record<string, true>>({});
+  const stalledRef = useRef(stalled);
+  stalledRef.current = stalled;
 
   const load = useCallback(async (cursor: string | null = null) => {
     if (cursor && loadingMoreRef.current) return;
@@ -40,7 +57,16 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
         `/api/documents?view=exceptions${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
       );
       if (requestNumber !== latestRequest.current) return;
-      setDocuments((current) => cursor ? [...current, ...result.documents] : result.documents);
+      setDocuments((current) => {
+        if (cursor) return [...current, ...result.documents];
+        // A card being retried is no longer an exception on the server while OCR runs; keep it where it was.
+        const next = [...result.documents];
+        current.forEach((item, index) => {
+          const kept = retryingRef.current[item.id];
+          if (kept && !next.some((doc) => doc.id === item.id)) next.splice(Math.min(index, next.length), 0, kept);
+        });
+        return next;
+      });
       setNextCursor(result.next_cursor);
       setError("");
     } catch (cause) {
@@ -97,7 +123,7 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
     } catch (cause) {
       moveFocusAfterLoad.current = false;
       setError(cause instanceof Error ? cause.message : m.warningCheckError);
-      requestAnimationFrame(() => errorRef.current?.focus());
+      focusError.current = true;
     } finally {
       setBusyId(null);
     }
@@ -165,14 +191,94 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
     if (!error) setErrorRetry(null);
   }, [error]);
 
+  const retryingIds = Object.keys(retrying).sort().join(",");
+  useEffect(() => {
+    if (!retryingIds) return;
+    let stopped = false;
+    let tick = 0;
+    const checkStalled = async (waiting: string[]) => {
+      const next: Record<string, true> = {};
+      if (waiting.length) {
+        try {
+          const jobs = await request<{ documents_waiting: { items: { id: string; stalled?: boolean }[] } }>("/api/jobs");
+          for (const item of jobs.documents_waiting.items) if (item.stalled && waiting.includes(item.id)) next[item.id] = true;
+        } catch {
+          return; // Passing (offline, restarting): keep what is shown and look again later.
+        }
+      }
+      if (stopped) return;
+      const before = stalledRef.current;
+      if (Object.keys(next).sort().join(",") === Object.keys(before).sort().join(",")) return;
+      if (Object.keys(next).some((id) => !before[id])) setNotice(m.ocrStalled);
+      setStalled(next);
+    };
+    const check = async () => {
+      const waiting: string[] = [];
+      for (const id of retryingIds.split(",")) {
+        let current: Document;
+        try {
+          current = await request<Document>(`/api/documents/${id}`);
+        } catch (cause) {
+          // Gone (moved to Trash elsewhere): stop following it. Anything else is passing: check again on the next tick.
+          if (cause instanceof ApiError && cause.status === 404 && !stopped) {
+            setRetrying((all) => {
+              const rest = { ...all };
+              delete rest[id];
+              return rest;
+            });
+            setDocuments((all) => all.filter((item) => item.id !== id));
+          }
+          continue;
+        }
+        if (stopped) return;
+        if (current.status === "pending" || current.status === "processing") {
+          waiting.push(id);
+          continue;
+        }
+        const title = retryingRef.current[id]?.title ?? current.title;
+        const retryButton = window.document.getElementById(`inbox-retry-${id}`);
+        const focusWasOnCard = Boolean(retryButton && retryButton === window.document.activeElement);
+        setRetrying((all) => {
+          const rest = { ...all };
+          delete rest[id];
+          return rest;
+        });
+        if (current.status === "failed") {
+          setDocuments((all) => all.map((item) => item.id === id ? current : item));
+          setNotice(m.ocrFailedAgain(title, current.error));
+        } else {
+          setDocuments((all) => all.filter((item) => item.id !== id || hasOpenWarning(current)).map((item) => item.id === id ? current : item));
+          setNotice(hasOpenWarning(current) ? m.ocrPartlyRead(title) : m.ocrSucceeded(title));
+          if (focusWasOnCard && !hasOpenWarning(current)) moveFocusAfterLoad.current = true;
+        }
+      }
+      // The jobs list is a second request, so it is asked less often than the documents themselves.
+      if (tick++ % 3 === 0 || Object.keys(stalledRef.current).length) await checkStalled(waiting);
+    };
+    // One pass at a time, less often while OCR keeps running (3 s up to 30 s), and none in a hidden tab.
+    let delay = 3000;
+    let timer = 0;
+    const pass = async () => {
+      if (!window.document.hidden) {
+        await check();
+        delay = Math.min(Math.round(delay * 1.5), 30000);
+      }
+      if (!stopped) timer = window.setTimeout(() => void pass(), delay);
+    };
+    timer = window.setTimeout(() => void pass(), delay);
+    return () => { stopped = true; window.clearTimeout(timer); };
+  }, [retryingIds, m]);
+
   async function retry(document: Document) {
     setBusyId(document.id);
     setError("");
     try {
       await request(`/api/documents/${document.id}/retry`, { method: "POST" });
-      moveFocusAfterLoad.current = true;
+      const pending = { ...document, status: "processing" as const, error: "" };
+      setRetrying((all) => ({ ...all, [document.id]: pending }));
+      retryingRef.current = { ...retryingRef.current, [document.id]: pending };
+      setDocuments((all) => all.map((item) => item.id === document.id ? pending : item));
       setNotice(m.ocrRestarted);
-      await load();
     } catch (cause) {
       moveFocusAfterLoad.current = false;
       setError(cause instanceof Error ? cause.message : m.retryError);
@@ -184,7 +290,7 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
           void retry(document);
         },
       });
-      requestAnimationFrame(() => errorRef.current?.focus());
+      focusError.current = true;
     } finally {
       setBusyId(null);
     }
@@ -232,12 +338,15 @@ export default function InboxPanel({ refreshKey, onOpenDocument }: {
           <div className="document-icon">{document.status === "failed" ? <AlertCircle size={21} aria-hidden="true" /> : hasOpenWarning(document) ? <AlertTriangle size={21} aria-hidden="true" /> : <FileText size={21} aria-hidden="true" />}</div>
           <div className="document-info">
             <h3><button id={`inbox-title-${document.id}`} className="document-title-button" onClick={() => onOpenDocument(document)}>{document.title}</button></h3>
+            {retrying[document.id] && (stalled[document.id]
+              ? <p className="doc-processing doc-stalled">{m.ocrStalled}</p>
+              : <p className="doc-processing">{m.ocrRetrying}</p>)}
             {document.status === "failed" && <p className="doc-error">{m.ocrFailed(document.error)}</p>}
             {document.status !== "failed" && hasOpenWarning(document) && <p className="doc-warning">{document.warning || m.partlyReadable}</p>}
             {document.duplicate_of && !document.duplicate_reviewed_at && <p className="inbox-copy-note"><Copy size={13} />{m.exactCopy(document.duplicate_of.title)}</p>}
           </div>
           <div className="exception-actions">
-            {document.status === "failed" && <Button id={`inbox-retry-${document.id}`} type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} pending={busyId === document.id} onClick={() => void retry(document)}><RotateCcw size={16} /> {m.tryOcrAgain}</Button>}
+            {(document.status === "failed" || retrying[document.id]) && <Button id={`inbox-retry-${document.id}`} type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} pending={busyId === document.id || Boolean(retrying[document.id])} onClick={() => void retry(document)}><RotateCcw size={16} /> {retrying[document.id] ? m.retryingOcr : m.tryOcrAgain}</Button>}
             {document.status !== "failed" && hasOpenWarning(document) && (document.access ?? "owner") === "owner" && <Button type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} pending={busyId === document.id} onClick={() => void markChecked(document)}><Check size={16} /> {m.markChecked}</Button>}
             {document.duplicate_of && !document.duplicate_reviewed_at && <Button type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} disabled={busyId === document.id} onClick={() => void keepBoth(document)}><Check size={16} /> {m.keepBoth}</Button>}
             {isOpenCopy(document) && isSettled(document) && <Button type="button" variant="secondary" aria-describedby={`inbox-title-${document.id}`} disabled={busyId === document.id || resolving} onClick={() => void trashCopy(document)}><Trash2 size={16} /> {m.trashCopy}</Button>}

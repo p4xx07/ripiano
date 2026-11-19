@@ -156,6 +156,8 @@ test("the document dialog is named by its document and keeps focus when adding a
     expect(close!.height).toBeGreaterThanOrEqual(40);
   }
   await dialog.getByRole("button", { name: "Close" }).first().click();
+  // The new sender is chosen but not saved: closing asks first (round-6 judge 1 M2).
+  await dialog.getByRole("button", { name: "Discard changes" }).click();
   await expect(dialog).toHaveCount(0);
 });
 

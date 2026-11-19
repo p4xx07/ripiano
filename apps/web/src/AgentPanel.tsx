@@ -20,6 +20,8 @@ type Event = {
   agent: string;
   action: string;
   document_id: string | null;
+  /** Present when the call concerned one document the viewer can see. */
+  document_title?: string | null;
   outcome: string;
   at: string;
 };
@@ -339,6 +341,7 @@ export default function AgentPanel() {
                 <li key={`${event.at}-${index}`}>
                   <span>{event.agent}</span>
                   <strong>{toolNames[event.action] ?? event.action.replaceAll("_", " ")}</strong>
+                  {event.document_title && <span className="agent-event-document">{m.onDocument(event.document_title)}</span>}
                   <small>
                     {outcomeNames[event.outcome] ?? event.outcome} · <time dateTime={event.at}>{formatDateTime(event.at)}</time>
                   </small>

@@ -15,6 +15,7 @@ from django.views.decorators.http import require_http_methods
 
 from .export_views import _media_path
 from .models import Document, ShareLink
+from .storage import download_name
 
 
 def _share_json(share):
@@ -104,7 +105,7 @@ def shared_original(request, token):
                     digest.update(chunk)
             if digest.hexdigest() != document.original_sha256:
                 raise ValueError("Original checksum changed")
-            response = FileResponse(path.open("rb"), content_type=document.original_mime, as_attachment=True, filename=Path(document.original_name).name)
+            response = FileResponse(path.open("rb"), content_type=document.original_mime, as_attachment=True, filename=download_name(document.original_name, document.original_path))
         except (OSError, ValueError):
             return JsonResponse({"error": "Shared file is unavailable"}, status=503)
     response["Cache-Control"] = "no-store"

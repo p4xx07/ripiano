@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import timedelta
 from uuid import uuid4
@@ -131,7 +132,8 @@ def test_android_retry_cannot_resurrect_a_trashed_scan():
     document = Document.objects.create(
         owner=owner, source=Document.Source.ANDROID, source_ref=scan_id,
         title="Phone scan", original_name="scan.pdf", original_path="originals/scan.pdf",
-        original_mime="application/pdf", original_sha256="c" * 64, original_size=1,
+        # The retry sends the same bytes; a different file under this scan ID is refused (round 6).
+        original_mime="application/pdf", original_sha256=hashlib.sha256(b"upload retry").hexdigest(), original_size=1,
         status=Document.Status.READY,
     )
     assert client.post(f"/api/documents/{document.id}/trash").status_code == 200

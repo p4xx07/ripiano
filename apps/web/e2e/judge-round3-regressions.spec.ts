@@ -139,7 +139,7 @@ test("mobile filing, file, and paper actions have touch-sized targets", async ({
     expect(box.height).toBeGreaterThanOrEqual(44);
   }
   await dialog.getByRole("combobox", { name: /New location for paper copy/ }).selectOption((await secondLocation.json()).id);
-  await dialog.getByRole("button", { name: "Move", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Move paper copy / }).click();
   await expect(dialog.getByRole("status")).toContainText("moved");
 });
 

@@ -40,6 +40,13 @@ let current = resolve(preference);
 function apply() {
   if (typeof document === "undefined") return;
   document.documentElement.lang = current;
+  // The install metadata follows the interface language (theme.ts picks the theme's manifest).
+  const manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+  const href = manifest?.getAttribute("href");
+  if (manifest && href) {
+    const base = href.replace(/-it\.webmanifest$/, ".webmanifest");
+    manifest.href = current === "it" ? base.replace(/\.webmanifest$/, "-it.webmanifest") : base;
+  }
   // Pages the server renders for a plain link (printable labels open in a new tab) cannot carry the
   // Accept-Language header the app sends; Django reads this cookie first, so they match the interface.
   try {

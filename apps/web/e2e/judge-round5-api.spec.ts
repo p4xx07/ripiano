@@ -189,7 +189,7 @@ test("paper-copy history shows the time and who moved it", async ({ page }, test
   expect((await page.request.post(`/api/documents/${id}/copies`, { headers, data: { location_id: location.id } })).status()).toBe(201);
   await page.goto(`/?document=${id}`);
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "History", exact: true }).first().click();
+  await dialog.getByRole("button", { name: /^History of paper copy / }).first().click();
   const entry = dialog.locator(".copy-history li").first();
   await expect(entry).toContainText(`by ${username}`);
   await expect(entry.locator("time")).toHaveText(/\d{1,2}:\d{2}/);

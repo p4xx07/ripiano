@@ -90,7 +90,7 @@ export default defineMessages({
   signInError: "Impossibile accedere",
   authEyebrow: "ARCHIVIO PRIVATO DI DOCUMENTI",
   setupTitle: "Fai spazio a ciò che conta.",
-  signInTitle: "Bentornato.",
+  signInTitle: "Ti diamo il bentornato.",
   setupIntro: "Crea il primo account del tuo archivio. La chiave di configurazione si trova nelle impostazioni di Portainer.",
   signInIntro: "Accedi per trovare i tuoi documenti e tenerli in ordine.",
   username: "Nome utente",

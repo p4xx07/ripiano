@@ -87,6 +87,12 @@ TOOLS = {
 }
 
 
+GUARDED_TAG_ERROR = "This tag limits another agent's access; only a person can add or remove it"
+PROTECTED_FIELD_ERROR = "A human or input rule already chose this field"
+# Refusals by policy are logged as "denied" (like a tool outside the grant), not as a failed call.
+REFUSALS = {GUARDED_TAG_ERROR, PROTECTED_FIELD_ERROR}
+
+
 def _active(grant):
     return bool(grant and grant.revoked_at is None and grant.expires_at and grant.expires_at > timezone.now() and grant.owner.is_active)
 
@@ -142,6 +148,19 @@ def _uuid(value):
 
 def _result(payload, *, error=False):
     return CallToolResult(content=[TextContent(type="text", text=json.dumps(payload))], structuredContent=payload, isError=error)
+
+
+def _run_updated_workflows(grant, document):
+    """An agent's filing change runs the owner's "updated" workflows, like the owner's own change.
+
+    The workflows run with the owner's rules, except that they leave other agents' filter tags alone: otherwise an
+    agent could add a workflow's trigger tag and let the workflow add a tag that widens another agent's view
+    (judge 3 round 6, H1). Workflow actions never start further workflows.
+    """
+    from .models import Workflow
+    from .workflows import run_for_document
+
+    run_for_document(document, Workflow.Trigger.UPDATED, agent_grant=grant)
 
 
 def _execute(grant, name, args):
@@ -245,7 +264,7 @@ def _execute(grant, name, args):
         guarded = set(AgentGrant.objects.filter(owner=grant.owner, revoked_at__isnull=True, filter_tag__isnull=False)
                       .exclude(pk=grant.pk).values_list("filter_tag_id", flat=True))
         if (add | remove) & guarded:
-            return document, {"error": "This tag limits another agent's access; only a person can add or remove it"}
+            return document, {"error": GUARDED_TAG_ERROR}
         with transaction.atomic():
             document = _documents(grant).select_for_update(of=("self",)).filter(pk=document_id).first()
             if document is None:
@@ -257,7 +276,9 @@ def _execute(grant, name, args):
             suppressed = set(TagOverride.objects.filter(document=document, tag_id__in=add).values_list("tag_id", flat=True))
             for tag_id in add - suppressed:
                 DocumentTag.objects.get_or_create(document=document, tag_id=tag_id, defaults={"origin": DocumentTag.Origin.MODEL})
-            history.record(document, before, actor_label=grant.name, actor_kind=history.Kind.AGENT)
+            changed = history.record(document, before, actor_label=grant.name, actor_kind=history.Kind.AGENT)
+        if changed:  # a call that changed nothing does not run workflows (review L1)
+            _run_updated_workflows(grant, document)
         return document, {"document_id": str(document.id), "added": [str(x) for x in add - suppressed], "suppressed": [str(x) for x in suppressed], "removed": [str(x) for x in remove]}
 
     if name == "set_document_filing":
@@ -282,12 +303,14 @@ def _execute(grant, name, args):
             if only_if_empty and getattr(document, field + "_id") is not None:
                 return document, {"error": "This filing field already has a value"}
             if getattr(document, origin_field) in (Document.FilingOrigin.MANUAL, Document.FilingOrigin.SOURCE):
-                return document, {"error": "A human or input rule already chose this field"}
+                return document, {"error": PROTECTED_FIELD_ERROR}
             before = history.snapshot(document)
             setattr(document, field, choice)
             setattr(document, origin_field, Document.FilingOrigin.MODEL)
             document.save(update_fields=[field, origin_field])
-            history.record(document, before, actor_label=grant.name, actor_kind=history.Kind.AGENT)
+            changed = history.record(document, before, actor_label=grant.name, actor_kind=history.Kind.AGENT)
+        if changed:  # a call that changed nothing does not run workflows (review L1)
+            _run_updated_workflows(grant, document)
         return document, {"document_id": str(document.id), key: str(choice.id), "origin": Document.FilingOrigin.MODEL}
 
     return None, {"error": "Unknown tool"}
@@ -328,7 +351,8 @@ def _call(name, args):
             document = Document.objects.filter(pk=UUID(str(args["document_id"])), owner=grant.owner).first()
         except (TypeError, ValueError, AttributeError):
             document = None
-    AgentAudit.objects.create(grant=grant, action=name, document=document, outcome="error" if failure else "ok")
+    outcome = ("denied" if payload["error"] in REFUSALS else "error") if failure else "ok"
+    AgentAudit.objects.create(grant=grant, action=name, document=document, outcome=outcome)
     return _result(payload, error=failure)
 
 

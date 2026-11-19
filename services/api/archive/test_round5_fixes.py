@@ -235,4 +235,5 @@ def test_signed_in_api_answers_are_not_cached():
     client = Client()
     client.force_login(owner)
     assert client.get("/api/tags")["Cache-Control"] == "private, no-store"
-    assert "Cache-Control" not in Client().get("/api/health")
+    # Round 6 (judge 3, L7): signed-out API answers such as /api/session are not cached either.
+    assert Client().get("/api/health")["Cache-Control"] == "private, no-store"

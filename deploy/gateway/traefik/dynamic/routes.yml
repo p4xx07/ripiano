@@ -37,7 +37,7 @@ http:
       rule: >-
         Host(`ripiano.{{ env "DOMAIN" }}`) && (
         PathPrefix(`/api/share-links/`) || PathPrefix(`/api/share-bundles/`) ||
-        Path(`/manifest.webmanifest`) || Path(`/manifest-dark.webmanifest`) || Path(`/manifest-amoled.webmanifest`) ||
+        PathRegexp(`^/manifest(-dark|-amoled)?(-it)?\.webmanifest$`) ||
         PathRegexp(`^/icon-[0-9]+\.png$`))
       entryPoints: [websecure]
       middlewares: [hsts]

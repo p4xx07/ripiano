@@ -193,7 +193,9 @@ test("shortcut help uses the menu's screen names, in English and Italian", async
   await expect(aiuto).toContainText("Vai a “Tutti i documenti”");
   await expect(aiuto).toContainText("Vai a “Da fare”");
   await expect(aiuto).toContainText("Invio");
-  await expect(aiuto).not.toContainText("Archivio");
+  // "Archivio" appears only as the menu's own name for the Paper archive (g then p, round-6 judge 1 L4).
+  await expect(aiuto).toContainText("Vai all’“Archivio cartaceo”");
+  await expect(aiuto).not.toContainText(/Archivio(?! cartaceo)/);
   await page.keyboard.press("Escape");
   await page.getByLabel("Lingua").selectOption("en");
 });

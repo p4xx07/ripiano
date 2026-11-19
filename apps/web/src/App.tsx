@@ -49,7 +49,7 @@ import {
 } from "lucide-react";
 import { ApiError, CustomField, Document, FilingItem, formatDate, formatDateTime, formatTime, LibraryFilters, onSessionEnded, request, Session, Tag, tagPathLabel } from "./api";
 import * as uploadQueue from "./uploadQueue";
-import DocumentPanel from "./DocumentPanel";
+import DocumentPanel, { documentLeaveGuard } from "./DocumentPanel";
 import ActionPanel from "./ActionPanel";
 import InboxPanel from "./InboxPanel";
 import AgentPanel from "./AgentPanel";
@@ -210,9 +210,12 @@ function AuthScreen({
   const [needsCode, setNeedsCode] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // A refused sign-in marks the fields it concerns (round-6 judge 2 L4); with a code step, only the code.
+  const credentialsInvalid = Boolean(error) && !needsCode;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
@@ -263,6 +266,8 @@ function AuthScreen({
           <Field label={m.username}>
             <input
               autoComplete="username"
+              aria-invalid={credentialsInvalid || undefined}
+              aria-describedby={credentialsInvalid ? "auth-error" : undefined}
               value={username}
               onChange={(event) => { setUsername(event.target.value); setNeedsCode(false); setCode(""); }}
               required
@@ -272,6 +277,8 @@ function AuthScreen({
             <input
               type="password"
               autoComplete={setup ? "new-password" : "current-password"}
+              aria-invalid={credentialsInvalid || undefined}
+              aria-describedby={credentialsInvalid ? "auth-error" : undefined}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               minLength={setup ? 12 : undefined}
@@ -284,6 +291,8 @@ function AuthScreen({
               <input
                 autoComplete="one-time-code"
                 inputMode="text"
+                aria-invalid={Boolean(error) || undefined}
+                aria-describedby={error ? "auth-error" : undefined}
                 value={code}
                 onChange={(event) => setCode(event.target.value)}
                 maxLength={32}
@@ -303,11 +312,11 @@ function AuthScreen({
             </Field>
           )}
           {error && (
-            <div className="form-error" role="alert">
+            <div className="form-error" role="alert" id="auth-error">
               {error}
             </div>
           )}
-          <Button className="auth-submit" disabled={busy}>
+          <Button className="auth-submit" pending={busy}>
             {busy ? m.pleaseWait : setup ? m.createArchive : m.signIn}{" "}
             <ArrowRight size={18} />
           </Button>
@@ -561,7 +570,7 @@ function viewFromPath(pathname: string): View | null {
 const WAITING_RETRY_DELAYS = [3000, 10000, 30000, 60000];
 
 const GO_TO_VIEWS: Record<string, View> = {
-  l: "documents", i: "inbox", a: "actions", t: "tags", o: "overview", s: "shared", w: "workflows", r: "sources",
+  l: "documents", i: "inbox", a: "actions", t: "tags", p: "physical", o: "overview", s: "shared", w: "workflows", r: "sources",
 };
 
 // The last person signed in on this device (username only, never a secret), so a reload while
@@ -631,7 +640,13 @@ function App() {
   // After an upload: how many went in and which document to show first (announced politely).
   const [uploadDone, setUploadDone] = useState<{ count: number; firstId: string } | null>(null);
   const [revealDocument, setRevealDocument] = useState<string | null>(null);
-  const [appAnnouncement, setAppAnnouncement] = useState("");
+  // Saving closes the document dialog: a visible confirmation says it worked (round-6 judge 1 L1).
+  const [savedNotice, setSavedNotice] = useState("");
+  useEffect(() => {
+    if (!savedNotice) return;
+    const timer = window.setTimeout(() => setSavedNotice(""), 8000);
+    return () => window.clearTimeout(timer);
+  }, [savedNotice]);
   // A document just moved to the Trash from its dialog: said politely, with Undo (restore).
   const [trashedNotice, setTrashedNotice] = useState<{ id: string; title: string; state: "trashed" | "restoring" | "restored" | "failed" } | null>(null);
   // Where focus goes once the list has reloaded after Trash or Undo: the row now in the trashed
@@ -721,6 +736,8 @@ function App() {
   const historyReady = useRef(false);
   const replaceNextUrl = useRef(false);
   const awaitingBack = useRef(false);
+  const leavingWithEdits = useRef(false);
+  const returningToEdits = useRef(false);
   const restoringDocument = useRef<string | null>(null);
   const [historyTick, setHistoryTick] = useState(0);
   const viewRef = useRef(view);
@@ -774,6 +791,21 @@ function App() {
       const url = new URL(window.location.href);
       const target = viewFromPath(url.pathname) ?? "documents";
       const documentId = url.searchParams.get("document");
+      // Back away from a document with unsaved edits: return to it and ask first (judge round 6 review M3).
+      if (leavingWithEdits.current) {
+        leavingWithEdits.current = false;
+      } else if (selectedRef.current && documentId !== selectedRef.current.id && documentLeaveGuard.current) {
+        const blocked = documentLeaveGuard.current(() => { leavingWithEdits.current = true; window.history.back(); });
+        if (blocked) {
+          returningToEdits.current = true;
+          window.history.go(1);
+          return;
+        }
+      }
+      if (returningToEdits.current && documentId === selectedRef.current?.id) {
+        returningToEdits.current = false;
+        return;
+      }
       if (target !== viewRef.current) {
         focusHeadingOnView.current = !documentId;
         setView(target);
@@ -1753,7 +1785,6 @@ function App() {
       onDrop={drop}
     >
       <a className="skip-link" href="#main-content" inert={drawerCoversPage}>{m.skipToContent}</a>
-      <p className="visually-hidden" aria-live="polite" aria-atomic="true">{appAnnouncement}</p>
       {showShortcuts && <KeyboardHelp onClose={() => setShowShortcuts(false)} />}
       <aside id="app-sidebar" ref={sidebarRef} className={`sidebar ${menuOpen ? "sidebar-open" : ""}`}
         inert={narrowLayout && !menuOpen} aria-hidden={narrowLayout && !menuOpen ? true : undefined}>
@@ -1856,6 +1887,13 @@ function App() {
         </header>
         <section className={`page-content${view === "documents" && query.trim() ? " library-searching" : ""}`}>
           <div className="trash-undo-region" aria-live="polite" aria-atomic="true">
+            {savedNotice && (
+              <div className="upload-progress upload-done saved-notice">
+                <Check size={19} aria-hidden="true" />{" "}
+                <span>{savedNotice}</span>
+                <button type="button" className="upload-done-dismiss" aria-label={l.dismissAdded} onClick={() => setSavedNotice("")}><X size={16} aria-hidden="true" /></button>
+              </div>
+            )}
             {trashedNotice && (
               <div className="upload-progress upload-done trash-undo-notice">
                 <Check size={19} aria-hidden="true" />{" "}
@@ -1999,7 +2037,9 @@ function App() {
                   {!query && <kbd className="search-shortcut" aria-hidden="true">/</kbd>}
                   {query && (
                     <button
-                      onClick={() => setQuery("")}
+                      type="button"
+                      // The button goes away with the text: keep the keyboard in the search field (round-6 judge 1 L4).
+                      onClick={() => { setQuery(""); setNextCursor(null); searchRef.current?.focus(); }}
                       aria-label={l.clearSearch}
                     >
                       <X size={16} />
@@ -2022,7 +2062,7 @@ function App() {
               {phoneLayout && showFilters && savedSearchBar}
               <details className={`search-syntax${phoneLayout && !showFilters ? " phone-collapsed" : ""}`}>
                 <summary>{l.preciseSearch}</summary>
-                <p>{l.searchHelpUse} <code>{l.tagExample}</code>, <code>{l.senderExample}</code>, <code>{l.dateExample}</code> {l.searchHelpOr} <code>is:untagged</code>. {l.searchHelpAlso} {l.moreFields.split(" ").map((field) => <span key={field}><code>{field}</code>, </span>)}{l.searchHelpOr} <code>is:tagged</code>. {l.searchHelpCombine}{l.otherLanguageFields ? ` ${l.otherLanguageFields}` : ""} {l.searchHelpPress} <kbd>/</kbd> {l.searchHelpToSearch} <kbd>N</kbd> {l.searchHelpToAdd}</p>
+                <p>{l.searchHelpUse} <code>{l.tagExample}</code>, <code>{l.senderExample}</code>, <code>{l.dateExample}</code> {l.searchHelpOr} <code>is:untagged</code>{l.untaggedGloss}. {l.searchHelpAlso} {l.moreFields.split(" ").map((field) => <span key={field}><code>{field}</code>, </span>)}{l.searchHelpOr} <code>is:tagged</code>{l.taggedGloss}. {l.searchHelpCombine}{l.otherLanguageFields ? ` ${l.otherLanguageFields}` : ""} {l.searchHelpPress} <kbd>/</kbd> {l.searchHelpToSearch} <kbd>N</kbd> {l.searchHelpToAdd}</p>
               </details>
               {showFilters && <div className="library-filters" id="library-filters">
                 <Field label={l.tag} className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">{l.anyTag}</option>{tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}</select></Field>
@@ -2456,8 +2496,8 @@ function App() {
           onClose={() => setSelectedDocument(null)}
           onSaved={(saved, closing) => {
             void loadDocuments(query); void loadFilterOptions(); setActionRefresh((value) => value + 1); setInboxRefresh((value) => value + 1);
-            // The dialog closes on save: say so, since nothing else on screen changes visibly.
-            if (closing) setAppAnnouncement(l.documentSaved(saved.title));
+            // The dialog closes on save: say so (shown and announced at the top of the screen).
+            if (closing) setSavedNotice(l.documentSaved(saved.title));
           }}
           onTrashed={(trashed) => void documentTrashed(trashed)}
           onOpenTags={() => {

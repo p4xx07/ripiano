@@ -48,9 +48,9 @@ test("locations reset Inside after adding, then rename, move, and delete", async
   // Rename with the keyboard.
   await row(`${shelf} / ${box}`).getByRole("button", { name: `Edit ${shelf} / ${box}` }).click();
   const editor = page.getByRole("form", { name: `Edit ${shelf} / ${box}` });
-  await expect(editor.getByLabel("Name")).toBeFocused();
-  await editor.getByLabel("Name").fill(renamed);
-  await editor.getByLabel("Name").press("Enter");
+  await expect(editor.getByLabel("Name", { exact: true })).toBeFocused();
+  await editor.getByLabel("Name", { exact: true }).fill(renamed);
+  await editor.getByLabel("Name", { exact: true }).press("Enter");
   await expect(page.getByRole("status").filter({ hasText: `The location is now ${shelf} / ${renamed}.` })).toBeVisible();
   await expect(row(`${shelf} / ${renamed}`)).toBeVisible();
 

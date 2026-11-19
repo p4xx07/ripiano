@@ -122,6 +122,9 @@ def events(request):
         "agent": event.grant.name,
         "action": event.action,
         "document_id": str(event.document_id) if event.document_id else None,
+        # The owner's own title, so the activity list can say which document was involved.
+        "document_title": event.document.title if event.document_id else None,
         "outcome": event.outcome,
         "at": event.created_at.isoformat(),
-    } for event in AgentAudit.objects.filter(grant__owner=request.user).select_related("grant")[:100]]})
+    } for event in AgentAudit.objects.filter(grant__owner=request.user).select_related("grant", "document").only(
+        "action", "outcome", "created_at", "document_id", "grant__name", "document__title")[:100]]})

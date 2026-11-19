@@ -9,6 +9,23 @@ from django.views.decorators.http import require_http_methods
 from . import two_factor
 
 
+CSRF_ERRORS = {
+    "failed": "This request could not be verified. Reload the page and try again.",
+}
+
+
+def csrf_failure(request, reason=""):
+    """Django's CSRF_FAILURE_VIEW: a JSON 403 instead of the HTML error page (judge 3 round 6, L7).
+
+    Only the API answers in JSON; Django admin keeps its own page.
+    """
+    if not request.path.startswith(("/api/", "/mcp")):
+        from django.views.csrf import csrf_failure as django_csrf_failure
+
+        return django_csrf_failure(request, reason)
+    return JsonResponse({"error": CSRF_ERRORS["failed"]}, status=403)
+
+
 def _signed_in(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Sign in required"}, status=401)

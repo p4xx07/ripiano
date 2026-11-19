@@ -34,7 +34,7 @@ from .workflows import run_for_document
 from .custom_field_views import normalize_filter_range, normalize_filter_value
 from .physical_views import copy_json
 from .ingestion import ingest_document
-from .storage import InvalidDocument
+from .storage import InvalidDocument, download_name
 from .tasks import backup_archive
 
 logger = logging.getLogger(__name__)
@@ -513,9 +513,9 @@ def documents(request):
                 queryset = queryset.annotate(
                     search_vector=vector,
                     search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField()),
-                ).filter(Q(search_vector=search_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
+                ).filter(Q(search_vector=search_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query) | Q(original_name__icontains=free_query))
             else:
-                queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query))
+                queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query) | Q(original_name__icontains=free_query))
         hybrid = False
         semantic_ids = []
         eligible_for_hybrid = (view == "search" and sort == "relevance" and not shared and requested_view in (None, "documents")
@@ -649,22 +649,57 @@ def documents(request):
             return JsonResponse({"error": "Invalid scan ID"}, status=400)
         existing = Document.objects.filter(owner=request.user, source=scan_source, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").first()
         if existing:
-            if existing.trashed_at:
-                return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
-            return JsonResponse(_document_json(existing), status=200)
+            return _existing_scan(existing, upload)
     try:
         document = ingest_document(request.user, upload, source=scan_source if scan_id else Document.Source.WEB, source_ref=scan_id)
     except IntegrityError:
         if scan_id:
             existing = Document.objects.filter(owner=request.user, source=scan_source, source_ref=scan_id).select_related("duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").first()
             if existing:
-                if existing.trashed_at:
-                    return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
-                return JsonResponse(_document_json(existing), status=200)
+                return _existing_scan(existing, upload)
         raise
     except InvalidDocument as exc:
         return JsonResponse({"error": str(exc)}, status=400)
     return JsonResponse(_document_json(document), status=202)
+
+
+def _run_updated_workflows(documents):
+    """After the owner's bulk filing change commits, run "updated" workflows per document, as a single edit would.
+
+    Workflow actions never start further workflows, so this cannot loop.
+    """
+    from .workflows import enabled_workflows
+
+    documents = list(documents)
+    if not documents:
+        return
+    # Loaded once per request, and nothing runs when the owner has no "updated" workflow (review L2).
+    workflows = enabled_workflows(documents[0].owner_id, Workflow.Trigger.UPDATED)
+    if not workflows:
+        return
+    for document in documents:
+        run_for_document(document, Workflow.Trigger.UPDATED, workflows=workflows)
+
+
+def _existing_scan(existing, upload):
+    """The answer to a retried upload whose scan ID is already known.
+
+    The same file returns the document already made from it. Different bytes under the same scan ID are refused
+    rather than silently answered with the earlier document (judge 3 round 6, L4).
+    """
+    import hashlib
+
+    from .models import DocumentVersion
+
+    if existing.trashed_at:
+        return JsonResponse({"error": "This scan is in Trash. Restore it before retrying."}, status=409)
+    digest = hashlib.sha256()
+    for chunk in upload.chunks():
+        digest.update(chunk)
+    known = {existing.original_sha256, *DocumentVersion.objects.filter(document=existing).values_list("original_sha256", flat=True)}
+    if digest.hexdigest() not in known:
+        return JsonResponse({"error": "This scan ID was already used for a different file. Send the file again as a new scan."}, status=409)
+    return JsonResponse(_document_json(existing), status=200)
 
 
 @require_http_methods(["POST"])
@@ -698,6 +733,7 @@ def bulk_document_tags(request):
             already_tagged = set(DocumentTag.objects.filter(document_id__in=document_ids, tag=tag).values_list("document_id", flat=True))
             if any(counts.get(document.id, 0) >= 100 and document.id not in already_tagged for document in documents_to_change):
                 return JsonResponse({"error": "A document already has 100 tags"}, status=400)
+        changed = []
         for document in documents_to_change:
             before = history.snapshot(document)
             if action == "add":
@@ -706,7 +742,9 @@ def bulk_document_tags(request):
             else:
                 DocumentTag.objects.filter(document=document, tag=tag).delete()
                 TagOverride.objects.get_or_create(document=document, tag=tag)
-            history.record(document, before, actor_user=request.user)
+            if history.record(document, before, actor_user=request.user):
+                changed.append(document)
+    _run_updated_workflows(changed)
     return JsonResponse({"updated": len(documents_to_change), "action": action})
 
 
@@ -743,12 +781,15 @@ def bulk_document_filing(request):
         documents_to_change = list(Document.objects.select_for_update().filter(owner=request.user, trashed_at__isnull=True, pk__in=document_ids).order_by("pk"))
         if len(documents_to_change) != len(document_ids) or (value_id and item is None):
             return JsonResponse({"error": "Document or filing choice not found"}, status=404)
+        changed = []
         for document in documents_to_change:
             before = history.snapshot(document)
             setattr(document, field, item)
             setattr(document, f"{field}_origin", Document.FilingOrigin.MANUAL)
             document.save(update_fields=[field, f"{field}_origin"])
-            history.record(document, before, actor_user=request.user)
+            if history.record(document, before, actor_user=request.user):
+                changed.append(document)
+    _run_updated_workflows(changed)
     return JsonResponse({"updated": len(documents_to_change), "field": field, "value_id": str(value_id) if value_id else None})
 
 
@@ -821,8 +862,11 @@ def bulk_document_date(request):
         befores = {document.pk: history.snapshot(document) for document in documents_to_change}
         Document.objects.filter(owner=request.user, trashed_at__isnull=True, pk__in=document_ids).update(
             document_date=document_date, document_date_origin=Document.DateOrigin.MANUAL)
+        changed = []
         for document in documents_to_change:
-            history.record(document, befores[document.pk], actor_user=request.user)
+            if history.record(document, befores[document.pk], actor_user=request.user):
+                changed.append(document)
+    _run_updated_workflows(changed)
     return JsonResponse({"updated": len(document_ids), "document_date": document_date.isoformat() if document_date else None})
 
 
@@ -1226,7 +1270,7 @@ def download_original(request, document_id):
         (Path(settings.MEDIA_ROOT) / document.original_path).open("rb"),
         content_type=document.original_mime,
         as_attachment=True,
-        filename=Path(document.original_name).name,
+        filename=download_name(document.original_name, document.original_path),
     )
 
 

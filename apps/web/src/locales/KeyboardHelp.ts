@@ -17,7 +17,7 @@ export default defineMessages({
   closeDialog: "Close a dialog or panel",
   then: "then",
   // Screen names match the navigation menu (locales/App.ts).
-  goTo: (key: string) => ({ l: "Go to All documents", i: "Go to Inbox", a: "Go to Needs action", t: "Go to Tags & filing",
+  goTo: (key: string) => ({ l: "Go to All documents", i: "Go to Inbox", a: "Go to Needs action", t: "Go to Tags & filing", p: "Go to Paper archive",
     o: "Go to Overview", s: "Go to Shared with me", w: "Go to Workflows", r: "Go to Sources" } as Record<string, string>)[key] ?? key,
 }, {
   title: "Scorciatoie da tastiera",
@@ -36,6 +36,6 @@ export default defineMessages({
   closeDialog: "Chiudi una finestra o un pannello",
   then: "poi",
   goTo: (key: string) => ({ l: "Vai a “Tutti i documenti”", i: "Vai a “In arrivo”", a: "Vai a “Da fare”",
-    t: "Vai a “Etichette e archiviazione”", o: "Vai alla “Panoramica”", s: "Vai a “Condivisi con me”",
+    t: "Vai a “Etichette e archiviazione”", p: "Vai all’“Archivio cartaceo”", o: "Vai alla “Panoramica”", s: "Vai a “Condivisi con me”",
     w: "Vai ai “Flussi di lavoro”", r: "Vai alle “Sorgenti”" } as Record<string, string>)[key] ?? key,
 });

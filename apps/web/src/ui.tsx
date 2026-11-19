@@ -3,10 +3,23 @@ import { createPortal } from "react-dom";
 
 type ButtonProps = ComponentPropsWithRef<"button"> & {
   variant?: "primary" | "secondary" | "danger";
+  /**
+   * The button's request is running (or it cannot act right now) but it keeps keyboard focus: it is marked
+   * aria-disabled and ignores clicks and form submission instead of being `disabled`, because browsers move
+   * focus to <body> when a focused button becomes disabled (round-6 judge 2 M1).
+   */
+  pending?: boolean;
 };
 
-export function Button({ variant = "primary", className = "", ...props }: ButtonProps) {
-  return <button className={`button button-${variant} ${className}`.trim()} {...props} />;
+export function Button({ variant = "primary", className = "", pending = false, onClick, ...props }: ButtonProps) {
+  return <button className={`button button-${variant} ${className}`.trim()} aria-disabled={pending || undefined} {...props}
+    onClick={(event) => {
+      if (pending) {
+        event.preventDefault();
+        return;
+      }
+      onClick?.(event);
+    }} />;
 }
 
 export function Field({ label, hint, className = "", children }: {

@@ -21,7 +21,9 @@ export function applyTheme(preference: ThemePreference) {
   document.documentElement.style.colorScheme = resolved === "light" ? "light" : "dark";
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", colors[resolved]);
   const manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
-  if (manifest) manifest.href = resolved === "light" ? "/manifest.webmanifest" : `/manifest-${resolved}.webmanifest`;
+  // Italian interfaces install with the Italian name and description (see i18n.ts, which swaps this on a language change).
+  const italian = document.documentElement.lang === "it" ? "-it" : "";
+  if (manifest) manifest.href = resolved === "light" ? `/manifest${italian}.webmanifest` : `/manifest-${resolved}${italian}.webmanifest`;
   window.RipianoAndroid?.postMessage(`theme:${resolved}`);
 }
 

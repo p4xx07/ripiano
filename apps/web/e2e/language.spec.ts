@@ -10,7 +10,7 @@ test("an Italian device starts in Italian; English can still be chosen and is re
     await page.goto(process.env.RIPIANO_E2E_ORIGIN ?? "http://localhost:8080");
     await expect(page.locator("html")).toHaveAttribute("lang", "it");
     await expect(page.getByLabel("Lingua")).toHaveValue("system");
-    await expect(page.getByRole("heading", { name: "Bentornato." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Ti diamo il bentornato." })).toBeVisible();
     await expect(page.getByRole("option", { name: "Italiano", exact: true })).toHaveCount(1);
     await expect(page.getByText("(preview)")).toHaveCount(0);
     await page.getByLabel("Lingua").selectOption("en");
@@ -39,7 +39,7 @@ test("the interface switches to Italian and back, and remembers the choice", asy
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
   await page.goto("/");
   await page.getByLabel("Language").selectOption("it");
-  await expect(page.getByRole("heading", { name: "Bentornato." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ti diamo il bentornato." })).toBeVisible();
   await page.getByLabel("Nome utente").fill(username!);
   await page.getByLabel("Password").fill("wrong-password");
   await page.getByRole("button", { name: "Accedi" }).click();

@@ -94,6 +94,8 @@ CSRF_COOKIE_SECURE = not DEBUG
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
+# A refused CSRF check answers in JSON (and in the person's language), like every other API error.
+CSRF_FAILURE_VIEW = "archive.security_views.csrf_failure"
 
 CELERY_BROKER_URL = os.environ.get("RIPIANO_BROKER_URL", "redis://localhost:6379/0")
 # Shared cache (sign-in throttling) in the same Valkey as the queue when the stack provides it.

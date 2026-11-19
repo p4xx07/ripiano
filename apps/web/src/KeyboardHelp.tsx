@@ -3,7 +3,7 @@ import { useMessages } from "./i18n";
 import messages from "./locales/KeyboardHelp";
 import { Modal } from "./ui";
 
-export const GO_TO_KEYS = ["l", "i", "a", "t", "o", "s", "w", "r"] as const;
+export const GO_TO_KEYS = ["l", "i", "a", "t", "p", "o", "s", "w", "r"] as const;
 
 /** The list of keyboard shortcuts, opened with "?". */
 export default function KeyboardHelp({ onClose }: { onClose: () => void }) {

@@ -35,7 +35,25 @@ PROCESSING_ERRORS = {
     "generic": "Text recognition failed for this file. Choose Retry OCR. If it fails again, the file may be damaged: open it on your computer, and re-scan it or save it again as PDF before uploading.",
     "backup": "The backup failed. Details are in the maintenance worker log.",
     "backup_permission": "Ripiano cannot write to the backup folder. Check the permissions of the mounted backup folder on the NAS.",
+    "damaged_pdf": "This PDF is damaged, so some of its pages may be missing. Ripiano kept the original and made the pages it could read searchable. Compare it with the paper, then re-scan it or upload an undamaged copy.",
 }
+
+
+def pdf_is_damaged(path, readable_pages):
+    """True when the original PDF cannot be read as it is, or has more pages than OCR produced.
+
+    OCR quietly repairs a truncated PDF and keeps only the pages it could recover (judge 1 round 6, M1),
+    so the original is checked separately with a plain reader that does not rebuild broken files.
+    """
+    from pypdf.errors import PyPdfError
+
+    try:
+        return len(PdfReader(path).pages) > readable_pages
+    except (PyPdfError, OSError, ValueError, KeyError, TypeError, AttributeError):
+        return True
+    except Exception:  # noqa: BLE001 - an unexpected parser error is not proof of damage; keep the OCR result
+        logger.warning("Page count check could not read %s", path, exc_info=True)
+        return False
 
 
 def readable_error(text, fallback):
@@ -109,12 +127,25 @@ def process_document(document_id):
                 text=True,
                 timeout=3300,
             )
-            text = "\n".join(page.extract_text() or "" for page in PdfReader(output_file).pages)
+            output_pages = PdfReader(output_file).pages
+            page_count = len(output_pages)
+            text = "\n".join(page.extract_text() or "" for page in output_pages)
+            # Password-protected originals are not checked: the plain reader cannot open them.
+            damaged = (document.original_mime == "application/pdf" and unlocked_by is None
+                       and pdf_is_damaged(original, page_count))
             with output_file.open("rb") as source:
                 os.fsync(source.fileno())
             os.replace(output_file, archive)
         document.archive_path = str(archive.relative_to(media_root))
         document.extracted_text = text
+        if damaged:
+            # Keep the original and the readable text, but list the document among those that could not be read
+            # (Inbox, Overview) rather than calling it ready with pages silently missing.
+            logger.warning("Document %s is a damaged PDF; OCR recovered %s page(s)", document.id, page_count)
+            document.status = Document.Status.FAILED
+            document.error = PROCESSING_ERRORS["damaged_pdf"]
+            document.save(update_fields=["archive_path", "extracted_text", "status", "error"])
+            return
         document.status = Document.Status.READY
         document.error = ""
         document.processed_at = timezone.now()

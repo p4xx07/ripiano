@@ -37,6 +37,8 @@ export default defineMessages({
   // Field names shown in the help (space-separated), in the interface language; the search accepts both languages.
   moreFields: "title: text: note: type: sticker: added:",
   otherLanguageFields: "",
+  untaggedGloss: "",
+  taggedGloss: "",
   searchHelpOr: "or",
   searchHelpAlso: "You can also search by",
   searchHelpCombine: "Combine fields and ordinary words to narrow results.",
@@ -240,6 +242,9 @@ export default defineMessages({
   dateExample: "data:2026-04-15",
   moreFields: "titolo: testo: nota: tipo: adesivo: aggiunto:",
   otherLanguageFields: "Funzionano anche i nomi inglesi (tag:, sender:, date:, type:…).",
+  // is:untagged / is:tagged have no Italian form in the search syntax: explain them instead.
+  untaggedGloss: " (senza etichette)",
+  taggedGloss: " (con almeno un'etichetta)",
   searchHelpOr: "o",
   searchHelpAlso: "Puoi cercare anche con",
   searchHelpCombine: "Combina i campi con parole normali per restringere i risultati.",

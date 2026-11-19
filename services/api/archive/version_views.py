@@ -10,6 +10,7 @@ from django.http import FileResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from .models import Document, DocumentVersion
+from .storage import download_name
 from .versions import VersionError, add_existing_document_version, add_version, edit_pages, merge_documents, page_info, render_page, restore_version, split_pages
 
 
@@ -117,7 +118,7 @@ def document_version_download(request, document_id, version_id):
     if version is None:
         return JsonResponse({"error": "Version not found"}, status=404)
     return FileResponse((Path(settings.MEDIA_ROOT) / version.original_path).open("rb"), content_type=version.original_mime,
-                        as_attachment=True, filename=f"v{version.number}-{Path(version.original_name).name}")
+                        as_attachment=True, filename=f"v{version.number}-{download_name(version.original_name, version.original_path)}")
 
 
 @require_http_methods(["POST"])

@@ -295,7 +295,7 @@ export default function PhysicalPanel({
               <button type="button" onClick={() => onOpenDocument(item.document.id)}>{item.document.title} <ArrowRight size={15} /></button>
               <small>{item.copy.sticker_code} · {item.copy.location_path.join(" / ")}</small>
             </li>)}</ul>}
-            {foundLocation.next_cursor && <Button type="button" variant="secondary" disabled={loadingContents} onClick={() => void loadMoreContents("present")}>{loadingContents ? m.loading : m.showMore}</Button>}
+            {foundLocation.next_cursor && <Button type="button" variant="secondary" pending={loadingContents} onClick={() => void loadMoreContents("present")}>{loadingContents ? m.loading : m.showMore}</Button>}
             {foundLocation.missing_copies.length > 0 && <div className="location-missing-contents">
               <h4>{m.missingHeading}</h4>
               <ul className="location-contents">{foundLocation.missing_copies.map((item) => <li key={item.copy.id}>
@@ -303,7 +303,7 @@ export default function PhysicalPanel({
                 <small>{item.copy.sticker_code} · {m.lastKnown}{item.copy.location_path.join(" / ")}</small>
               </li>)}</ul>
             </div>}
-            {foundLocation.missing_next_cursor && <Button type="button" variant="secondary" disabled={loadingContents} onClick={() => void loadMoreContents("missing")}>{loadingContents ? m.loading : m.showMoreMissing}</Button>}
+            {foundLocation.missing_next_cursor && <Button type="button" variant="secondary" pending={loadingContents} onClick={() => void loadMoreContents("missing")}>{loadingContents ? m.loading : m.showMoreMissing}</Button>}
           </div>}
           <div className="section-heading location-heading">
             <div>
@@ -321,8 +321,8 @@ export default function PhysicalPanel({
                     <Boxes size={18} />
                   </span>
                   <span className="location-path">{location.path.join(" / ")}</span>
-                  <button type="button" className="text-action" onClick={() => { setCode(location.sticker_code); void findSticker(location.sticker_code); }}>{m.viewContents}</button>
-                  <a className="text-action" href={`/api/locations/${location.id}/label`} target="_blank" rel="noreferrer"><Printer size={15} /> {m.printLabel}</a>
+                  <button type="button" className="text-action" aria-label={m.viewContentsOf(location.path.join(" / "))} onClick={() => { setCode(location.sticker_code); void findSticker(location.sticker_code); }}>{m.viewContents}</button>
+                  <a className="text-action" href={`/api/locations/${location.id}/label`} target="_blank" rel="noreferrer" aria-label={m.printLabelFor(location.path.join(" / "))}><Printer size={15} /> {m.printLabel}</a>
                   <button
                     type="button"
                     className="text-action location-edit-toggle"

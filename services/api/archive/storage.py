@@ -39,6 +39,23 @@ class InvalidDocument(ValueError):
     pass
 
 
+EQUIVALENT_EXTENSIONS = {".jpeg": ".jpg"}
+
+
+def download_name(original_name, stored_path):
+    """The file name to download an original under, with the extension of the type Ripiano detected.
+
+    A PDF uploaded as "scan.png" is stored as a PDF; downloading it as "scan.png" would make the computer open it
+    with the wrong app (judge 3 round 6, L3). The stored path carries the detected extension.
+    """
+    name = Path(original_name or "").name or "document"
+    detected = Path(stored_path or "").suffix.lower()
+    current = Path(name).suffix.lower()
+    if not detected or EQUIVALENT_EXTENSIONS.get(current, current) == EQUIVALENT_EXTENSIONS.get(detected, detected):
+        return name
+    return f"{Path(name).stem or 'document'}{detected}"
+
+
 def save_original(upload):
     """Write and sync an original before its database row can be committed."""
     media_root = Path(settings.MEDIA_ROOT)

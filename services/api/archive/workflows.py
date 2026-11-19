@@ -222,21 +222,41 @@ def _assign(workflow, document, changes, fields):
             changes.append(f"set title {title}")
 
 
-def _apply(workflow, document, *, first_time=True, access_changes=None):
+def guarded_tags(agent_grant):
+    """Tags an agent may not add or remove: the filter tags of the owner's other active agents.
+
+    The same rule as the MCP ``change_document_tags`` tool. A workflow started by an agent's change uses it too,
+    so an agent can never widen (or narrow) another agent's view by triggering a workflow.
+    """
+    if agent_grant is None:
+        return frozenset()
+    from .models import AgentGrant
+
+    return frozenset(AgentGrant.objects.filter(owner_id=agent_grant.owner_id, revoked_at__isnull=True, filter_tag__isnull=False)
+                     .exclude(pk=agent_grant.pk).values_list("filter_tag_id", flat=True))
+
+
+def _apply(workflow, document, *, first_time=True, access_changes=None, guarded=frozenset()):
     """Apply metadata actions; return a short description of what changed.
 
     Notes, webhooks, and emails happen only the first time a workflow applies to a document.
     ``access_changes`` collects sharing changes for the document history (the snapshot does not track grants).
+    ``guarded`` tags are left alone (see ``guarded_tags``).
     """
     changes = []
     access_changes = [] if access_changes is None else access_changes
     suppressed = set(TagOverride.objects.filter(document=document).values_list("tag_id", flat=True))
-    added = [tag for tag in workflow.add_tags.all() if tag.id not in suppressed]
+    present = set(DocumentTag.objects.filter(document=document).values_list("tag_id", flat=True)) if guarded else set()
+    for tag in workflow.add_tags.all():
+        if tag.id in guarded and tag.id not in present and tag.id not in suppressed:
+            changes.append(f"skipped tag {tag.name} (it limits another agent's access and an agent made the change)")
+    added = [tag for tag in workflow.add_tags.all() if tag.id not in suppressed and tag.id not in guarded]
     for tag in added:
         link, created = DocumentTag.objects.get_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.SOURCE})
         if created:
             changes.append(f"added tag {tag.name}")
-    removed = DocumentTag.objects.filter(document=document, tag__in=workflow.remove_tags.all()).exclude(origin=DocumentTag.Origin.MANUAL)
+    removed = (DocumentTag.objects.filter(document=document, tag__in=workflow.remove_tags.all()).exclude(origin=DocumentTag.Origin.MANUAL)
+               .exclude(tag_id__in=guarded))
     for link in removed.select_related("tag"):
         changes.append(f"removed tag {link.tag.name}")
     removed.delete()
@@ -274,8 +294,12 @@ def _apply(workflow, document, *, first_time=True, access_changes=None):
     return ", ".join(changes) or "conditions matched; nothing needed changing"
 
 
-def run_workflow(workflow, document, trigger):
-    """Run one workflow for one document. Returns the WorkflowRun, or None if it already ran or did not match."""
+def run_workflow(workflow, document, trigger, *, agent_grant=None):
+    """Run one workflow for one document. Returns the WorkflowRun, or None if it already ran or did not match.
+
+    ``agent_grant`` is the MCP agent whose change started this run, if any: the run then leaves other agents'
+    filter tags alone (``guarded_tags``).
+    """
     from .tasks import send_workflow_notifications
 
     if not matches(workflow, document):
@@ -294,7 +318,7 @@ def run_workflow(workflow, document, trigger):
 
             before = history.snapshot(document)
             access_changes = []
-            run.detail = _apply(workflow, document, first_time=first_time, access_changes=access_changes)[:500]
+            run.detail = _apply(workflow, document, first_time=first_time, access_changes=access_changes, guarded=guarded_tags(agent_grant))[:500]
             history.record(document, before, actor_label=workflow.name, actor_kind=history.Kind.WORKFLOW, extra=access_changes)
             run.save(update_fields=["detail"])
             if first_time and (workflow.webhook_url or workflow.email_to):
@@ -309,12 +333,22 @@ def run_workflow(workflow, document, trigger):
     return run
 
 
-def run_for_document(document, trigger):
-    """Run the owner's enabled workflows for a trigger, in order. Workflow changes never trigger further workflows."""
+def enabled_workflows(owner_id, trigger):
+    """The owner's enabled workflows for a trigger, in order, loaded once so bulk callers can reuse them."""
+    return list(Workflow.objects.filter(owner_id=owner_id, enabled=True, trigger=trigger).prefetch_related("add_tags", "remove_tags").select_related("set_correspondent", "set_document_type", "set_storage_path"))
+
+
+def run_for_document(document, trigger, *, agent_grant=None, workflows=None):
+    """Run the owner's enabled workflows for a trigger, in order. Workflow changes never trigger further workflows.
+
+    Callers: upload processing ("added"), and the owner's single, bulk, and MCP-agent changes ("updated").
+    """
     runs = []
-    for workflow in Workflow.objects.filter(owner_id=document.owner_id, enabled=True, trigger=trigger).prefetch_related("add_tags", "remove_tags").select_related("set_correspondent", "set_document_type", "set_storage_path"):
+    if workflows is None:
+        workflows = enabled_workflows(document.owner_id, trigger)
+    for workflow in workflows:
         document.refresh_from_db()
-        run = run_workflow(workflow, document, trigger)
+        run = run_workflow(workflow, document, trigger, agent_grant=agent_grant)
         if run:
             runs.append(run)
     return runs

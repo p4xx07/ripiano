@@ -24,7 +24,7 @@ The `.env` or Portainer secrets are deliberately outside the snapshot. Keep a se
 
 ## Restore into an empty stack
 
-1. Make the completed snapshot folder available as `RIPIANO_BACKUP_PATH` on the target NAS. Start only `db`, `broker`, and `api` once so migrations create an empty database.
+1. Make the completed snapshot folder available as `RIPIANO_BACKUP_PATH` on the target NAS. Get the images of the Ripiano release that made the backup first (`docker compose pull`, or `docker compose build` for a source checkout): `up -d` reuses whatever images are already on the machine, and the restore refuses a different migration set. Then start only `db`, `broker`, and `api` once so migrations create an empty database.
 2. Stop `api`. The target database must have no users or documents, and the media volume must contain no files.
 3. From the Compose project directory, run:
 

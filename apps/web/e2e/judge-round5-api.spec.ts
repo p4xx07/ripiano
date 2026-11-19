@@ -146,6 +146,10 @@ test("revoked agents are grouped under a closed disclosure and can be removed", 
   const card = group.locator("article").filter({ hasText: name });
   await card.getByRole("button", { name: `Remove ${name}` }).click();
   await expect(card.getByText(/and its activity log\? This cannot be undone\./)).toBeVisible();
+  // Removing the activity log asks for the owner's password (docs/DECISIONS.md D10).
+  const confirmPassword = card.getByLabel("Your password (to remove the activity log)");
+  await expect(confirmPassword).toBeFocused();
+  await confirmPassword.fill(password!);
   await card.getByRole("button", { name: "Yes, remove" }).click();
   await expect(page.getByText(name, { exact: true })).toHaveCount(0);
   const grants = (await (await page.request.get("/api/agents")).json()).grants as { id: string }[];

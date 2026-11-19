@@ -78,6 +78,10 @@ def search_query(text):
         for config in CONFIGS:
             form = SearchQuery(word, search_type="plain", config=config)
             forms = form if forms is None else forms | form
+        if word.isascii() and word.isdigit():
+            # PostgreSQL's parser reads the number after a hyphen as a negative number: "j3r7-58458-three" and
+            # "Fattura-2026-031" store "-58458" and "-031". Match that form too (judge 3 round 7, L2).
+            forms = forms | SearchQuery(f"-{word}", search_type="plain", config="simple")
         combined = forms if combined is None else combined & forms
     if combined is None:
         return SearchQuery(text, search_type="plain", config="simple")

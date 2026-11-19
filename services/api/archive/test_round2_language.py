@@ -209,8 +209,15 @@ def test_documents_older_than_the_search_index_stay_searchable_and_are_indexed_i
     try:
         call_command("migrate", "archive", "0054", verbosity=0)  # the schema before the stored search index
         owner, client = signed_in()
-        old = [make(owner, f"Vecchia bolletta {index}", "tassa sui rifiuti del comune") for index in range(3)]
-        call_command("migrate", "archive", "0057", verbosity=0)  # the current upgrade
+        # Rows written with the model as it was at 0054, so later Document fields do not break this upgrade test.
+        from django.db.migrations.executor import MigrationExecutor
+
+        OldDocument = MigrationExecutor(connection).loader.project_state(("archive", "0054_document_date_origin")).apps.get_model("archive", "Document")
+        old = [OldDocument.objects.create(
+            owner_id=owner.pk, title=f"Vecchia bolletta {index}", original_name="old.pdf", original_path=f"originals/old-{index}.pdf",
+            original_mime="application/pdf", original_sha256="0" * 64, original_size=1, status="ready", processed_at=timezone.now(),
+            extracted_text="tassa sui rifiuti del comune") for index in range(3)]
+        call_command("migrate", "archive", verbosity=0)  # the upgrade to the current schema
         assert not any(stored(item) for item in old)  # migrations index nothing (no long lock on a NAS)
         # The concurrent index step can be retried after a process is interrupted between
         # index creation and Django recording the migration as applied.

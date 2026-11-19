@@ -79,6 +79,10 @@ test("keyboard: ? lists shortcuts, j/k/Enter open a Library document, and the sk
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.keyboard.press("Escape");
   }
+  // Signing in now puts focus on the page heading (round 7), past the skip link; reload to start from the top of the
+  // page as a returning, already signed-in visitor does.
+  await page.reload();
+  await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
   await page.keyboard.press("Tab");
   const skip = page.getByRole("link", { name: "Skip to content" });
   await expect(skip).toBeFocused();

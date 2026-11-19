@@ -24,6 +24,7 @@ def _share_json(share):
         "created_at": share.created_at.isoformat(),
         "expires_at": share.expires_at.isoformat(),
         "revoked_at": share.revoked_at.isoformat() if share.revoked_at else None,
+        "revoked_reason": share.revoked_reason or None,
         "active": share.revoked_at is None and share.expires_at > timezone.now(),
     }
 
@@ -93,7 +94,9 @@ def shared_original(request, token):
         # Match the lock order used by Trash and revoke, then open while authorized.
         document = Document.objects.select_for_update().filter(pk=document_id).first()
         share = ShareLink.objects.select_for_update().filter(pk=share_id, token_hash=token_hash).first()
-        if document is None or share is None or share.revoked_at is not None or share.expires_at <= timezone.now() or document.trashed_at is not None:
+        # A turned-off owner's links are revoked when the account is turned off (D9); the owner check is a second guard.
+        if (document is None or share is None or share.revoked_at is not None or share.expires_at <= timezone.now() or document.trashed_at is not None
+                or not share.owner.is_active):
             return JsonResponse({"error": "Link not found"}, status=404)
         try:
             path = _media_path(document.original_path, "originals")

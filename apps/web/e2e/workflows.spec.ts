@@ -65,7 +65,7 @@ test("a workflow tags matching new documents and records what it did", async ({ 
   if (await menu.isVisible()) await menu.click();
   await page.getByRole("button", { name: "Workflows", exact: true }).click();
   // This workflow's run on this document (other workflows on a shared test account may also have run on it).
-  const run = page.locator(".agent-events > div").filter({ hasText: `Tag ${suffix} ·` }).filter({ hasText: `receipt ${word}` });
+  const run = page.getByRole("list", { name: "Recent runs" }).getByRole("listitem").filter({ hasText: `Tag ${suffix}` }).filter({ hasText: `receipt ${word}` });
   await expect(run).toContainText(`added tag ${tag}`);
   await run.getByRole("button", { name: `receipt ${word} ${suffix}` }).click();
   await expect(page.getByRole("dialog").filter({ hasText: "Keep it in place." })).toBeVisible();

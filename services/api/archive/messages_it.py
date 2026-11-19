@@ -3,6 +3,7 @@
 EXACT = {
     "Invalid credentials": "Credenziali non valide",
     "This tag limits another agent's access; only a person can add or remove it": "Questa etichetta limita l'accesso di un altro agente; solo una persona può aggiungerla o rimuoverla",
+    "Text recognition failed again, so the file is probably damaged. Download the original and open it on your computer, then re-scan it or save it again as PDF and upload the new copy.": "Il riconoscimento del testo non è riuscito di nuovo, quindi il file è probabilmente danneggiato. Scarica l'originale e aprilo sul computer, poi scansionalo di nuovo o salvalo di nuovo come PDF e carica la nuova copia.",
     "Text recognition failed for this file. Choose Retry OCR. If it fails again, the file may be damaged: open it on your computer, and re-scan it or save it again as PDF before uploading.": "Il riconoscimento del testo non è riuscito per questo file. Scegli Riprova l'OCR. Se non riesce di nuovo, il file potrebbe essere danneggiato: aprilo sul computer e scansionalo di nuovo o salvalo di nuovo come PDF prima di caricarlo.",
     "This PDF is damaged, so some of its pages may be missing. Ripiano kept the original and made the pages it could read searchable. Compare it with the paper, then re-scan it or upload an undamaged copy.": "Questo PDF è danneggiato, quindi alcune pagine potrebbero mancare. Ripiano ha conservato l'originale e ha reso ricercabili le pagine che è riuscito a leggere. Confrontalo con il documento cartaceo, poi scansionalo di nuovo o carica una copia integra.",
     "This request could not be verified. Reload the page and try again.": "Non è stato possibile verificare questa richiesta. Ricarica la pagina e riprova.",
@@ -638,4 +639,52 @@ DISPLAY = {
     "Ripiano location {0}": "Ripiano posizione {0}",
     "Ripiano sticker {0}": "Ripiano adesivo {0}",
     "Ripiano tag {0}": "Ripiano etichetta {0}",
+}
+
+# Parts of a workflow run's detail (archive/workflows.py), stored in English and shown in the reader's language.
+# A detail joins several parts with ", " and "; "; names in {0} are user data and stay as written.
+RUN_DETAILS = {
+    "added tag {0}": "aggiunta l'etichetta {0}",
+    "removed tag {0}": "rimossa l'etichetta {0}",
+    "kept tag {0} (added by hand)": "mantenuta l'etichetta {0} (aggiunta a mano)",
+    "kept tag {0} (it limits another agent's access and an agent made the change)":
+        "mantenuta l'etichetta {0} (limita l'accesso di un altro agente e la modifica è stata fatta da un agente)",
+    "skipped tag {0} (it limits another agent's access and an agent made the change)":
+        "etichetta {0} non aggiunta (limita l'accesso di un altro agente e la modifica è stata fatta da un agente)",
+    "set sender {0}": "impostato il mittente {0}",
+    "set type {0}": "impostato il tipo {0}",
+    "set storage path {0}": "impostato il percorso di archiviazione {0}",
+    "set title {0}": "impostato il titolo {0}",
+    "set field {0} to yes": "impostato il campo {0} a sì",
+    "set field {0} to no": "impostato il campo {0} a no",
+    "set field {0} to {1}": "impostato il campo {0} a {1}",
+    "skipped field {0} (the saved value no longer fits its type)": "campo {0} saltato (il valore salvato non è più adatto al suo tipo)",
+    "marked as needing action": "segnato come da gestire",
+    "added a note": "aggiunta una nota",
+    "queued webhook": "webhook in coda",
+    "queued email": "email in coda",
+    "shared with {0} (view)": "condiviso con {0} (visualizzazione)",
+    "shared with {0} (edit)": "condiviso con {0} (modifica dei dettagli)",
+    "shared with {0} ({1})": "condiviso con {0} ({1})",
+    "could not share with {0} (sharing limit reached)": "impossibile condividere con {0} (limite di condivisione raggiunto)",
+    "removed the PDF password for the searchable copy (the original stays locked)":
+        "rimossa la password del PDF per la copia ricercabile (l'originale resta protetto)",
+    "conditions matched; nothing needed changing": "condizioni soddisfatte; non c'era nulla da cambiare",
+    "This workflow could not be applied to this document. It will not retry automatically.":
+        "Non è stato possibile applicare questo flusso di lavoro a questo documento. Non verrà ritentato automaticamente.",
+    "notification could not be prepared": "impossibile preparare la notifica",
+    "webhook delivered": "webhook consegnato",
+    "webhook refused ({0})": "webhook rifiutato ({0})",
+    "webhook could not be delivered": "impossibile consegnare il webhook",
+    "webhook address could not be found": "impossibile trovare l'indirizzo del webhook",
+    "webhook refused: it points to a private network address (see RIPIANO_WEBHOOK_ALLOW_PRIVATE)":
+        "webhook rifiutato: punta a un indirizzo di rete privata (vedi RIPIANO_WEBHOOK_ALLOW_PRIVATE)",
+    "email not sent: no mail server is configured": "email non inviata: nessun server di posta configurato",
+    "email could not be sent": "impossibile inviare l'email",
+    "email sent to {0} recipient": "email inviata a {0} destinatario",
+    "email sent to {0} recipients": "email inviata a {0} destinatari",
+    "email sent to {0} recipient without the file (over {1} MB)": "email inviata a {0} destinatario senza il file (oltre {1} MB)",
+    "email sent to {0} recipients without the file (over {1} MB)": "email inviata a {0} destinatari senza il file (oltre {1} MB)",
+    "email sent to {0} recipient without the file (it could not be read)": "email inviata a {0} destinatario senza il file (non è stato possibile leggerlo)",
+    "email sent to {0} recipients without the file (it could not be read)": "email inviata a {0} destinatari senza il file (non è stato possibile leggerlo)",
 }

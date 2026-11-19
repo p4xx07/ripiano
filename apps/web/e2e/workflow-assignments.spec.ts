@@ -60,7 +60,7 @@ test("a workflow sets a title from a pattern and a custom field on new documents
 
   if (await menu.isVisible()) await menu.click();
   await page.getByRole("button", { name: "Workflows", exact: true }).click();
-  const run = page.locator(".agent-events > div").filter({ hasText: `${flowName} ·` });
+  const run = page.getByRole("list", { name: "Recent runs" }).getByRole("listitem").filter({ hasText: flowName });
   await expect(run).toContainText(`set field ${fieldName} to by workflow`);
   await expect(run).toContainText(`set title ${title}`);
   await run.getByRole("button", { name: title }).click();

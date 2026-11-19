@@ -125,9 +125,10 @@ def test_revoked_or_expired_agents_can_be_removed_with_their_activity():
     assert refused.status_code == 409 and AgentGrant.objects.filter(pk=active.pk).exists()
     outsider = Client()
     outsider.force_login(other)
-    assert outsider.delete(f"/api/agents/{revoked.id}?forget=1").status_code == 404
-    assert client.delete(f"/api/agents/{revoked.id}?forget=1").json() == {"deleted": True}
-    assert client.delete(f"/api/agents/{expired.id}?forget=1").status_code == 200
+    confirm = {"data": json.dumps({"password": PASSWORD}), "content_type": "application/json"}  # D10
+    assert outsider.delete(f"/api/agents/{revoked.id}?forget=1", **confirm).status_code == 404
+    assert client.delete(f"/api/agents/{revoked.id}?forget=1", **confirm).json() == {"deleted": True}
+    assert client.delete(f"/api/agents/{expired.id}?forget=1", **confirm).status_code == 200
     assert not AgentAudit.objects.filter(grant_id=revoked.id).exists()  # its activity log goes with it
     assert [grant["name"] for grant in client.get("/api/agents").json()["grants"]] == ["Active"]
     # Plain DELETE still only revokes.

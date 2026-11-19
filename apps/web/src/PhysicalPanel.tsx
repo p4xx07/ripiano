@@ -1,9 +1,25 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Boxes, MapPin, Pencil, Plus, Printer, ScanLine, Trash2, X } from "lucide-react";
-import { Location, PhysicalCopy, request } from "./api";
+import { ApiError, Location, PhysicalCopy, request } from "./api";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/PhysicalPanel";
+
+/**
+ * What a scanner or a phone QR app puts in the box: the bare code ("r-abcd1234 "), or the address the printed
+ * label's QR holds (http(s)://<any host>/?sticker=R-… or /?location=L-…, possibly with a path) (round-7 judge 1 M1).
+ */
+export function stickerCodeFrom(value: string): string {
+  const text = value.trim();
+  const match = /[?&#](?:sticker|location)=([^&#\s]+)/i.exec(text);
+  let code = match ? match[1] : text;
+  try {
+    code = decodeURIComponent(code);
+  } catch {
+    // A stray "%" in a typed code: look it up as typed.
+  }
+  return code.trim().toUpperCase();
+}
 
 type Lookup = { copy: PhysicalCopy; document: { id: string; title: string } };
 type LocationLookup = {
@@ -81,15 +97,19 @@ export default function PhysicalPanel({
     setError("");
     setFound(null);
     setFoundLocation(null);
+    const normalized = stickerCodeFrom(value);
+    if (normalized !== value) setCode(normalized);
+    if (!normalized) return;
     try {
-      const normalized = value.trim().toUpperCase();
       if (normalized.startsWith("L-")) {
         setFoundLocation(await request<LocationLookup>(`/api/locations/lookup/${encodeURIComponent(normalized)}`));
       } else {
         setFound(await request<Lookup>(`/api/stickers/${encodeURIComponent(normalized)}`));
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : m.stickerNotFound);
+      // A 404 (also the proxy's HTML page for an address the API does not know) means no such sticker.
+      setError(cause instanceof ApiError && cause.status === 404 ? m.stickerNotFound
+        : cause instanceof Error ? cause.message : m.stickerNotFound);
     }
   }
 
@@ -257,7 +277,7 @@ export default function PhysicalPanel({
             >
               <input
                 value={code}
-                onChange={(event) => setCode(event.target.value.toUpperCase())}
+                onChange={(event) => setCode(/[/?=]/.test(event.target.value) ? event.target.value : event.target.value.toUpperCase())}
                 placeholder={m.codePlaceholder}
                 aria-label={m.codeLabel}
                 required

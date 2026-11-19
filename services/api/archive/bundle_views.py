@@ -54,7 +54,8 @@ def _bundle_json(bundle):
     return {
         "id": str(bundle.id), "title": bundle.title, "documents": [{"id": str(item.id), "title": item.title} for item in bundle.documents.all()],
         "created_at": bundle.created_at.isoformat(), "expires_at": bundle.expires_at.isoformat(),
-        "revoked_at": bundle.revoked_at.isoformat() if bundle.revoked_at else None, "downloads": bundle.downloads,
+        "revoked_at": bundle.revoked_at.isoformat() if bundle.revoked_at else None, "revoked_reason": bundle.revoked_reason or None,
+        "downloads": bundle.downloads,
         "active": bundle.revoked_at is None and bundle.expires_at > now, "status": bundle.zip_status,
     }
 
@@ -194,7 +195,8 @@ def shared_bundle(request, token):
     token_hash = hashlib.sha256(token.encode("ascii")).hexdigest()
     with transaction.atomic():
         bundle = ShareBundle.objects.select_for_update().filter(token_hash=token_hash).first()
-        if bundle is None or bundle.revoked_at is not None or bundle.expires_at <= timezone.now():
+        # A turned-off owner's bundles are revoked with the account (D9); the owner check is a second guard.
+        if bundle is None or bundle.revoked_at is not None or bundle.expires_at <= timezone.now() or not bundle.owner.is_active:
             return JsonResponse({"error": "Link not found"}, status=404)
         if bundle.zip_status == "building":
             response = JsonResponse({"error": "This bundle is still being prepared. Try again in a minute."}, status=503)

@@ -121,6 +121,18 @@ The owner wants external storage to work like Synology Hyper Backup destinations
 
 Full-text search stores Italian and English stems plus the words as written (migration 0055, `archive/fulltext.py`). The owner accepted the disk cost (about 130 MB per 10,000 typical documents); do not drop English to save space.
 
+## D9 — Deactivated accounts' public share links (2026-11-19) — Agreed
+
+When an account is turned off, its public share links (single documents and bundles) stop working at once, as its sessions, API tokens and agents already do. Turning the account back on does not revive them silently: the owner decides again (implementation records how).
+
+Implemented 2026-11-19: turning an account off (People) marks its active links and bundles revoked with `revoked_reason: "account_off"`, next to ending its sessions, API tokens, and agents (`people_views._end_access`). They answer exactly like an unknown link (404 `Link not found`) and stay revoked after the account is turned on again; the owner creates new links if still needed. The public link views also refuse any link whose owner is inactive, as a second guard.
+
+## D10 — Removing a revoked agent's activity log (2026-11-19) — Agreed
+
+Removing a revoked or expired agent together with its activity log (`DELETE /api/agents/<id>?forget=1`) asks for the owner's password, like creating an agent. The log is the audit trail, so deleting it is treated as a sensitive action.
+
+Implemented 2026-11-19: the request carries `{"password": "..."}` in its JSON body and uses the same check, sign-in throttle, and messages as creating an agent (see [AGENT_ACCESS.md](AGENT_ACCESS.md)).
+
 ## Remaining work that needs no further decision
 
 In the owner's suggested order:

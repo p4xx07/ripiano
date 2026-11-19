@@ -132,15 +132,20 @@ def people(request):
 
 def _end_access(user):
     """Turning an account off ends everything it signed in with, for good: its sessions, API tokens,
-    and agent grants. Turning it back on revives none of them (judge 3 round 5, M2)."""
+    and agent grants. Turning it back on revives none of them (judge 3 round 5, M2).
+
+    Its public share links and share bundles end too, marked with the reason, and stay ended when the account
+    is turned back on: the owner creates new links if they still want to share (docs/DECISIONS.md D9)."""
     from django.contrib.sessions.models import Session
     from django.utils import timezone
 
-    from .models import AgentGrant, ApiToken
+    from .models import AgentGrant, ApiToken, ShareBundle, ShareLink
 
     now = timezone.now()
     ApiToken.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=now)
     AgentGrant.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now)
+    ShareLink.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="account_off")
+    ShareBundle.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="account_off")
     user_id = str(user.pk)
     for session in Session.objects.filter(expire_date__gt=now).iterator():
         if str(session.get_decoded().get("_auth_user_id")) == user_id:
@@ -178,7 +183,9 @@ def person_detail(request, person_id):
         admins = list(User.objects.select_for_update().filter(is_superuser=True, is_active=True).values_list("pk", flat=True))
         if user.is_superuser and not body["is_active"] and not [pk for pk in admins if pk != user.pk]:
             return JsonResponse({"error": "Keep at least one active admin"}, status=400)
-        if user.is_active and not body["is_active"]:
+        if user.is_active != body["is_active"]:
+            # Off: end everything now. Back on: also end anything left over from an account turned off elsewhere
+            # (Django admin, a shell, or before this check existed), so nothing from before is revived (D9).
             _end_access(user)
         user.is_active = body["is_active"]
         fields.append("is_active")

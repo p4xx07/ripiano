@@ -11,7 +11,7 @@ import re
 from django.utils import translation
 from django.utils.cache import patch_vary_headers
 
-from .messages_it import DISPLAY, EXACT, TEMPLATES, VALUES
+from .messages_it import DISPLAY, EXACT, RUN_DETAILS, TEMPLATES, VALUES
 
 
 def _compile(template):
@@ -47,6 +47,69 @@ def to_italian(message):
             values = {int(name[1:]): _value(value) if names_field and name == "p0" else value for name, value in match.groupdict().items()}
             return re.sub(r"\{(\d+)\}", lambda found: values.get(int(found.group(1)), found.group(0)), italian)
     return message
+
+
+# Fixed parts first (fewer placeholders), so "set field {0} to yes" wins over "set field {0} to {1}".
+_RUN_TEMPLATES = [(_compile(english), italian)
+                  for english, italian in sorted(RUN_DETAILS.items(), key=lambda item: (len(re.findall(r"\{\d+\}", item[0])), -len(item[0])))]
+
+
+def _fill(italian, match):
+    values = {int(name[1:]): value for name, value in match.groupdict().items()}
+    return re.sub(r"\{(\d+)\}", lambda found: values.get(int(found.group(1)), found.group(0)), italian)
+
+
+def _run_part(text):
+    if text in EXACT:
+        return EXACT[text]
+    for pattern, italian in _RUN_TEMPLATES:
+        match = pattern.match(text)
+        if match:
+            return _fill(italian, match)
+    return None
+
+
+def run_detail_to_italian(detail):
+    """A workflow run's stored English detail in Italian, part by part; unchanged unless every part is known.
+
+    Parts are joined with ", " or "; ", and a tag or field name may itself contain those separators, so the
+    detail is split into the shortest known parts that cover it, backtracking when a name held a separator.
+    """
+    if not isinstance(detail, str) or not detail:
+        return detail
+    tokens = re.split(r"(, |; )", detail)
+    pieces, separators = tokens[0::2], tokens[1::2]
+    count = len(pieces)
+    if count > 200:
+        return detail
+    solved = {}
+
+    def solve(start):
+        if start == count:
+            return ""
+        if start in solved:
+            return solved[start]
+        result = None
+        text = pieces[start]
+        for end in range(start + 1, count + 1):
+            if end > start + 1:
+                text += separators[end - 2] + pieces[end - 1]
+            translated = _run_part(text)
+            if translated is not None:
+                rest = solve(end)
+                if rest is not None:
+                    result = translated + (separators[end - 1] if end < count else "") + rest
+                    break
+        solved[start] = result
+        return result
+
+    translated = solve(0)
+    return detail if translated is None else translated
+
+
+def run_detail(request, detail):
+    """A workflow run's detail in the request's language."""
+    return run_detail_to_italian(detail) if request is not None and wants_italian(request) else detail
 
 
 def _translate_errors(value):

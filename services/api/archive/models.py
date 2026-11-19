@@ -67,6 +67,8 @@ class Document(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
     processing_started_at = models.DateTimeField(null=True, blank=True)
     error = models.TextField(blank=True)
+    # Processing failures in a row (reset when processing succeeds): a repeated failure gets different guidance.
+    processing_failures = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
     trashed_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -113,6 +115,8 @@ class ShareLink(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
+    # Why the link ended when Ripiano ended it, not the owner: "account_off" (the owner's account was turned off).
+    revoked_reason = models.CharField(max_length=20, blank=True, default="")
 
     class Meta:
         ordering = ["-created_at", "-id"]
@@ -784,6 +788,7 @@ class ShareBundle(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_reason = models.CharField(max_length=20, blank=True, default="")  # as ShareLink.revoked_reason
     downloads = models.PositiveIntegerField(default=0)
     # The ZIP is built once, verified, and served as a file; it is deleted when the link ends.
     zip_status = models.CharField(max_length=10, default="building")

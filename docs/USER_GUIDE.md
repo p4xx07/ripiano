@@ -6,8 +6,41 @@ Ripiano is a self-hosted document archive for a NAS. It combines quick mobile ca
 
 Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability baseline, not a backend dependency or a workflow template. The product target is feature parity with that release plus a better day-to-day filing process.
 
+## Features at a glance
+
+This is the summary that used to open the README; each item is explained in the sections below.
+
+**Capture**
+- Add documents from the phone camera, gallery, or files: PDF, images, Word/Excel/PowerPoint, OpenDocument, RTF, and emails (`.eml`, `.msg`). The original is always kept unchanged.
+- If a session expires while a file is being added, the file waits on that device and resumes after the same person signs in.
+- Background OCR turns every document into a searchable PDF. Barcodes on scans can split documents, set an archive number (ASN), or add tags.
+- Optional inputs, off until you enable them: a consume folder, watched NAS folders, S3/WebDAV/Google Drive/OneDrive/Dropbox, a Telegram bot, and IMAP mailboxes.
+
+**Find**
+- Full-text search with field filters (`tag:`, `sender:`, `date:2026-01..2026-03`, …), saved searches, and matching passages in the results. Common Italian accents can be omitted when typing a search; older indexes update in small background batches.
+- Optional semantic ("search by meaning") search, off by default, using Ollama on another computer or a small model on the NAS.
+
+**File**
+- Tags, senders, document types, custom fields, and storage paths, filled automatically by matching rules, workflows, and suggestions learned on your own server from your own choices.
+- An exception-only Inbox (failed OCR, duplicates) and a separate Needs-action list for follow-ups.
+
+**Paper copies**
+- Give each paper original a QR sticker, place it in nested shelves and boxes, and scan the sticker or shelf label to find it again. Moving a copy confirms the change in the document panel.
+
+**Sharing and people**
+- Multiple accounts with private archives, groups, per-document view/edit sharing, expiring public links, and optional email sending.
+
+**AI through MCP agents**
+- Grant an AI agent (for example Claude, or a local Ollama model) narrow, revocable access through MCP: search, read text, tag, or file. Ripiano itself never calls a paid AI API.
+
+**Privacy and backup**
+- Two-step sign-in, personal API tokens, scheduled checksum-verified backups for Hyper Backup, a browsable NAS copy, and a portable export to move to a new server.
+
+The stack is a Docker Compose set of services (Django API, OCR workers, PostgreSQL) with an installable web app (PWA) for iOS and Android and an Android client with a native scanner. Everything stays on your server; no cloud AI provider is ever called.
+
 ## Contents
 
+- [Features at a glance](#features-at-a-glance)
 - [Current state (first implementation slice)](#first-implementation-slice)
 - [Interface language and appearance](#interface-language)
 - [Install and run](#install-and-run)
@@ -57,7 +90,7 @@ Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability
 
 ## First implementation slice
 
-The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and Office/OpenDocument/RTF upload, IMAP email intake, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, tag-changing, and sender/type-filing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags and fill empty sender/type fields through separately granted MCP scopes and write settings. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. Locally trained filing suggestions can also be applied automatically to new documents when the owner opts in and strict confidence checks pass. AI suggestions and document chat are served through MCP agents rather than by Ripiano calling a model provider (see [DECISIONS.md](DECISIONS.md) D1). Release still requires the owner-side checks and the row-by-row verification of the [parity matrix](FEATURE_PARITY.md).
+The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and Office/OpenDocument/RTF upload, IMAP email intake, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, tag-changing, and sender/type-filing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags and fill empty sender/type fields through separately granted MCP scopes and write settings. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. Locally trained filing suggestions can also be applied automatically to new documents when the owner opts in and strict confidence checks pass. AI suggestions and document chat are served through MCP agents rather than by Ripiano calling a model provider (see [DECISIONS.md](DECISIONS.md) D1). Release still requires the owner-side checks on the NAS and real devices and the row-by-row verification of the [parity matrix](FEATURE_PARITY.md); the [quality judges](QUALITY_JUDGES.md) list the release blockers. No Paperless source code is included in this repository; see [LICENSE](../LICENSE) for the license terms.
 
 ## Interface language
 
@@ -71,9 +104,11 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 
 ### Run locally
 
-1. Copy `.env.example` to `.env` and replace the three example secrets with strong unique values.
-2. Run `docker compose up --build -d` from the repository root.
-3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account.
+1. Clone the repository (`git clone https://github.com/p4xx07/ripiano.git`) and copy `.env.example` to `.env`. Replace the example `RIPIANO_SECRET_KEY`, `RIPIANO_SETUP_KEY`, and `RIPIANO_DB_PASSWORD` with long random values.
+2. Run `docker compose up --build -d` from the repository root. The default [`compose.yaml`](../compose.yaml) builds the images from source.
+3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner (admin) account.
+
+Required variables in `.env`: `RIPIANO_SECRET_KEY`, `RIPIANO_SETUP_KEY`, `RIPIANO_DB_PASSWORD`, `RIPIANO_PUBLIC_ORIGIN` (the exact URL in the browser), and `RIPIANO_ALLOWED_HOSTS` (its hostname). `RIPIANO_PORT` changes the published port (default 8080). Without path variables, data lives in Docker volumes.
 
 ### NAS deployment (Portainer)
 
@@ -377,6 +412,7 @@ To give someone a document without an account, open **Share original** in its do
 - **Single document:** a document's **Share original** creates an expiring, revocable link to its original.
 - **Several documents:** in Library selection mode, **Share as one link** gives the selected originals (up to 50 documents, 200 MB) as one ZIP download. The link lasts 1–30 days and can be revoked, and each original is checksum-verified while the ZIP is built.
 - **New versions:** adding a new version of a document revokes the links and bundles that include it.
+- **Turned-off accounts:** turning an account off revokes all its share links and bundles at once (a visitor sees the same "Link not found" as for any unknown link). Turning the account on again does not revive them: the owner sees them as revoked, marked "account turned off", and creates new links if still needed.
 - **Email:** **Email this document** sends the original (checksum-verified) or the searchable PDF through the server's SMTP settings. It is off unless the operator sets `RIPIANO_DOCUMENT_EMAIL=1`; SMTP alone (for workflows) does not enable it. Each account can email up to 30 recipients per hour, replies go to the account's email address, and the send history is shown on the document.
 - **Bundle ZIPs:** each bundle's ZIP is built once in the background and deleted when the link ends. Moving a bundled document to Trash or adding a new version revokes the bundle, and restoring the document does not re-share it.
 
@@ -387,7 +423,7 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 - **What they get:** the document appears under their **Shared with me**. Viewers can read it, download it, and read its notes. Editors can also change the title, date, and follow-up, and add notes.
 - **What stays with you:** unshared filing, files, pages, versions, share links, paper copies, and Trash. Recipients with edit access can use only the tags, senders, and types you separately share with them; they cannot clear or replace a sender or type you kept private.
 - **Ending access:** removing a grant, removing someone from the group, turning the account off, or moving the document to Trash all end access immediately.
-- **Passwords and accounts:** a password reset ends that person's other sessions and disconnects their API tokens and agents. Turning an account off does the same, and turning it on again does not revive them. API tokens cannot manage people or groups.
+- **Passwords and accounts:** a password reset ends that person's other sessions and disconnects their API tokens and agents. Turning an account off does the same, also revoking its public share links and bundles, and turning it on again does not revive any of them. API tokens cannot manage people or groups.
 - **Caching:** signed-in `/api/` answers and original downloads are sent with `Cache-Control: private, no-store`, so browsers and proxies do not keep copies.
 
 **Sharing tags, senders, types, and saved views:** each has a **Share** button (the people icon) that opens the same people-with-access panel as documents, for a person or a group:
@@ -460,7 +496,7 @@ Scheduled snapshots (see Backups) remain the disaster-recovery path. This export
 
 ## Screenshots
 
-The screenshots come from the running development stack with fictional PDF documents in a separate demo archive. Mobile captures use browser emulation of the PWA; the Android client adds a native multi-page scanner. Many more desktop and mobile captures of individual test journeys (saved searches, bulk filing, Trash, share links, custom details, appearance themes, and others) are kept under [`qa-artifacts/`](../qa-artifacts/).
+The screenshots come from the running development stack with fictional PDF documents in a separate demo archive. Mobile captures use browser emulation of the PWA; the Android client adds a native multi-page scanner. The current README set and the scripts that regenerate it are in [`qa-artifacts/20261119-readme/`](../qa-artifacts/20261119-readme/README.md). Many more desktop and mobile captures of individual test journeys (saved searches, bulk filing, Trash, share links, custom details, appearance themes, and others) are kept under [`qa-artifacts/`](../qa-artifacts/).
 
 <img src="../qa-artifacts/20261111-showcase/desktop/add.png" alt="Desktop Add dialog with camera, photos, and files" width="640">
 
@@ -477,5 +513,6 @@ The screenshots come from the running development stack with fictional PDF docum
 - [Quality judges](QUALITY_JUDGES.md): the 9.5 target, independent review rubric, and release blockers.
 - [Design system](DESIGN_SYSTEM.md): Ripiano colors, shared controls, focus behavior, and mobile density.
 - [Portainer deployment](../deploy/README.md): digest-pinned images, NAS volumes, HTTPS, and backup mount.
+- [Android app](../apps/android/README.md), [contributing](../CONTRIBUTING.md), and [security policy](../SECURITY.md).
 
 The planning documents remain the implementation baseline. No Paperless source code is included in this repository.

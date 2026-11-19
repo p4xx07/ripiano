@@ -234,7 +234,7 @@ export default defineMessages({
   filters: "Filtri",
   addShort: "Aggiungi",
   compactCounts: (total: number, waiting: number, matching: boolean) => `${total} ${matching ? (total === 1 ? "documento trovato" : "documenti trovati") : (total === 1 ? "documento" : "documenti")}${waiting ? ` · ${waiting} in elaborazione` : ""}`,
-  offlineShowingLast: (time: string) => `Sei offline o Ripiano non è raggiungibile. Vedi i documenti caricati alle ${time}; per cercare e modificare serve la connessione.`,
+  offlineShowingLast: (time: string) => `Ripiano non è raggiungibile: sei offline o il server non risponde. Vedi i documenti caricati alle ${time}; per cercare e modificare serve la connessione.`,
   preciseSearch: "Ricerca avanzata",
   searchHelpUse: "Usa",
   tagExample: "etichetta:bollette",

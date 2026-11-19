@@ -8,6 +8,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from .api_language import run_detail
 from .models import BackupRun, BrowseExportRun
 from .tasks import backup_archive, build_browse_export
 
@@ -139,7 +140,7 @@ def jobs(request):
         } if model and model.status in {FilingModel.Status.QUEUED, FilingModel.Status.TRAINING, FilingModel.Status.FAILED} else None,
         "workflow_failures": [{
             "id": str(run.id), "workflow": run.workflow.name, "document": {"id": str(run.document_id), "title": run.document.title},
-            "detail": run.detail, "at": _when(run.created_at),
+            "detail": run_detail(request, run.detail), "at": _when(run.created_at),
         } for run in runs],
     })
 

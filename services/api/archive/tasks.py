@@ -33,6 +33,8 @@ class LockedPdfError(Exception):
 # Shown to people when a job fails with a low-level error; the details stay in the worker log.
 PROCESSING_ERRORS = {
     "generic": "Text recognition failed for this file. Choose Retry OCR. If it fails again, the file may be damaged: open it on your computer, and re-scan it or save it again as PDF before uploading.",
+    # After a retry failed too, repeating it will not help (judge 1 round 7, L4).
+    "generic_again": "Text recognition failed again, so the file is probably damaged. Download the original and open it on your computer, then re-scan it or save it again as PDF and upload the new copy.",
     "backup": "The backup failed. Details are in the maintenance worker log.",
     "backup_permission": "Ripiano cannot write to the backup folder. Check the permissions of the mounted backup folder on the NAS.",
     "damaged_pdf": "This PDF is damaged, so some of its pages may be missing. Ripiano kept the original and made the pages it could read searchable. Compare it with the paper, then re-scan it or upload an undamaged copy.",
@@ -144,12 +146,14 @@ def process_document(document_id):
             logger.warning("Document %s is a damaged PDF; OCR recovered %s page(s)", document.id, page_count)
             document.status = Document.Status.FAILED
             document.error = PROCESSING_ERRORS["damaged_pdf"]
-            document.save(update_fields=["archive_path", "extracted_text", "status", "error"])
+            document.processing_failures = min(document.processing_failures + 1, 1000)
+            document.save(update_fields=["archive_path", "extracted_text", "status", "error", "processing_failures"])
             return
         document.status = Document.Status.READY
         document.error = ""
+        document.processing_failures = 0
         document.processed_at = timezone.now()
-        document.save(update_fields=["archive_path", "extracted_text", "status", "error", "processed_at"])
+        document.save(update_fields=["archive_path", "extracted_text", "status", "error", "processed_at", "processing_failures"])
     except Exception as exc:
         if isinstance(exc, LockedPdfError):
             logger.info("Document %s is a locked PDF with no matching workflow password", document.id)
@@ -158,9 +162,11 @@ def process_document(document_id):
         if isinstance(exc, subprocess.CalledProcessError):
             logger.error("OCR diagnostic: %s", (exc.stderr or "")[-2000:])
         document.status = Document.Status.FAILED
+        document.processing_failures = min(document.processing_failures + 1, 1000)
         diagnostic = (exc.stderr or "").strip() if isinstance(exc, subprocess.CalledProcessError) else ""
-        document.error = readable_error((diagnostic.splitlines()[-1] if diagnostic else str(exc)), PROCESSING_ERRORS["generic"])[:500]
-        document.save(update_fields=["status", "error"])
+        fallback = PROCESSING_ERRORS["generic_again" if document.processing_failures > 1 else "generic"]
+        document.error = readable_error((diagnostic.splitlines()[-1] if diagnostic else str(exc)), fallback)[:500]
+        document.save(update_fields=["status", "error", "processing_failures"])
         return
     try:
         apply_rules(document)

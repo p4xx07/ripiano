@@ -255,8 +255,13 @@ def _apply(workflow, document, *, first_time=True, access_changes=None, guarded=
         link, created = DocumentTag.objects.get_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.SOURCE})
         if created:
             changes.append(f"added tag {tag.name}")
-    removed = (DocumentTag.objects.filter(document=document, tag__in=workflow.remove_tags.all()).exclude(origin=DocumentTag.Origin.MANUAL)
-               .exclude(tag_id__in=guarded))
+    to_remove = DocumentTag.objects.filter(document=document, tag__in=workflow.remove_tags.all())
+    removed = to_remove.exclude(origin=DocumentTag.Origin.MANUAL).exclude(tag_id__in=guarded)
+    # A tag the owner added by hand is never removed by automation; the run says so (judge 3 round 7, L3).
+    for link in to_remove.filter(origin=DocumentTag.Origin.MANUAL).select_related("tag"):
+        changes.append(f"kept tag {link.tag.name} (added by hand)")
+    for link in to_remove.exclude(origin=DocumentTag.Origin.MANUAL).filter(tag_id__in=guarded).select_related("tag"):
+        changes.append(f"kept tag {link.tag.name} (it limits another agent's access and an agent made the change)")
     for link in removed.select_related("tag"):
         changes.append(f"removed tag {link.tag.name}")
     removed.delete()

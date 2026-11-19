@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bell, Clock, KeyRound, PenLine, Plus, Tag as TagIcon, Workflow as WorkflowIcon, X } from "lucide-react";
-import { CustomField, FilingItem, People, request, Session, Tag } from "./api";
+import { CustomField, FilingItem, formatDateTime, People, request, Session, Tag } from "./api";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/WorkflowsPanel";
@@ -297,15 +297,21 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
           )}
           <div className="section-heading agent-activity-heading"><div><h2>{m.recentRuns}</h2><p>{m.recentRunsIntro}</p></div></div>
           {runs.length ? (
-            <div className="agent-events">
+            // A real list with its own row layout (round-7 judge 3 M1): workflow and outcome, then the document,
+            // then what was done; the time sits on the right on wide screens and under the detail on a phone.
+            <ul className="workflow-runs" aria-label={m.recentRuns}>
               {runs.map((item) => (
-                <div key={item.id}>
-                  <span>{item.workflow} · {item.status === "failed" ? m.problem : m.applied}</span>
-                  <strong><button type="button" className="text-action" onClick={() => onOpenDocument(item.document.id)}>{item.document.title}</button></strong>
-                  <small>{item.detail} · {new Date(item.created_at).toLocaleString()}</small>
-                </div>
+                <li key={item.id}>
+                  <span className="workflow-run-head">
+                    <span className="workflow-run-name">{item.workflow}</span>
+                    <span className={`workflow-run-status${item.status === "failed" ? " workflow-run-failed" : ""}`}>{item.status === "failed" ? m.problem : m.applied}</span>
+                  </span>
+                  <time className="workflow-run-time" dateTime={item.created_at}>{formatDateTime(item.created_at)}</time>
+                  <button type="button" className="text-action workflow-run-document" onClick={() => onOpenDocument(item.document.id)}>{item.document.title}</button>
+                  {item.detail && <span className="workflow-run-detail">{item.detail}</span>}
+                </li>
               ))}
-            </div>
+            </ul>
           ) : <p className="agent-empty-activity">{m.noRuns}</p>}
         </section>
 

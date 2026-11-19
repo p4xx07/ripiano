@@ -73,9 +73,10 @@ export async function forget(id: string): Promise<void> {
   }
 }
 
-/** Network failures, a temporarily unavailable server, and an ended session keep the file for its owner. */
-export function isRetryable(status: number) {
-  return status === 0 || status === 401 || status === 502 || status === 503 || status === 504;
+/** Network failures, a temporarily unavailable server, an ended session, and a failed CSRF check (the cookie was
+ *  cleared; signing in again or reloading gives a fresh one) keep the file for its owner. Any other 403 is a refusal. */
+export function isRetryable(status: number, csrfFailed = false) {
+  return status === 0 || status === 401 || status === 502 || status === 503 || status === 504 || (status === 403 && csrfFailed);
 }
 
 /** Only a refusal of the file itself removes it from the queue; anything else (signed out, throttled, server error) keeps it. */

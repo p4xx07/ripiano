@@ -8,17 +8,21 @@ import ast
 import pathlib
 
 
+def _template(node):
+    """An f-string as a template with numbered placeholders: f"Tag {name} not found" -> "Tag {0} not found"."""
+    parts, index = [], 0
+    for value in node.values:
+        if isinstance(value, ast.Constant):
+            parts.append(str(value.value).replace("{", "{{").replace("}", "}}"))
+        else:
+            parts.append("{%d}" % index); index += 1
+    return "".join(parts)
+
+
 def extract(root=None):
     root = pathlib.Path(root or pathlib.Path(__file__).parent)
     exact, templates = set(), set()
-    def template(node):
-        parts, index = [], 0
-        for value in node.values:
-            if isinstance(value, ast.Constant):
-                parts.append(str(value.value).replace("{", "{{").replace("}", "}}"))
-            else:
-                parts.append("{%d}" % index); index += 1
-        return "".join(parts)
+    template = _template
 
     def variants(node):
         # f"This {'a' if x else 'b'} …" also yields each full sentence, so it can be translated whole.

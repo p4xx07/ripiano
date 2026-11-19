@@ -46,7 +46,8 @@ export default defineMessages({
   loading: "Caricamento di In arrivo…",
   emptyTitle: "Niente richiede la tua attenzione.",
   emptyText: "I nuovi documenti restano automaticamente nell'Archivio. Qui compariranno elaborazioni non riuscite o copie identiche.",
-  ocrFailed: (error: string) => `L'OCR non è riuscito a terminare${error ? `: ${error}` : "."}`,
+  // Italian keeps lowercase after a colon; an acronym at the start ("OCR …", "PDF …") stays as it is.
+  ocrFailed: (error: string) => `L'OCR non è riuscito a terminare${error ? `: ${/^\p{Lu}\p{Ll}/u.test(error) ? error.charAt(0).toLowerCase() + error.slice(1) : error}` : "."}`,
   exactCopy: (title: string) => ` Copia identica di “${title}” · Entrambi gli originali sono salvati`,
   tryOcrAgain: "Riprova l'OCR",
   keepBoth: "Tienili entrambi",

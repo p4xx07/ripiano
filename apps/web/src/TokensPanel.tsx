@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Check, Copy, KeySquare } from "lucide-react";
-import { formatDate, formatDateTime, request } from "./api";
-import { Button, Field } from "./ui";
+import { formatDate, formatDateTime, isPasswordRefusal, request } from "./api";
+import { Button, Field, useFieldError } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/TokensPanel";
 
@@ -17,6 +17,7 @@ export default function TokensPanel() {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const invalid = useFieldError<"password">("tokens-error");
 
   const load = useCallback(async () => {
     try {
@@ -29,8 +30,10 @@ export default function TokensPanel() {
 
   async function create(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
+    invalid.clear();
     setCopied(false);
     try {
       const result = await request<Token & { token: string }>("/api/account/tokens", {
@@ -42,6 +45,7 @@ export default function TokensPanel() {
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.createError);
+      if (isPasswordRefusal(cause)) invalid.fail("password");
     } finally {
       setBusy(false);
     }
@@ -68,7 +72,7 @@ export default function TokensPanel() {
           <p>{m.intro} <a href="/api/schema.json" target="_blank" rel="noreferrer">{m.apiReference}</a></p>
         </div>
       </div>
-      {error && <div className="inline-error" role="alert">{error}</div>}
+      {error && <div className="inline-error" role="alert" id="tokens-error">{error}</div>}
       {created && (
         <div className="agent-token-card">
           <div className="agent-token-head"><KeySquare size={19} aria-hidden="true" /><strong>{m.copyNow}</strong></div>
@@ -90,7 +94,7 @@ export default function TokensPanel() {
                 <span><code>{token.prefix}…</code> · {m.expires(formatDate(token.expires_at))} · {token.last_used_at ? m.lastUsed(formatDateTime(token.last_used_at)) : m.neverUsed}</span>
               </div>
               <div className="mail-actions">
-                <Button type="button" variant="secondary" disabled={busy} aria-label={m.revokeLabel(token.name)} onClick={() => void revoke(token)}>{m.revoke}</Button>
+                <Button type="button" variant="secondary" pending={busy} aria-label={m.revokeLabel(token.name)} onClick={() => void revoke(token)}>{m.revoke}</Button>
               </div>
             </article>
           ))}
@@ -103,8 +107,8 @@ export default function TokensPanel() {
             {[7, 30, 90, 180, 365].map((value) => <option key={value} value={value}>{m.days(value)}</option>)}
           </select>
         </Field>
-        <Field label={m.password} className="detail-label"><input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></Field>
-        <Button disabled={busy}>{m.create}</Button>
+        <Field label={m.password} className="detail-label"><input type="password" autoComplete="current-password" {...invalid.props("password")} value={password} onChange={(event) => setPassword(event.target.value)} required /></Field>
+        <Button pending={busy}>{m.create}</Button>
       </form>
     </section>
   );

@@ -1,0 +1,60 @@
+# External access gateway for a Raspberry Pi 4 (linux/arm64): Traefik + Authelia.
+# See README.md in this folder. Copy this folder to the Pi, create .env and secrets/, then `docker compose up -d`.
+#
+# Before deploying, replace each image tag with its digest (README, "Pin the images").
+
+name: gateway
+
+services:
+  traefik:
+    image: traefik:v3.5.3
+    restart: unless-stopped
+    command:
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+      - --log.level=INFO
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      # Port 80 only answers Let's Encrypt checks and redirects everything else to HTTPS.
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls.certresolver=letsencrypt
+      # Room for 25 MB uploads on slow mobile connections and long media streams.
+      - --entrypoints.websecure.transport.respondingtimeouts.readtimeout=600s
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?Set ACME_EMAIL in .env}
+      - --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Read by the templates in traefik/dynamic/routes.yml.
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      NAS_IP: ${NAS_IP:?Set NAS_IP in .env}
+      RIPIANO_PORT: ${RIPIANO_PORT:-8080}
+      JELLYFIN_PORT: ${JELLYFIN_PORT:-8096}
+    volumes:
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - ./data/acme:/acme
+    depends_on:
+      - authelia
+    mem_limit: 128m
+
+  authelia:
+    image: authelia/authelia:4.39.4
+    restart: unless-stopped
+    # No published port: only Traefik reaches it, on the private Compose network.
+    environment:
+      TZ: ${TZ:-Europe/Rome}
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      X_AUTHELIA_CONFIG_FILTERS: template
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /secrets/jwt_secret
+      AUTHELIA_SESSION_SECRET_FILE: /secrets/session_secret
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /secrets/storage_encryption_key
+    volumes:
+      - ./authelia:/config
+      - ./data/authelia:/data
+      - ./secrets:/secrets:ro
+    mem_limit: 128m

@@ -1,0 +1,48 @@
+import fs from 'node:fs';import crypto from 'node:crypto';import {Client,PW,mcp,BASE} from './lib.mjs';
+const c=new Client();await c.login('judge3',PW.JUDGE3_PASSWORD);
+const ids=JSON.parse(fs.readFileSync('ids.json'));const G=JSON.parse(fs.readFileSync('grants.json'));const o={};
+const uname='j3r4x'+G.stamp, upw='Xx-'+crypto.randomBytes(12).toString('hex');
+const nu=await c.req('POST','/api/people',{current_password:PW.JUDGE3_PASSWORD,username:uname,password:upw,name:'J3 disposable'});
+o.createUser=[nu.status,nu.body.username,nu.body.is_admin];
+fs.writeFileSync('xuser.json',JSON.stringify({id:nu.body.id,uname,upw}));
+const shared=ids['office-letter.docx'].id, secret=ids['three-pages.pdf'].id;
+const sh=await c.req('POST','/api/documents/'+shared+'/access',{user_id:nu.body.id,level:'view'});o.share=[sh.status,sh.body.level];
+const x=new Client();o.xlogin=(await x.login(uname,upw)).status;
+const xl=(await x.req('GET','/api/documents')).body.documents||[];o.xList=xl.map(d=>d.title);
+o.xGetShared=(await x.req('GET','/api/documents/'+shared)).status;
+o.xGetSecret=(await x.req('GET','/api/documents/'+secret)).status;
+o.xOrigSecret=(await x.req('GET','/api/documents/'+secret+'/original')).status;
+o.xOrigShared=(await x.req('GET','/api/documents/'+shared+'/original')).status;
+o.xPatchShared=(await x.req('PATCH','/api/documents/'+shared,{title:'hacked'})).status;
+o.xNoteShared=(await x.req('POST','/api/documents/'+shared+'/notes',{body:'x'})).status;
+o.xShareLinkShared=(await x.req('POST','/api/documents/'+shared+'/shares',{expires_in_days:1})).status;
+o.xReshare=(await x.req('POST','/api/documents/'+shared+'/access',{user_id:nu.body.id,level:'edit'})).status;
+o.xTrashShared=(await x.req('POST','/api/documents/'+shared+'/trash')).status;
+o.xBulkTagSecret=(await x.req('POST','/api/documents/bulk-tags',{document_ids:[secret],tag_id:G.tX.id,action:'add'})).body;
+o.xBulkTrashSecret=(await x.req('POST','/api/documents/bulk-trash',{document_ids:[secret,shared]})).body;
+o.xPeople=(await x.req('GET','/api/people')).status;
+o.xAgentWithForeignTag=(await x.req('POST','/api/agents',{name:'x',scopes:['documents:search'],filter_tag_id:G.tA.id})).body;
+const xg=(await x.req('POST','/api/agents',{name:'xagent',scopes:['documents:search','documents:text'],expires_in_days:1})).body;
+const xs=await mcp(xg.token,'tools/call',{name:'search_documents',arguments:{query:''}});o.xAgentSees=xs.body.result?.structuredContent?.documents?.map(d=>d.title);
+o.xAgentTextShared=(await mcp(xg.token,'tools/call',{name:'get_document_text',arguments:{document_id:shared}})).body.result?.structuredContent;
+o.judge3AuditLeak=((await c.req('GET','/api/agents/events')).body.events||[]).filter(e=>e.agent==='xagent').length;
+// API token for x
+const tk=(await x.req('POST','/api/account/tokens',{password:upw,name:'xt',expires_in_days:1})).body;
+const T={Authorization:'Token '+tk.token};const raw=async(m,p,b)=>{const r=await fetch(BASE+p,{method:m,headers:{...T,...(b?{'Content-Type':'application/json'}:{})},body:b?JSON.stringify(b):undefined});return r.status;};
+o.tokList=await raw('GET','/api/documents');o.tokSecret=await raw('GET','/api/documents/'+secret);
+o.tokAgents=await raw('POST','/api/agents',{name:'t',scopes:['documents:text']});o.tokNewToken=await raw('POST','/api/account/tokens',{password:upw,name:'t2'});
+o.tokShareLink=await raw('POST','/api/documents/'+shared+'/shares',{});o.tokBackups=await raw('POST','/api/backups',{});
+o.tokTrailing=await raw('GET','/api/agents/');o.tokAgentsEvents=await raw('GET','/api/agents/events');
+o.tokSessionCsrfFree=await raw('POST','/api/tags',{name:'xtag'+G.stamp});
+o.tokRevoke=(await x.req('DELETE','/api/account/tokens/'+tk.id)).status;o.tokAfterRevoke=await raw('GET','/api/documents');
+// CSRF: session POST without csrf header
+const r=await fetch(BASE+'/api/tags',{method:'POST',headers:{Cookie:x.cookie(),'Content-Type':'application/json',Origin:BASE},body:JSON.stringify({name:'csrf'+G.stamp})});o.csrfNoHeader=r.status;
+const r2=await fetch(BASE+'/api/tags',{method:'POST',headers:{Cookie:x.cookie(),'X-CSRFToken':x.jar.csrftoken,'Content-Type':'application/json',Origin:'https://evil.example',Referer:'https://evil.example/'},body:JSON.stringify({name:'csrf2'+G.stamp})});o.csrfEvilOrigin=r2.status;
+// unshare
+const acc=(await c.req('GET','/api/documents/'+shared+'/access')).body.grants;const mine=acc.find(a=>a.target.id===nu.body.id);
+o.unshare=(await c.req('DELETE','/api/documents/'+shared+'/access/'+mine.id)).status;
+o.xAfterUnshare=(await x.req('GET','/api/documents/'+shared)).status;o.xListAfter=((await x.req('GET','/api/documents')).body.documents||[]).length;
+o.xRevokeAgent=(await x.req('DELETE','/api/agents/'+xg.id)).status;
+o.xRevokeOthersAgent=(await x.req('DELETE','/api/agents/'+G.B.id)).status;
+o.secretStillUntrashed=(await c.req('GET','/api/documents/'+secret)).body.trashed_at;
+console.log(JSON.stringify(o,null,1));

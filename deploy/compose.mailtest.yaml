@@ -1,0 +1,18 @@
+# Local-only test mail server for the email intake browser journey.
+# Start after the main stack: docker compose -f deploy/compose.mailtest.yaml up -d
+# Any username/password is accepted; mail sent to SMTP port 3025 lands in that user's INBOX.
+name: ripiano-mailtest
+services:
+  greenmail:
+    image: greenmail/standalone:2.1.2
+    environment:
+      GREENMAIL_OPTS: -Dgreenmail.setup.test.smtp -Dgreenmail.setup.test.imap -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled -Dgreenmail.verbose=false
+    ports:
+      - "127.0.0.1:3025:3025"
+    networks:
+      default:
+        aliases: [mailtest]
+networks:
+  default:
+    name: ripiano_default
+    external: true

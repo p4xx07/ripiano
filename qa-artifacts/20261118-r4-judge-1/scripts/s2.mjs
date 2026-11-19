@@ -1,0 +1,11 @@
+import { launch, login, shot, text, FX } from "./lib.mjs";
+const { browser, page } = await launch(false);
+await login(page);
+await page.getByRole("button", { name: "Add document" }).first().click();
+await page.waitForTimeout(800);
+await shot(page, "03-add-dialog-desktop");
+const dlg = page.getByRole("dialog");
+console.log("DIALOG:", (await dlg.count()) ? (await dlg.first().innerText()).slice(0,1500) : "none");
+const inputs = await page.locator("input[type=file]").evaluateAll(els => els.map(e => ({name:e.name, accept:e.accept, multiple:e.multiple, capture:e.getAttribute("capture"), label:e.getAttribute("aria-label")})));
+console.log(JSON.stringify(inputs));
+await browser.close();

@@ -1,0 +1,7 @@
+# Filing judge fixes
+
+The first review found a stale rule race and phrase-editor focus/touch problems. The classifier and filing-rule mutations now take the same PostgreSQL owner row lock, so deleting a rule waits for an older classification decision before queuing its recheck. A synthetic two-thread PostgreSQL probe paused classification after matching a phrase, started deletion, verified deletion was waiting, released classification, and confirmed the final document had no correspondent or rule origin. Equal phrases for different targets of the same kind now return HTTP 409, including different letter case.
+
+Phrase edits recheck affected ready documents, respecting whether a phrase searches the title, OCR text, or either. In the local test corpus, six candidate tasks completed in 0.004–0.013 seconds each; the previous full-owner tasks took about 6–9 seconds each. This is a local synthetic measurement, not a NAS benchmark. The focused desktop/mobile OCR journey passed in 10.1 seconds after the change. The full browser suite passed 24/24 in 50.1 seconds on the final code, API tests passed 29/29, and the production web build passed.
+
+Keyboard focus returns to the Add matching phrase button after adding, cancelling, or removing a phrase. Remove has a 40×40px target. The [mobile screenshot](mobile-matching-phrases.png) shows the wrapped chips and focus ring. The UX and code reviewers cleared their prior findings after follow-up review. Installed PWA and Android-device camera validation remain open.

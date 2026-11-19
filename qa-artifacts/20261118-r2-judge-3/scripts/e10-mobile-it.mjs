@@ -1,0 +1,55 @@
+import { start, OUT } from "./pw.mjs";
+import fs from "node:fs";
+const { browser, context, page, errors } = await start({ mobile: true, locale: "it-IT" });
+const check = async (label) => {
+  const r = await page.evaluate(() => {
+    const over = document.documentElement.scrollWidth - window.innerWidth;
+    const small = [...document.querySelectorAll("button, a, input, select, [role=button]")].filter(e => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0 && (b.height < 24 || b.width < 24) && getComputedStyle(e).visibility !== "hidden"; }).map(e => (e.getAttribute("aria-label") || e.textContent || e.tagName).trim().slice(0, 25));
+    const englishish = [...document.querySelectorAll("main *")].filter(e => e.children.length === 0).map(e => e.textContent.trim()).filter(t => /\b(the|your|and|with|Revoke|Create|token|Expires|Active|Never)\b/.test(t)).slice(0, 8);
+    return { over, small: small.slice(0, 8), englishish };
+  });
+  console.log(label, JSON.stringify(r));
+};
+const menu = page.getByRole("button", { name: /Menu|menu/ }).first();
+const go = async (name) => { if (await menu.isVisible().catch(() => false)) { await menu.click(); await page.waitForTimeout(300); } await page.getByRole("button", { name, exact: true }).click(); await page.waitForTimeout(1000); };
+await check("library");
+await page.screenshot({ path: OUT + "12-mobile-it-library.png" });
+await go("Agenti");
+await check("agents");
+await page.screenshot({ path: OUT + "13-mobile-it-agents.png", fullPage: false });
+await page.getByRole("textbox", { name: "Nome" }).fill("j3r2-mobile-agent");
+await page.getByRole("checkbox").nth(1).check();
+const resp = page.waitForResponse(r => r.url().endsWith("/api/agents") && r.request().method() === "POST");
+await page.getByRole("button", { name: /token/i }).last().tap();
+const tok = (await (await resp).json()).token;
+await page.waitForTimeout(600);
+await page.screenshot({ path: OUT + "14-mobile-it-agent-token-masked.png", mask: [page.locator("input[readonly]"), page.getByText(tok)] });
+await page.getByRole("button", { name: /Revoca j3r2-mobile-agent/ }).tap(); await page.waitForTimeout(300);
+await page.locator(".agent-revoke-confirm").scrollIntoViewIfNeeded();
+await page.screenshot({ path: OUT + "15-mobile-it-revoke-confirm.png", mask: [page.locator("input[readonly]")] });
+console.log("confirm IT:", (await page.locator(".agent-revoke-confirm").innerText()).replace(/\n/g, " | "));
+await page.locator(".agent-revoke-confirm").getByRole("button").first().tap(); await page.waitForTimeout(800);
+await go("Sicurezza"); await check("security");
+await page.screenshot({ path: OUT + "16-mobile-it-security-tokens.png", fullPage: true });
+await go("Persone"); await check("people");
+await go("Backup"); await check("backups");
+await page.screenshot({ path: OUT + "17-mobile-it-backups.png" });
+// offline add in Italian
+await go("Tutti i documenti");
+await page.getByRole("button", { name: /Aggiungi/ }).first().tap(); await page.waitForTimeout(400);
+await context.setOffline(true);
+const chooser = page.waitForEvent("filechooser");
+await page.getByRole("button", { name: /Sfoglia|file/i }).last().tap();
+await (await chooser).setFiles({ name: "j3r2-offline-mobile.png", mimeType: "image/png", buffer: fs.readFileSync("/Users/debotta/dbrepos/ripiano/apps/web/e2e/fixtures/judge.png") });
+await page.waitForTimeout(1200);
+await page.screenshot({ path: OUT + "18-mobile-it-offline-waiting.png" });
+console.log("offline IT:", (await page.locator("body").innerText()).split("\n").filter(l => /attesa|caric|connessione/i.test(l)).slice(0, 4));
+// simulate app closed and reopened while offline -> then online
+await page.close();
+const p2 = await context.newPage();
+await context.setOffline(false);
+const up = p2.waitForResponse(r => r.url().endsWith("/api/documents") && r.request().method() === "POST", { timeout: 20000 }).catch(() => null);
+await p2.goto("/"); await p2.waitForLoadState("networkidle");
+const u = await up; console.log("resent after reopen:", u && u.status());
+console.log("ERRORS", errors.filter(e => !/Failed to load resource/.test(e)).slice(0, 5));
+await browser.close();

@@ -1,0 +1,6 @@
+Invocation:
+curl -i --max-time 10 http://localhost:18080/healthz
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+{"status": "ok"}

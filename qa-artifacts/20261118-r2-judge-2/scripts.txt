@@ -1,0 +1,675 @@
+===== lib.mjs
+import { createRequire } from "node:module";
+const require = createRequire("/Users/debotta/dbrepos/ripiano/apps/web/package.json");
+const { chromium } = require("@playwright/test");
+import { readFileSync } from "node:fs";
+
+const envText = readFileSync("/private/tmp/claude-501/-Users-debotta-dbrepos-ripiano/23569b07-51e7-4ab9-89ce-c4e342f5998a/scratchpad/judges.env", "utf8");
+export const PASSWORD = (envText.match(/^JUDGE2_PASSWORD=(.*)$/m) || [])[1]?.trim().replace(/^["']|["']$/g, "");
+export const USER = "judge2";
+export const ORIGIN = "http://localhost:18080";
+export const OUT = "/Users/debotta/dbrepos/ripiano/qa-artifacts/20261118-r2-judge-2";
+export const FIX = "/Users/debotta/dbrepos/ripiano/apps/web/e2e/fixtures";
+
+export async function launch() {
+  return chromium.launch({ channel: "chrome", headless: true });
+}
+
+export async function ctx(browser, { mobile = false, locale = "it-IT" } = {}) {
+  return browser.newContext({
+    baseURL: ORIGIN,
+    locale,
+    viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 },
+    isMobile: mobile,
+    hasTouch: mobile,
+    deviceScaleFactor: mobile ? 2 : 1,
+  });
+}
+
+export async function signIn(page) {
+  await page.goto(ORIGIN);
+  await page.locator("input[autocomplete=username], input[name=username]").first().fill(USER);
+  await page.locator("input[type=password]").first().fill(PASSWORD);
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(2500);
+}
+===== s1.mjs
+import { launch, ctx, signIn, OUT, ORIGIN } from "./lib.mjs";
+const b = await launch();
+for (const mobile of [true, false]) {
+  const c = await ctx(b, { mobile });
+  const p = await c.newPage();
+  await p.goto(ORIGIN); await p.waitForTimeout(1500);
+  console.log("LOGIN", mobile, await p.title(), "lang=", await p.getAttribute("html","lang"));
+  console.log((await p.locator("body").ariaSnapshot()).slice(0,1500));
+  await p.screenshot({ path: `${OUT}/01-login-${mobile?"mobile":"desktop"}-it.png` });
+  await signIn(p);
+  console.log("AFTER", await p.title(), p.url(), "lang=", await p.getAttribute("html","lang"));
+  console.log((await p.locator("body").ariaSnapshot()).slice(0,5000));
+  await p.screenshot({ path: `${OUT}/02-home-${mobile?"mobile":"desktop"}-it.png`, fullPage: false });
+  await c.close();
+}
+await b.close();
+===== sweep.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+import { writeFileSync } from "node:fs";
+const mobile = process.argv[2] === "mobile";
+const b = await launch();
+const c = await ctx(b, { mobile });
+const p = await c.newPage();
+const consoleErrs = [];
+p.on("console", m => { if (m.type()==="error") consoleErrs.push(m.text()); });
+await signIn(p);
+const names = ["In arrivo","Tutti i documenti","Da fare","Etichette e archiviazione","Archivio cartaceo","Panoramica","Flussi di lavoro","Sicurezza","Email","Sorgenti","Condivisi con me","Cestino","Agenti","Persone","Backup"];
+const EN = /\b(the|and|your|with|from|this|that|add|save|delete|cancel|close|open|search|document|documents|tag|tags|sender|type|loading|error|failed|none|settings|upload|new|edit|remove|create|name|status|date|yes|no|back|next|show|hide|more|less|select|all|filter|filters|download|share|link|copy|print|location|shelf|box|sticker|agent|token|password|account|user|group|view|run|job|queue|retry|pending|done|ready|processing|empty|items|page|of)\b/i;
+const report = {};
+for (const n of names) {
+  if (mobile) { const m = p.getByRole("button", { name: "Apri o chiudi il menu" }); if (await m.isVisible()) { await m.click(); await p.waitForTimeout(300);} }
+  await p.getByRole("navigation", { name: "Navigazione principale" }).getByRole("button", { name: n, exact: true }).click();
+  await p.waitForTimeout(1800);
+  const info = await p.evaluate(({mobile}) => {
+    const vis = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width>0 && r.height>0 && s.visibility!=="hidden" && s.display!=="none"; };
+    const nameOf = el => (el.getAttribute("aria-label") || el.getAttribute("aria-labelledby") && [...el.getAttribute("aria-labelledby").split(" ")].map(i=>document.getElementById(i)?.textContent).join(" ") || el.textContent || el.getAttribute("title") || "").trim();
+    const main = document.querySelector("main") || document.body;
+    const out = { unnamed: [], unlabeled: [], small: [], imgs: [], dupIds: [], focus: document.activeElement?.tagName + ":" + (document.activeElement?.textContent||"").slice(0,40), h1: [...document.querySelectorAll("h1")].map(h=>h.textContent), current: [...document.querySelectorAll("[aria-current]")].map(e=>e.textContent+"="+e.getAttribute("aria-current")) };
+    for (const el of document.querySelectorAll("button, a[href], [role=button]")) { if (!vis(el)) continue; if (!nameOf(el)) out.unnamed.push(el.outerHTML.slice(0,120)); }
+    for (const el of document.querySelectorAll("input:not([type=hidden]), select, textarea")) {
+      if (!vis(el) && el.type!=="file") continue;
+      const lab = el.labels?.length || el.getAttribute("aria-label") || el.getAttribute("aria-labelledby") || el.getAttribute("title");
+      if (!lab) out.unlabeled.push(el.outerHTML.slice(0,140));
+    }
+    if (mobile) for (const el of main.querySelectorAll("button, a[href], input, select, textarea, summary, [role=button]")) {
+      if (!vis(el)) continue; const r = el.getBoundingClientRect();
+      if ((r.height < 44 || r.width < 24) && !(el.type==="checkbox"||el.type==="radio")) out.small.push(`${Math.round(r.width)}x${Math.round(r.height)} ${el.tagName} ${(nameOf(el)||el.outerHTML).slice(0,50).replace(/\s+/g," ")}`);
+    }
+    for (const el of document.querySelectorAll("img")) if (!el.hasAttribute("alt")) out.imgs.push(el.src.slice(0,80));
+    const ids = {}; for (const el of document.querySelectorAll("[id]")) ids[el.id]=(ids[el.id]||0)+1;
+    out.dupIds = Object.entries(ids).filter(([k,v])=>v>1).map(([k])=>k);
+    // headings order
+    const hs=[...main.querySelectorAll("h1,h2,h3,h4,h5,h6")].filter(vis).map(h=>+h.tagName[1]); out.skips=[]; for (let i=1;i<hs.length;i++) if (hs[i]-hs[i-1]>1) out.skips.push(hs[i-1]+"->"+hs[i]);
+    out.hscroll = document.documentElement.scrollWidth > window.innerWidth + 1;
+    // text nodes
+    const tw = document.createTreeWalker(main, NodeFilter.SHOW_TEXT); const texts=new Set(); let t;
+    while ((t = tw.nextNode())) { const s=t.textContent.trim(); if (s.length>1 && t.parentElement && vis(t.parentElement) && !t.parentElement.closest("code,pre,.doc-title,h3")) texts.add(s); }
+    for (const el of main.querySelectorAll("[placeholder],[aria-label],[title]")) for (const a of ["placeholder","aria-label","title"]) if (el.getAttribute(a)) texts.add("@"+a+": "+el.getAttribute(a));
+    out.texts=[...texts];
+    return out;
+  }, {mobile});
+  info.url = p.url(); info.title = await p.title();
+  info.english = info.texts.filter(s => EN.test(s.replace(/^@\w+: /,"")));
+  delete info.texts;
+  report[n] = info;
+  await p.screenshot({ path: `${OUT}/sweep-${mobile?"m":"d"}-${n.replace(/\W+/g,"_")}.png` });
+}
+writeFileSync(`sweep-${mobile?"m":"d"}.json`, JSON.stringify({report, consoleErrs}, null, 1));
+await b.close();
+===== kb.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+const b = await launch();
+const c = await ctx(b, { mobile: false });
+const p = await c.newPage();
+await signIn(p);
+const af = async (label) => console.log(label, await p.evaluate(() => { const a=document.activeElement; return a.tagName+"|"+(a.getAttribute("aria-label")||a.textContent||"").trim().slice(0,60)+"|role="+a.getAttribute("role"); }));
+await p.keyboard.press("Tab"); await af("tab1");
+await p.screenshot({ path: `${OUT}/03-kb-skiplink.png` });
+await p.keyboard.press("Enter"); await p.waitForTimeout(300); await af("after skip");
+await p.keyboard.press("Tab"); await af("tab after skip");
+// shortcuts
+await p.keyboard.press("Escape"); await p.locator("body").click({position:{x:700,y:5}}).catch(()=>{});
+await p.keyboard.press("?"); await p.waitForTimeout(500);
+const dlg = p.getByRole("dialog");
+console.log("help dialog count", await dlg.count());
+if (await dlg.count()) { console.log(await dlg.first().ariaSnapshot()); await p.screenshot({ path: `${OUT}/04-kb-shortcuts-it.png` }); await af("focus in help"); await p.keyboard.press("Escape"); await p.waitForTimeout(300); await af("after esc help"); }
+// G + letter
+await p.keyboard.press("g"); await p.keyboard.press("i"); await p.waitForTimeout(800); console.log("after g i", await p.title()); await af("focus");
+await p.keyboard.press("g"); await p.keyboard.press("d"); await p.waitForTimeout(800); console.log("after g d", await p.title());
+await p.keyboard.press("/"); await af("after /");
+await p.keyboard.type("lampone"); await p.keyboard.press("Enter"); await p.waitForTimeout(2000);
+console.log("results:", await p.locator("article h3").allTextContents());
+await p.keyboard.press("Escape"); await af("after esc in search");
+await p.locator("body").press("j"); await p.waitForTimeout(200); await af("after j");
+await p.keyboard.press("j"); await af("after j2");
+await p.keyboard.press("Enter"); await p.waitForTimeout(1500);
+console.log("dialogs", await p.getByRole("dialog").count()); await af("in doc dialog");
+await p.screenshot({ path: `${OUT}/05-kb-doc-dialog-it.png` });
+// tab through dialog: count stops, see if focus leaves
+const seen=[]; for (let i=0;i<80;i++){ await p.keyboard.press("Tab"); seen.push(await p.evaluate(()=>{const a=document.activeElement; return (a.closest("[role=dialog]")?"D":"OUT")+":"+a.tagName+":"+(a.getAttribute("aria-label")||a.labels?.[0]?.textContent||a.textContent||"").trim().slice(0,30)})); }
+console.log(seen.join("\n"));
+await p.keyboard.press("Escape"); await p.waitForTimeout(400); await af("after esc dialog");
+// back button behaviour
+await p.getByRole("button",{name:"Agenti",exact:true}).click(); await p.waitForTimeout(800);
+const before = p.url(); await p.goBack().catch(e=>console.log("goBack err", e.message)); await p.waitForTimeout(1500);
+console.log("back: before", before, "after", p.url(), await p.title());
+await b.close();
+===== kb2.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+const b = await launch();
+const c = await ctx(b, { mobile: false });
+const p = await c.newPage();
+await p.goto("about:blank");
+await signIn(p);
+const af = async (label) => console.log(label, await p.evaluate(() => { const a=document.activeElement; return (a.closest("[role=dialog]")?"D:":"")+a.tagName+"|"+(a.getAttribute("aria-label")||a.textContent||"").trim().slice(0,60); }));
+await p.keyboard.press("/"); await p.keyboard.type("lampone"); await p.keyboard.press("Enter"); await p.waitForTimeout(2000);
+console.log("results:", await p.locator("article h3").allTextContents());
+for (let i=0;i<8;i++){ await p.keyboard.press("Tab"); await af("tab"+i); }
+// j/k from body
+await p.evaluate(()=>document.activeElement.blur());
+await p.keyboard.press("j"); await p.waitForTimeout(200); await af("j from body");
+console.log("highlight:", await p.evaluate(()=>[...document.querySelectorAll("article")].map(a=>a.className+"|"+a.getAttribute("aria-current")+"|"+a.getAttribute("aria-selected")).join(" ; ")));
+await p.keyboard.press("Enter"); await p.waitForTimeout(1500);
+console.log("dialogs", await p.getByRole("dialog").count()); await af("enter");
+if (await p.getByRole("dialog").count()) {
+  const d = p.getByRole("dialog").first();
+  console.log((await d.ariaSnapshot()).slice(0,6000));
+  await p.screenshot({ path: `${OUT}/05-kb-doc-dialog-it.png` });
+  const seen=[]; for (let i=0;i<120;i++){ await p.keyboard.press("Tab"); seen.push(await p.evaluate(()=>{const a=document.activeElement; return (a.closest("[role=dialog]")?"D":"OUT")+":"+a.tagName})); }
+  console.log("trap ok?", seen.every(s=>s.startsWith("D")), seen.filter(s=>s.startsWith("OUT")).length);
+  await p.keyboard.press("Escape"); await p.waitForTimeout(400); await af("after esc dialog");
+}
+await p.getByRole("button",{name:"Agenti",exact:true}).click(); await p.waitForTimeout(500);
+await p.getByRole("button",{name:"Cestino",exact:true}).click(); await p.waitForTimeout(500);
+await p.goBack().catch(e=>console.log("goBack err", e.message)); await p.waitForTimeout(1500);
+console.log("back ->", p.url(), await p.title().catch(()=>"?"));
+await b.close();
+===== up1.mjs
+import { launch, ctx, signIn, OUT, FIX } from "./lib.mjs";
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+await p.getByRole("button",{name:"Aggiungi",exact:true}).click(); await p.waitForTimeout(800);
+console.log(await p.locator("body").ariaSnapshot().then(s=>s.slice(s.indexOf("Aggiungi"), s.indexOf("Aggiungi")+2500)));
+await p.screenshot({ path: `${OUT}/06-mobile-add-sheet-it.png` });
+const inputs = await p.locator("input[type=file]").evaluateAll(els=>els.map(e=>({accept:e.accept, capture:e.getAttribute("capture"), multiple:e.multiple, label:e.getAttribute("aria-label")})));
+console.log(inputs);
+await b.close();
+===== up2.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+import { readFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+const live = [];
+await p.exposeFunction("logLive", s => live.push(`${Date.now()%100000} ${s}`));
+await p.evaluate(() => { const obs = new MutationObserver(() => { for (const el of document.querySelectorAll("[role=status],[aria-live],[role=alert]")) { const t = el.textContent.trim(); if (t && el.dataset.last !== t) { el.dataset.last = t; window.logLive((el.getAttribute("role")||el.getAttribute("aria-live"))+": "+t.slice(0,200)); } } }); obs.observe(document.body, {subtree:true, childList:true, characterData:true}); });
+const t0 = Date.now();
+async function pick(label, files) {
+  await p.getByRole("button",{name:"Aggiungi",exact:true}).click(); await p.waitForTimeout(400);
+  const fc = p.waitForEvent("filechooser");
+  await p.getByRole("button",{name:new RegExp(label)}).first().click();
+  const ch = await fc; await ch.setFiles(files); await p.waitForTimeout(2500);
+}
+await pick("Scatta una foto", [`in/${TAG}-camera.png`]);
+await p.screenshot({ path: `${OUT}/07-mobile-after-camera-upload.png` });
+await pick("Scegli dalle foto", [`in/${TAG}-gallery.png`]);
+await pick("Sfoglia i file", [`in/${TAG}-three-pages.pdf`, `in/${TAG}-letter.docx`, `in/${TAG}-notice.eml`]);
+await p.screenshot({ path: `${OUT}/08-mobile-after-file-upload.png` });
+// wait until processed
+for (let i=0;i<40;i++) {
+  await p.waitForTimeout(3000);
+  const txt = await p.locator("main").innerText();
+  const pending = (txt.match(/In elaborazione|In coda|Elaborazione/g)||[]).length;
+  const s = await p.locator("article").filter({hasText: TAG}).allInnerTexts();
+  if (i%3==0) console.log(Math.round((Date.now()-t0)/1000)+"s", s.map(x=>x.replace(/\s+/g," ").slice(0,140)));
+  if (s.length>=5 && s.every(x=>/Pronto|Duplicat|Copia identica|Errore|non/.test(x)) ) break;
+}
+console.log("total", Math.round((Date.now()-t0)/1000), "s");
+const s = await p.locator("article").filter({hasText: TAG}).allInnerTexts();
+console.log(s.map(x=>x.replace(/\s+/g," ")).join("\n"));
+await p.screenshot({ path: `${OUT}/09-mobile-uploaded-processed.png`, fullPage: false });
+console.log("LIVE:\n"+live.join("\n"));
+await b.close();
+===== search.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+const box = p.getByRole("textbox",{name:/Cerca documenti/});
+async function q(s) { await box.fill(s); await box.press("Enter"); await p.waitForTimeout(1800);
+  const r = await p.locator("article").allInnerTexts(); const empty = await p.locator("main").innerText();
+  console.log(`Q[${s}] -> ${r.length}:`, r.map(x=>x.replace(/\s+/g," ").slice(0,110)).join(" || ") || empty.match(/Nessun[^\n]*/)?.[0]); }
+await p.getByText("Ricerca avanzata").click(); await p.waitForTimeout(300);
+console.log("ADV:", (await p.locator("details").first().innerText()).slice(0,1500));
+await p.screenshot({ path: `${OUT}/10-mobile-advanced-search-help.png`, fullPage: true });
+for (const s of ["RIPIANO JUDGE 9473", "judge 9473", "tassa rifiuti", "rifiuti", "sender:\"Comune di Esempio\"", "mittente:Comune", "date:2026-11-10", "data:2026-11-10", "date:2026-11", "tag:Bollette", "etichetta:Bollette", "120 euro", "lampone -tag:Bollette", "contribuente OR mirtillo", "tassa rifiuto", "rifiuti 2026"]) await q(s);
+await q("RIPIANO JUDGE 9473");
+await p.screenshot({ path: `${OUT}/11-mobile-search-ocr-phrase.png`, fullPage: true });
+await b.close();
+===== doc.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+import { readFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+const errs=[]; p.on("console", m => { if (m.type()==="error") errs.push(m.text()); });
+await signIn(p);
+const box = p.getByRole("textbox",{name:/Cerca documenti/});
+await box.fill(`${TAG}-camera`); await box.press("Enter"); await p.waitForTimeout(1500);
+await p.getByRole("button",{name:`${TAG}-camera`}).click(); await p.waitForTimeout(1500);
+const d = p.getByRole("dialog").first();
+await p.screenshot({ path: `${OUT}/12-mobile-doc-dialog-top.png` });
+const snap = await d.ariaSnapshot(); 
+// is there any preview image?
+console.log("imgs in dialog:", await d.locator("img, iframe, embed, object, canvas").count());
+// Suggestions?
+console.log("suggest:", (await d.innerText()).match(/Suggeri[^\n]*/g));
+// Set date via keyboard typing
+const date = d.getByLabel(/Data del documento/);
+console.log("date type:", await date.getAttribute("type"), "placeholder", await date.getAttribute("placeholder"));
+await date.fill("2026-11-10");
+console.log("date value iso:", await date.inputValue());
+await d.getByLabel(/^Mittente/).selectOption({ index: 1 });
+await d.getByRole("checkbox").first().check();
+await d.getByRole("button",{name:"Salva modifiche"}).click(); await p.waitForTimeout(1500);
+const st = await p.locator("[role=status],[role=alert]").allInnerTexts(); console.log("status after save:", st);
+await p.screenshot({ path: `${OUT}/14-mobile-doc-saved.png` });
+// history
+console.log("history:", (await d.getByRole("region",{name:"Modifiche"}).innerText()).slice(0,600));
+// physical copy
+const loc = d.getByLabel("Posizione della nuova copia cartacea");
+await loc.selectOption({ index: 1 });
+await d.getByRole("button",{name:"Crea adesivo"}).click(); await p.waitForTimeout(1500);
+const phys = await d.locator("text=Copie cartacee").locator("xpath=..").innerText().catch(()=>"");
+console.log("after sticker:", (await d.innerText()).split("Copie cartacee")[1]?.slice(0,800));
+await p.screenshot({ path: `${OUT}/15-mobile-doc-sticker.png`, fullPage: false });
+console.log("ERRS", errs);
+await b.close();
+===== phys.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+import { readFileSync, writeFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+const errs=[]; p.on("console", m => { if (m.type()==="error") errs.push(m.text()); });
+await signIn(p);
+const box = p.getByRole("textbox",{name:/Cerca documenti/});
+await box.fill(`${TAG}-camera`); await box.press("Enter"); await p.waitForTimeout(1500);
+await p.getByRole("button",{name:`${TAG}-camera`}).click(); await p.waitForTimeout(1500);
+const d = p.getByRole("dialog").first();
+console.log("history:", (await d.getByRole("region",{name:"Modifiche"}).innerText()).slice(0,700));
+await d.getByLabel("Posizione della nuova copia cartacea").selectOption({ index: 1 });
+await d.getByRole("button",{name:"Crea adesivo"}).click(); await p.waitForTimeout(1800);
+const txt = await d.innerText();
+console.log("after sticker:", txt.split("Copie cartacee")[1]?.slice(0,900));
+await d.getByRole("heading",{name:"Copie cartacee"}).scrollIntoViewIfNeeded();
+await p.screenshot({ path: `${OUT}/15-mobile-doc-sticker.png` });
+const physSnap = await d.ariaSnapshot(); const i = physSnap.indexOf("Copie cartacee"); console.log(physSnap.slice(i, i+2500));
+const code = (txt.match(/\b[A-Z0-9]{3,}-[A-Z0-9-]{3,}\b/g)||[]); console.log("codes", code);
+writeFileSync("sticker.txt", JSON.stringify(code));
+console.log("ERRS", errs);
+await b.close();
+===== phys2.mjs
+import { launch, ctx, signIn, OUT, ORIGIN } from "./lib.mjs";
+import { readFileSync, writeFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const CODE = "R-LS854BRN";
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+const box = p.getByRole("textbox",{name:/Cerca documenti/});
+await box.fill(`${TAG}-camera`); await box.press("Enter"); await p.waitForTimeout(1500);
+await p.getByRole("button",{name:`${TAG}-camera`}).click(); await p.waitForTimeout(1500);
+const d = p.getByRole("dialog").first();
+await d.getByLabel(`Nuova posizione per la copia cartacea ${CODE}`).selectOption({ index: 2 });
+await d.getByRole("button",{name:"Sposta",exact:true}).click(); await p.waitForTimeout(1500);
+console.log("moved:", (await d.innerText()).split("Copie cartacee")[1]?.slice(0,200).replace(/\n/g," | "));
+await d.getByRole("button",{name:"Cronologia"}).click(); await p.waitForTimeout(800);
+console.log("history:", (await d.innerText()).split("Copie cartacee")[1]?.slice(0,600).replace(/\n/g," | "));
+const href = await d.getByRole("link",{name:"Stampa adesivo"}).getAttribute("href");
+const r = await c.request.get(ORIGIN+href, { headers: {"Accept-Language":"it-IT"} });
+const body = await r.text();
+console.log("label", r.status(), r.headers()["content-type"], body.length);
+writeFileSync("label.html", body);
+const lp = await c.newPage(); await lp.goto(ORIGIN+href); await lp.waitForTimeout(1000);
+await lp.screenshot({ path: `${OUT}/16-sticker-label.png` });
+console.log("label text:", (await lp.locator("body").innerText()).slice(0,400), "lang", await lp.getAttribute("html","lang"));
+// scan: open via ?sticker=
+const sp = await c.newPage(); await sp.goto(`${ORIGIN}/?sticker=${CODE}`); await sp.waitForTimeout(2500);
+console.log("sticker URL view:", await sp.title(), (await sp.locator("main").innerText()).slice(0,700).replace(/\n/g," | "));
+await sp.screenshot({ path: `${OUT}/17-mobile-sticker-lookup.png` });
+await b.close();
+===== agents1.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+const b = await launch();
+const c = await ctx(b, { mobile: false });
+const p = await c.newPage();
+await signIn(p);
+await p.getByRole("button",{name:"Agenti",exact:true}).click(); await p.waitForTimeout(1500);
+const s = await p.locator("main").ariaSnapshot(); console.log(s.slice(0,5000));
+await p.screenshot({ path: `${OUT}/18-desktop-agents-it.png`, fullPage: true });
+await b.close();
+===== agents2.mjs
+import { launch, ctx, signIn, OUT, ORIGIN } from "./lib.mjs";
+import { readFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+const menu = async () => { const m = p.getByRole("button", { name: "Apri o chiudi il menu" }); if (await m.isVisible()) { await m.click(); await p.waitForTimeout(300);} };
+await menu(); await p.getByRole("button",{name:"Agenti",exact:true}).click(); await p.waitForTimeout(1500);
+async function create(name, text, filterIdx) {
+  await p.getByRole("textbox",{name:"Nome"}).fill(name);
+  const t = p.getByRole("checkbox",{name:"Leggere il testo OCR"}); if (text) await t.check(); else await t.uncheck();
+  await p.getByRole("combobox",{name:"Accesso ai documenti"}).selectOption({index: filterIdx});
+  await p.getByRole("button",{name:"Crea token dell'agente"}).click(); await p.waitForTimeout(1500);
+  const tok = await p.locator(".agent-token-row input").inputValue().catch(()=>null);
+  const focus = await p.evaluate(()=>{const a=document.activeElement; return a.tagName+"|"+(a.getAttribute("aria-label")||a.textContent||"").trim().slice(0,40)});
+  const inView = await p.locator(".agent-token-card").isVisible() ? await p.locator(".agent-token-card").evaluate(e=>{const r=e.getBoundingClientRect(); return r.top>=0 && r.bottom<=innerHeight;}) : "none";
+  console.log("focus after create:", focus, "token card in viewport:", inView, "label:", await p.locator(".agent-token-row input").getAttribute("aria-label").catch(()=>null));
+  const live = await p.locator("[role=status],[role=alert]").allInnerTexts();
+  console.log(name, "token found:", !!tok, "status:", live.filter(Boolean).map(x=>x.replace(/[A-Za-z0-9_\-]{30,}/g,"<masked>")));
+  return tok;
+}
+const A = await create(`${TAG} locale`, true, 0);
+await p.evaluate(() => { const i=document.querySelector(".agent-token-row input"); if(i){ i.value="•••• masked ••••"; i.scrollIntoView(); } });
+await p.screenshot({ path: `${OUT}/19-mobile-agent-token-created-masked.png`, fullPage: false });
+const tokArea = await p.locator("main").ariaSnapshot(); const i = tokArea.indexOf("Collega"); console.log(tokArea.slice(Math.max(0,i-1500), i+200).replace(/[A-Za-z0-9_\-]{30,}/g,"<masked>"));
+const B = await create(`${TAG} cloud`, false, 1);
+async function mcp(tok, method, params={}, id=1) {
+  const r = await fetch(ORIGIN+"/mcp", { method:"POST", headers:{ "Authorization":"Bearer "+tok, "Content-Type":"application/json", "Accept":"application/json, text/event-stream" }, body: JSON.stringify({jsonrpc:"2.0", id, method, params}) });
+  const t = await r.text(); let j; try { j = JSON.parse(t); } catch { const m = t.match(/data: (.*)/); j = m ? JSON.parse(m[1]) : t; }
+  return { status: r.status, j };
+}
+for (const [n,tok] of [["A",A],["B",B]]) {
+  if (!tok) continue;
+  const init = await mcp(tok, "initialize", {protocolVersion:"2025-06-18", capabilities:{}, clientInfo:{name:"judge",version:"1"}});
+  console.log(n, "init", init.status, JSON.stringify(init.j).slice(0,200));
+  const tl = await mcp(tok, "tools/list");
+  console.log(n, "tools", tl.status, (tl.j.result?.tools||[]).map(t=>t.name).join(","));
+  const s = await mcp(tok, "tools/call", {name:"search_documents", arguments:{query:"lampone"}});
+  console.log(n, "search lampone", s.status, JSON.stringify(s.j).slice(0,500));
+  const s2 = await mcp(tok, "tools/call", {name:"search_documents", arguments:{query:"9473"}});
+  console.log(n, "search 9473", s2.status, JSON.stringify(s2.j).slice(0,400));
+  const ids = JSON.stringify(s.j).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+  const tlist = (tl.j.result?.tools||[]).map(t=>t.name);
+  const readTool = tlist.find(x=>/text|read|get_document/.test(x)) || "get_document_text";
+  if (ids) { const g = await mcp(tok, "tools/call", {name: readTool, arguments:{document_id: ids[0]}}); console.log(n, readTool, g.status, JSON.stringify(g.j).slice(0,300)); }
+  const sem = await mcp(tok, "tools/call", {name:"semantic_search", arguments:{query:"tassa rifiuti"}}); console.log(n, "semantic", sem.status, JSON.stringify(sem.j).slice(0,200));
+}
+// revoke B in UI
+await p.getByRole("button",{name:`Revoca ${TAG} cloud`}).click(); await p.waitForTimeout(800);
+const confirm = p.getByRole("dialog"); if (await confirm.count()) { console.log("confirm dialog:", (await confirm.first().innerText()).slice(0,300)); await confirm.getByRole("button",{name:/Revoca/}).last().click(); await p.waitForTimeout(1200); }
+if (B) { const r = await mcp(B, "tools/list"); console.log("B after revoke", r.status, JSON.stringify(r.j).slice(0,200)); }
+await p.reload(); await p.waitForTimeout(1500); await menu(); await p.getByRole("button",{name:"Agenti",exact:true}).click(); await p.waitForTimeout(1500);
+console.log("audit:", (await p.locator("main").innerText()).split("Attività recente")[1]?.slice(0,1200).replace(/\n/g," | "));
+await p.getByRole("heading",{name:"Attività recente"}).scrollIntoViewIfNeeded();
+await p.screenshot({ path: `${OUT}/20-mobile-agent-audit.png` });
+await b.close();
+===== agents3.mjs
+import { launch, ctx, signIn, OUT, ORIGIN } from "./lib.mjs";
+import { readFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const b = await launch();
+const c = await ctx(b, { mobile: false });
+const p = await c.newPage();
+await signIn(p);
+await p.getByRole("button",{name:"Agenti",exact:true}).click(); await p.waitForTimeout(1500);
+await p.getByRole("textbox",{name:"Nome"}).fill(`${TAG} revoca-test`);
+await p.getByRole("checkbox",{name:"Leggere il testo OCR"}).uncheck();
+await p.getByRole("button",{name:"Crea token dell'agente"}).click(); await p.waitForTimeout(1500);
+const tok = await p.locator(".agent-token-row input").inputValue();
+async function mcp(method) { const r = await fetch(ORIGIN+"/mcp", { method:"POST", headers:{ "Authorization":"Bearer "+tok, "Content-Type":"application/json", "Accept":"application/json, text/event-stream" }, body: JSON.stringify({jsonrpc:"2.0", id:1, method, params:{}}) }); return r.status+" "+(await r.text()).slice(0,160); }
+console.log("before revoke", await mcp("tools/list"));
+// revoke via keyboard
+const btn = p.getByRole("button",{name:`Revoca ${TAG} revoca-test`});
+await btn.focus(); await p.keyboard.press("Enter"); await p.waitForTimeout(700);
+const dlg = p.getByRole("dialog"); const alertd = p.getByRole("alertdialog");
+console.log("dialog?", await dlg.count(), "alertdialog?", await alertd.count());
+const focusNow = await p.evaluate(()=>{const a=document.activeElement; return a.tagName+"|"+(a.getAttribute("aria-label")||a.textContent||"").trim().slice(0,60)});
+console.log("focus after revoke click:", focusNow);
+console.log("main around:", (await p.locator("main").innerText()).match(/.*revoca-test[\s\S]{0,300}/)?.[0].replace(/\n/g," | "));
+await p.screenshot({ path: `${OUT}/21-desktop-revoke-confirm.png` });
+// confirm
+const conf = p.getByRole("button",{name:/^Revoca|Conferma/}).filter({hasNotText:"J2"});
+const all = await p.getByRole("button").evaluateAll(bs=>bs.map(b=>(b.getAttribute("aria-label")||b.textContent).trim()).filter(t=>/revoc|conferm|annulla/i.test(t)));
+console.log("buttons:", all);
+const yes = p.getByRole("button",{name:/Revoca il token|Sì|Conferma revoca|Revoca ora|^Revoca$/});
+console.log("yes count", await yes.count());
+if (await yes.count()) { await yes.first().click(); await p.waitForTimeout(1200); }
+console.log("after revoke", await mcp("tools/list"));
+const f2 = await p.evaluate(()=>{const a=document.activeElement; return a.tagName+"|"+(a.getAttribute("aria-label")||a.textContent||"").trim().slice(0,60)}); console.log("focus after confirm:", f2);
+// revoke orphan duplicates
+for (const n of [`${TAG} cloud`, `${TAG} locale`]) {
+  for (let k=0;k<3;k++) { const bb = p.getByRole("button",{name:`Revoca ${n}`}); if (!(await bb.count())) break; await bb.first().click(); await p.waitForTimeout(500); if (await yes.count()) { await yes.first().click(); await p.waitForTimeout(1000);} }
+}
+console.log((await p.locator("main").innerText()).split("Attività recente")[0].slice(-1500).replace(/\n/g," | "));
+await b.close();
+===== offline.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+import { readFileSync, copyFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const F="/Users/debotta/dbrepos/ripiano/apps/web/e2e/fixtures";
+copyFileSync(`${F}/office-open.odt`, `in/${TAG}-offline.odt`);
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+await c.setOffline(true);
+await p.getByRole("button",{name:"Aggiungi",exact:true}).click(); await p.waitForTimeout(400);
+const fc = p.waitForEvent("filechooser"); await p.getByRole("button",{name:/Sfoglia i file/}).click(); (await fc).setFiles([`in/${TAG}-offline.odt`]);
+await p.waitForTimeout(3000);
+console.log("offline msgs:", await p.locator("[role=status],[role=alert]").allInnerTexts());
+await p.screenshot({ path: `${OUT}/22-mobile-offline-upload-queued.png` });
+// reload while offline? Service worker may serve app shell
+await p.reload().catch(e=>console.log("reload offline err:", e.message.slice(0,80))); await p.waitForTimeout(2500);
+console.log("after offline reload title:", await p.title().catch(()=>"?"), (await p.locator("body").innerText().catch(()=>"")).slice(0,300).replace(/\n/g," | "));
+await p.screenshot({ path: `${OUT}/23-mobile-offline-reload.png` });
+await c.setOffline(false); await p.reload(); await p.waitForTimeout(3000);
+if (!(await p.getByRole("textbox",{name:/Cerca documenti/}).count())) { await (await import("./lib.mjs")).signIn(p); }
+console.log("online msgs:", await p.locator("[role=status],[role=alert]").allInnerTexts());
+for (let i=0;i<10;i++){ await p.waitForTimeout(3000); const t = await p.locator("article").filter({hasText:`${TAG}-offline`}).allInnerTexts(); if (t.length) { console.log("arrived:", t.map(x=>x.replace(/\s+/g," "))); break; } const s = await p.locator("[role=status]").allInnerTexts(); console.log("waiting", s); const btn = p.getByRole("button",{name:/Invia ora|Invia/}); if (i==2 && await btn.count()) { console.log("clicking send now"); await btn.first().click(); } }
+await b.close();
+===== errs.mjs
+import { launch, ctx, signIn, OUT, ORIGIN } from "./lib.mjs";
+import { readFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+await p.getByRole("button",{name:"Aggiungi",exact:true}).click(); await p.waitForTimeout(400);
+const fc = p.waitForEvent("filechooser"); await p.getByRole("button",{name:/Sfoglia i file/}).click(); (await fc).setFiles([`in/${TAG}-finto.pdf`, `in/${TAG}-x.txt`]);
+await p.waitForTimeout(4000);
+console.log("msgs:", await p.locator("[role=status],[role=alert]").allInnerTexts());
+await p.screenshot({ path: `${OUT}/24-mobile-invalid-upload-it.png` });
+// API errors in Italian
+const csrf = (await c.cookies()).find(x=>/csrf/i.test(x.name))?.value;
+const H = {"Accept-Language":"it-IT,it;q=0.9", "X-CSRFToken": csrf||"", "Content-Type":"application/json", "Referer": ORIGIN+"/"};
+for (const [m,u,body] of [["POST","/api/tags",{name:""}],["POST","/api/tags",{name:"x".repeat(300)}],["POST","/api/agents",{name:"x",scopes:[],expires_in_days:999}],["GET","/api/documents?q=date:2026-13-45",null],["POST","/api/locations",{name:""}],["POST","/api/tokens",{name:"t",password:"wrong"}],["GET","/api/documents/00000000-0000-0000-0000-000000000000",null],["POST","/api/auth/login",{username:"judge2",password:"nope"}]]) {
+  const r = await c.request.fetch(ORIGIN+u, { method:m, headers:H, data: body?JSON.stringify(body):undefined });
+  console.log(m,u,r.status(), (await r.text()).slice(0,200));
+}
+await b.close();
+===== a11y2.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+const b = await launch();
+for (const theme of ["light","dark"]) {
+const c = await b.newContext({ baseURL:"http://localhost:18080", locale:"it-IT", viewport:{width:390,height:844}, isMobile:true, hasTouch:true, colorScheme: theme });
+const p = await c.newPage();
+await signIn(p);
+const live=[]; await p.exposeFunction("logLive", s => live.push(s));
+await p.evaluate(() => { const obs = new MutationObserver(() => { for (const el of document.querySelectorAll("[role=status],[aria-live],[role=alert]")) { const t = el.textContent.trim(); if (el.dataset.last !== t) { el.dataset.last = t; window.logLive((el.getAttribute("role")||el.getAttribute("aria-live"))+": "+t.slice(0,120)); } } }); obs.observe(document.body, {subtree:true, childList:true, characterData:true}); });
+if (theme==="light") {
+const box = p.getByRole("textbox",{name:/Cerca documenti/});
+await box.fill("lampone"); await box.press("Enter"); await p.waitForTimeout(1500);
+await box.fill("zzzznonesiste"); await box.press("Enter"); await p.waitForTimeout(1500);
+console.log("live during search:", live);
+const filt = p.getByRole("button",{name:"Filtri"});
+console.log("Filtri aria-expanded before:", await filt.getAttribute("aria-expanded"));
+await filt.click(); await p.waitForTimeout(500); console.log("after:", await filt.getAttribute("aria-expanded"), "controls:", await filt.getAttribute("aria-controls"));
+await p.screenshot({ path: `${OUT}/25-mobile-filters-it.png` });
+await filt.click();
+const menu = p.getByRole("button",{name:"Apri o chiudi il menu"});
+console.log("menu aria-expanded:", await menu.getAttribute("aria-expanded"));
+await menu.click(); await p.waitForTimeout(400);
+console.log("menu after:", await menu.getAttribute("aria-expanded"), "focus:", await p.evaluate(()=>document.activeElement.textContent.trim().slice(0,30)));
+// tab through drawer: does focus escape to main behind?
+const seq=[]; for (let i=0;i<25;i++){ await p.keyboard.press("Tab"); seq.push(await p.evaluate(()=>{const a=document.activeElement; return (a.closest("aside, .sidebar")?"NAV":"MAIN")+":"+(a.getAttribute("aria-label")||a.textContent).trim().slice(0,18)})); }
+console.log("drawer tab seq:", seq.join(" > "));
+await p.keyboard.press("Escape"); await p.waitForTimeout(300); console.log("menu after Esc:", await menu.getAttribute("aria-expanded"));
+}
+// contrast check
+const lows = await p.evaluate(() => {
+  const parse = s => { const m = s.match(/rgba?\(([^)]+)\)/); if (!m) return null; const v = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number); return { r:v[0], g:v[1], b:v[2], a: v[3]===undefined?1:v[3] }; };
+  const lum = c => { const f = x => { x/=255; return x<=0.03928? x/12.92 : ((x+0.055)/1.055)**2.4; }; return 0.2126*f(c.r)+0.7152*f(c.g)+0.0722*f(c.b); };
+  const bgOf = el => { while (el) { const c = parse(getComputedStyle(el).backgroundColor); if (c && c.a > 0.9) return c; el = el.parentElement; } return {r:255,g:255,b:255,a:1}; };
+  const out = [];
+  const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let t;
+  while ((t = tw.nextNode())) { const el = t.parentElement; const s = t.textContent.trim(); if (!s || !el) continue; const r = el.getBoundingClientRect(); if (!r.width || getComputedStyle(el).visibility==="hidden") continue;
+    if (el.closest(".visually-hidden,[hidden]")) continue;
+    const fg = parse(getComputedStyle(el).color); const bg = bgOf(el); if (!fg) continue;
+    const L1 = lum(fg), L2 = lum(bg); const ratio = (Math.max(L1,L2)+0.05)/(Math.min(L1,L2)+0.05);
+    const size = parseFloat(getComputedStyle(el).fontSize); const bold = +getComputedStyle(el).fontWeight >= 700;
+    const need = (size >= 24 || (size >= 18.66 && bold)) ? 3 : 4.5;
+    if (ratio < need) out.push(`${ratio.toFixed(2)} ${size}px "${s.slice(0,40)}"`);
+  }
+  return [...new Set(out)].slice(0,25);
+});
+console.log(theme, "low contrast:", lows);
+await p.screenshot({ path: `${OUT}/26-mobile-${theme}-library.png` });
+await c.close();
+}
+await b.close();
+===== drawer.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+const st = async (l) => console.log(l, await p.evaluate(()=>{ const s=document.querySelector(".sidebar"); const r=s.getBoundingClientRect(); const cs=getComputedStyle(s); return `open=${s.classList.contains("sidebar-open")} x=${Math.round(r.x)} w=${Math.round(r.width)} vis=${cs.visibility} disp=${cs.display} inert=${s.inert} ariaHidden=${s.getAttribute("aria-hidden")}`; }));
+await st("closed:");
+await p.locator("body").press("Tab"); await p.keyboard.press("Tab");
+const f = await p.evaluate(()=>{const a=document.activeElement; const r=a.getBoundingClientRect(); return a.textContent.trim().slice(0,30)+" x="+Math.round(r.x)+" inViewport="+(r.right>0&&r.x<innerWidth)}); console.log("2nd tab while closed:", f);
+await p.screenshot({ path: `${OUT}/27-mobile-closed-drawer-focus.png` });
+await p.getByRole("button",{name:"Apri o chiudi il menu"}).click(); await p.waitForTimeout(500);
+await st("open:");
+await p.screenshot({ path: `${OUT}/28-mobile-drawer-open.png` });
+await b.close();
+===== inbox.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+import { readFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+await p.getByRole("button", { name: "Apri o chiudi il menu" }).click(); await p.waitForTimeout(300);
+await p.getByRole("button",{name:"In arrivo",exact:true}).click(); await p.waitForTimeout(1500);
+console.log((await p.locator("main").innerText()).slice(0,1500).replace(/\n+/g," | "));
+await p.screenshot({ path: `${OUT}/29-mobile-inbox-it.png`, fullPage: true });
+await p.getByRole("button", { name: "Apri o chiudi il menu" }).click(); await p.waitForTimeout(300);
+await p.getByRole("button",{name:"Tutti i documenti",exact:true}).click(); await p.waitForTimeout(1000);
+const box = p.getByRole("textbox",{name:/Cerca documenti/});
+await box.fill(`${TAG}-gallery`); await box.press("Enter"); await p.waitForTimeout(1500);
+await p.getByRole("button",{name:`${TAG}-gallery`}).click(); await p.waitForTimeout(2000);
+const d = p.getByRole("dialog").first();
+const txt = await d.innerText(); console.log("GALLERY DIALOG:", txt.slice(0,1500).replace(/\n+/g," | "));
+const sugg = d.getByRole("button",{name:/Suggerit|Usa|Applica/});
+console.log("suggestion buttons:", await d.getByRole("button").evaluateAll(bs=>bs.map(b=>(b.getAttribute("aria-label")||b.textContent).trim()).slice(0,25)));
+await p.screenshot({ path: `${OUT}/30-mobile-suggestion.png` });
+await b.close();
+===== sugg.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+import { readFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+const box = p.getByRole("textbox",{name:/Cerca documenti/});
+await box.fill(`${TAG}-gallery`); await box.press("Enter"); await p.waitForTimeout(1500);
+await p.getByRole("button",{name:`${TAG}-gallery`}).click(); await p.waitForTimeout(2000);
+const d = p.getByRole("dialog").first();
+const s1 = d.getByRole("button",{name:/Imposta mittente/});
+await s1.focus(); await p.keyboard.press("Enter"); await p.waitForTimeout(1500);
+const f = await p.evaluate(()=>{const a=document.activeElement; return a.tagName+"|"+(a.getAttribute("aria-label")||a.textContent||"").trim().slice(0,50)});
+console.log("focus after applying suggestion:", f);
+console.log("status:", await p.locator("[role=status],[role=alert]").allInnerTexts());
+console.log("sender value:", await d.getByLabel(/^Mittente/).inputValue().catch(()=>"?"), await d.getByLabel(/^Mittente/).locator("option:checked").textContent());
+// correct it: set sender back to none and tag via checkbox, save
+await d.getByLabel(/^Mittente/).selectOption({index:0});
+await d.getByRole("button",{name:"Salva modifiche"}).click(); await p.waitForTimeout(1500);
+console.log("dialog open after save:", await p.getByRole("dialog").count());
+await box.fill(`${TAG}-gallery`); await box.press("Enter"); await p.waitForTimeout(1500);
+console.log("card:", (await p.locator("article").first().innerText()).replace(/\s+/g," "));
+await b.close();
+===== texts.mjs
+import { launch, ctx, signIn } from "./lib.mjs";
+const b = await launch();
+const c = await ctx(b, { mobile: false });
+const p = await c.newPage();
+await signIn(p);
+for (const n of ["Panoramica","Backup","Sorgenti","Cestino","Da fare"]) {
+  await p.getByRole("navigation").getByRole("button",{name:n,exact:true}).click(); await p.waitForTimeout(1800);
+  console.log("=====",n,"\n"+(await p.locator("main").innerText()).replace(/\n+/g," | ").slice(0,2500));
+}
+await b.close();
+===== backup.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+const b = await launch();
+const c = await ctx(b, { mobile: true });
+const p = await c.newPage();
+await signIn(p);
+const live=[]; await p.exposeFunction("logLive", s => live.push(s));
+await p.evaluate(() => { const obs = new MutationObserver(() => { for (const el of document.querySelectorAll("[role=status],[aria-live],[role=alert]")) { const t = el.textContent.trim(); if (el.dataset.last !== t) { el.dataset.last = t; window.logLive(t.slice(0,160)); } } }); obs.observe(document.body, {subtree:true, childList:true, characterData:true}); });
+await p.getByRole("button", { name: "Apri o chiudi il menu" }).click(); await p.waitForTimeout(300);
+await p.getByRole("button",{name:"Backup",exact:true}).click(); await p.waitForTimeout(1500);
+const t0=Date.now();
+await p.getByRole("button",{name:"Esegui backup ora"}).click();
+for (let i=0;i<30;i++){ await p.waitForTimeout(3000); const t=(await p.locator("main").innerText()).split("Snapshot recenti")[1]?.slice(0,250).replace(/\n+/g," | "); if (i%2==0) console.log(Math.round((Date.now()-t0)/1000)+"s", t); if (/^\s*\|?[^|]*\|[^|]*\|\s*completato/.test(t||"") && i>0) { const first = t.split("|").slice(0,5).join("|"); if (/completato/.test(first)) break; } }
+console.log("live:", live);
+await p.screenshot({ path: `${OUT}/31-mobile-backup-run.png` });
+await b.close();
+===== reflow.mjs
+import { launch, signIn, OUT } from "./lib.mjs";
+const b = await launch();
+const c = await b.newContext({ baseURL:"http://localhost:18080", locale:"it-IT", viewport:{width:320,height:640}, isMobile:true, hasTouch:true, deviceScaleFactor:2 });
+const p = await c.newPage();
+await signIn(p);
+const hs = async (l) => console.log(l, await p.evaluate(()=>{ const over=[...document.querySelectorAll("main *, [role=dialog] *")].filter(e=>{const r=e.getBoundingClientRect(); return r.right>innerWidth+2 && r.width>0 && getComputedStyle(e).position!=="fixed";}).slice(0,5).map(e=>e.tagName+"."+e.className.toString().slice(0,30)+" r="+Math.round(e.getBoundingClientRect().right)); return "scrollW="+document.documentElement.scrollWidth+" "+over.join(", "); }));
+await hs("library 320:");
+// text zoom 200%
+await p.evaluate(()=>document.documentElement.style.fontSize="200%"); await p.waitForTimeout(500);
+await hs("library 320 @200% root font:");
+await p.screenshot({ path: `${OUT}/32-mobile320-text200.png` });
+await p.evaluate(()=>document.documentElement.style.fontSize="");
+await p.getByRole("article").first().getByRole("button").first().click(); await p.waitForTimeout(1500);
+await hs("dialog 320:");
+await p.screenshot({ path: `${OUT}/33-mobile320-dialog.png` });
+await b.close();
+===== reflow2.mjs
+import { launch, signIn, OUT } from "./lib.mjs";
+const b = await launch();
+for (const w of [320, 360, 390]) {
+const c = await b.newContext({ baseURL:"http://localhost:18080", locale:"it-IT", viewport:{width:w,height:640}, isMobile:true, hasTouch:true });
+const p = await c.newPage();
+await signIn(p);
+console.log(w, await p.evaluate(()=>{ const over=[...document.querySelectorAll("body *")].filter(e=>{const r=e.getBoundingClientRect(); return r.right>innerWidth+1 && r.width>0;}).map(e=>e.tagName+"."+e.className.toString().slice(0,40)+" r="+Math.round(e.getBoundingClientRect().right)+" w="+Math.round(e.getBoundingClientRect().width)); return "scrollW="+document.documentElement.scrollWidth+" innerW="+innerWidth+" "+over.slice(0,8).join(", "); }));
+await p.evaluate(()=>window.scrollTo(400,0)); console.log(" scrollX after try:", await p.evaluate(()=>scrollX));
+await c.close();
+}
+await b.close();
+===== inbox2.mjs
+import { launch, ctx, signIn, OUT } from "./lib.mjs";
+import { readFileSync } from "node:fs";
+const TAG = readFileSync("tag.txt","utf8").trim();
+const b = await launch();
+const c = await ctx(b, { mobile: false });
+const p = await c.newPage();
+await signIn(p);
+await p.keyboard.press("g"); await p.keyboard.press("i"); await p.waitForTimeout(1500);
+const row = p.locator("article, li, .inbox-item").filter({hasText:`${TAG}-letter`}).last();
+const btn = row.getByRole("button",{name:/Tienili entrambi/});
+console.log("btn accessible name:", await btn.evaluate(e=>e.getAttribute("aria-label")||e.textContent.trim()));
+await btn.focus(); await p.keyboard.press("Enter"); await p.waitForTimeout(1500);
+console.log("focus after resolve:", await p.evaluate(()=>{const a=document.activeElement; return a.tagName+"|"+(a.getAttribute("aria-label")||a.textContent||"").trim().slice(0,50)}));
+console.log("status:", await p.locator("[role=status],[role=alert]").allInnerTexts());
+console.log("still listed:", await p.locator("main").innerText().then(t=>t.includes(`${TAG}-letter`)));
+await b.close();

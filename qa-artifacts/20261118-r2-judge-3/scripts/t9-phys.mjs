@@ -1,0 +1,20 @@
+import { Client, password } from "./api.mjs";
+import fs from "node:fs";
+const c = new Client(); await c.login("judge3", password());
+const shelf = await c.req("POST", "/api/locations", { name: "j3r2 Shelf" });
+const box = await c.req("POST", "/api/locations", { name: "j3r2 Box", parent_id: shelf.data.id });
+const box2 = await c.req("POST", "/api/locations", { name: "j3r2 Box 2", parent_id: shelf.data.id });
+console.log("locations", shelf.status, box.status, box2.status);
+const doc = "043e3ea3-1dd6-4501-9287-7e40abae65dd";
+const cp = await c.req("POST", `/api/documents/${doc}/copies`, { location_id: box.data.id });
+console.log("copy", cp.status, JSON.stringify(cp.data).slice(0, 250));
+const code = cp.data.sticker_code || cp.data.code || cp.data.sticker;
+const lk = await c.req("GET", `/api/stickers/${code}`); console.log("lookup", lk.status, JSON.stringify(lk.data).slice(0, 200));
+const mv = await c.req("PATCH", `/api/copies/${cp.data.id}`, { location_id: box2.data.id }); console.log("move", mv.status, mv.data.error || "");
+const hist = await c.req("GET", `/api/copies/${cp.data.id}/history`); console.log("history", JSON.stringify(hist.data).slice(0, 250));
+const lbl = await c.req("GET", `/api/copies/${cp.data.id}/label`, null, { raw: true }); console.log("label", lbl.status, lbl.headers.get("content-type"), lbl.data.length);
+fs.writeFileSync("/Users/debotta/dbrepos/ripiano/qa-artifacts/20261118-r2-judge-3/20-copy-label" + (lbl.headers.get("content-type").includes("pdf") ? ".pdf" : ".html"), lbl.data);
+const s = await c.req("GET", "/api/documents?q=" + encodeURIComponent("sticker:" + code)); console.log("sticker search", s.data.documents?.map(d => d.title));
+// isolation of sticker: iso (off) — use fresh member? check lookup of unknown code
+console.log("unknown sticker", (await c.req("GET", `/api/stickers/ZZZZ-0000`)).status);
+fs.writeFileSync("phys.json", JSON.stringify({ code, copy: cp.data.id }));

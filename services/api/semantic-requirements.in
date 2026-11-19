@@ -1,0 +1,4 @@
+# Optional packages for the NAS embedder service (semantic search). Not part of the Ripiano image:
+# the embedder installs them into its own volume on first start, verifying every hash.
+# Regenerate: uv pip compile semantic-requirements.in --universal --python-version 3.13 --generate-hashes -o semantic-requirements.txt
+fastembed==0.9.1

@@ -5,7 +5,7 @@ This plan sequences an independent Ripiano implementation. The parity baseline i
 ## R0 — foundation and evaluation fixtures
 
 1. Initialize the repository with an MIT license (as in Condivisa), contribution/security notes, pinned toolchains, CI, and a versioned Portainer Compose example. Do not copy Paperless source code.
-2. Create `apps/web` (React/TypeScript/Vite/PWA), `apps/android` (Capacitor shell and native bridge), `services/api` (Django/DRF), `services/worker` (same Python package/image, separate process), and `deploy` (Compose/reverse-proxy examples). Keep API contracts in one versioned location.
+2. Create `apps/web` (React/TypeScript/Vite/PWA), `apps/android` (native WebView shell with an origin-bound scanner bridge), `services/api` (Django/DRF), `services/worker` (same Python package/image, separate process), and `deploy` (Compose/reverse-proxy examples). Keep API contracts in one versioned location.
 3. Implement one HTTPS origin for web/API/MCP, initial owner setup, PostgreSQL migrations, task broker, health checks, and GHCR `linux/amd64` image publishing. Verify the complete stack on the DS923+ architecture before a release tag.
 4. Assemble a privacy-safe fixture corpus: Italian and English scans, digital PDFs, Office files, receipts, letters, duplicate variants, barcodes, signed PDFs, and multi-page camera captures. Define expected metadata and search results. Real personal documents stay out of Git.
 5. Build a component benchmark harness for OCR quality/time, document conversion fidelity, search relevance/time, classification precision/coverage, memory, and Android scanning reliability. Record versions and device conditions.
@@ -27,7 +27,7 @@ This plan sequences an independent Ripiano implementation. The parity baseline i
 1. Sender rules, document types, tags/nested tags, dates, storage/export layout, and local pretrained classifier with evidence and calibrated thresholds. Corrections become examples. Add an exception-only review queue.
 2. Physical-copy model, location hierarchy, sticker/box labels, QR lookup, movement history, and digital-only status.
 3. Needs action, due dates, reminders, saved collections, duplicate review, bulk organize, and undo where feasible.
-4. iOS/Android PWA capture and a Capacitor Android client with native multi-page scanner, gallery/files import, durable upload drafts, and fallback capture paths.
+4. iOS/Android PWA capture and a native Android client that hosts the same UI, with a multi-page scanner, gallery/files import, durable upload drafts, and fallback capture paths.
 5. Initial named MCP agent grants and read/organize tools, including two agents with different permissions. Support an optional local Pi or personal-PC classifier worker and missed-run recovery for a 10:00 Mac job.
 
 **Gate:** A camera capture becomes correctly searchable and filed without manual tagging when confidence is sufficient. A physical copy's label resolves to its location. Two agents see different documents and can perform only their granted operations. Real-device iOS and Android capture tests pass.

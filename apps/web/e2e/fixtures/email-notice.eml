@@ -1,0 +1,9 @@
+From: Comune di Esempio <tributi@comune.example>
+To: famiglia@example.test
+Subject: Avviso TARI 2026 lampone
+Date: Tue, 10 Nov 2026 09:30:00 +0100
+Message-ID: <tari-2026@comune.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Gentile contribuente,</p><p>l'importo dovuto per la tassa rifiuti 2026 lampone è di <b>120 euro</b>.</p><img src="https://tracker.example/pixel.png"></body></html>

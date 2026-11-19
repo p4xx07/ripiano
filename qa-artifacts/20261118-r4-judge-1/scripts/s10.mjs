@@ -1,0 +1,20 @@
+import { launch, login, shot, text } from "./lib.mjs";
+const { browser, page, ctx } = await launch(false);
+await login(page);
+await page.getByRole("button", { name: "Avviso condominio mirtillo", exact: true }).first().click();
+await page.waitForTimeout(1500);
+const d = page.getByRole("dialog").first();
+await d.getByRole("button",{name:/^Set sender: Amministrazione/}).click(); await page.waitForTimeout(1200);
+console.log("after sender:", (await d.innerText()).match(/Suggested[\s\S]{0,400}/)?.[0].replace(/\n+/g," | "));
+const st = await page.locator("[role=status]").allInnerTexts(); console.log("STATUS:", st.filter(Boolean).join(" || "));
+await d.getByRole("button",{name:/^Set type: Avviso/}).click().catch(e=>console.log("type btn gone")); await page.waitForTimeout(1200);
+await shot(page,"16-suggestion-applied");
+// paper copy
+const sel = d.locator("select").filter({ has: page.locator("option", {hasText:"No location yet"}) });
+await sel.selectOption({label:"Studio scaffale / Scatola 2026"});
+await d.getByRole("button",{name:"Create sticker"}).click(); await page.waitForTimeout(1500);
+const pc = (await d.innerText()); const k = pc.indexOf("Paper copies"); console.log("PAPER:", pc.slice(k,k+700).replace(/\n+/g," | "));
+await d.getByText("Paper copies").scrollIntoViewIfNeeded(); await shot(page,"17-sticker-created");
+await page.keyboard.press("Escape"); await page.waitForTimeout(800);
+const row = await page.locator("main").innerText(); const r = row.indexOf("Avviso condominio mirtillo"); console.log("ROW:", row.slice(r, r+250).replace(/\n+/g," | "));
+await browser.close();

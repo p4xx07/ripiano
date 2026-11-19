@@ -1,0 +1,16 @@
+import { start, OUT } from "./pw.mjs";
+import { password } from "./api.mjs";
+import fs from "node:fs";
+const isoPw = fs.readFileSync("iso.env","utf8").trim().split("=")[1];
+const { browser, page, errors } = await start();
+await page.getByRole("button", { name: "People" }).click();
+await page.getByRole("textbox", { name: /Your password/ }).fill(password());
+await page.getByRole("textbox", { name: "Username", exact: true }).fill("j3r2-iso");
+await page.getByRole("textbox", { name: /^Password/ }).fill(isoPw);
+await page.getByRole("button", { name: "Add person" }).click();
+await page.waitForTimeout(1200);
+console.log(await page.locator("[role=status], .notice, .toast").allTextContents());
+await page.getByText("j3r2-iso").first().scrollIntoViewIfNeeded();
+await page.screenshot({ path: OUT + "01-people-added-disposable-user.png" });
+console.log("ERRORS", errors);
+await browser.close();

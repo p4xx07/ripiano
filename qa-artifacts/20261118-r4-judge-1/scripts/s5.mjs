@@ -1,0 +1,12 @@
+import { launch, login, shot, text } from "./lib.mjs";
+const { browser, page } = await launch(false);
+await login(page);
+await page.getByRole("button", { name: "judge", exact: true }).first().click();
+await page.waitForTimeout(2000);
+await shot(page, "07-doc-detail-judge-desktop", true);
+const main = page.locator("main"); console.log((await main.innerText()).slice(0,4000));
+console.log("URL", page.url());
+await page.getByRole("button", { name: "three-pages", exact: true }).first().click().catch(()=>console.log("no three-pages button"));
+await page.waitForTimeout(1500);
+console.log("=== THREE PAGES ===\n", (await main.innerText()).slice(0,2500));
+await browser.close();

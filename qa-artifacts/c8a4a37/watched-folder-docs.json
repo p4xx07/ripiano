@@ -1,0 +1,5 @@
+Invocation:
+curl -sS -b /private/tmp/ripiano-qa-cookies.txt 'http://localhost:18080/api/documents?q=from-nas'
+
+Filtered result:
+{"exact_original_matches":1,"records":[{"id":"a1f4cb0c-ff4d-47b0-bccc-f6c9f2983b7d","source":"folder","status":"ready"}]}

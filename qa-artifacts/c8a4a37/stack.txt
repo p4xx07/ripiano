@@ -1,0 +1,8 @@
+Invocation:
+docker ps --format '{{.Names}} {{.Status}}' | rg 'ripiano-(api|watched_folder|db|broker)'
+
+Result:
+ripiano-watched_folder-1 Up 2 minutes
+ripiano-api-1 Up 3 minutes (healthy)
+ripiano-db-1 Up 7 hours (healthy)
+ripiano-broker-1 Up 7 hours (healthy)

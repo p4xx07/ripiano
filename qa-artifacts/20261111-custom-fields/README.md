@@ -1,0 +1,5 @@
+# Typed custom fields — 11 November 2026
+
+On the local PostgreSQL stack, upload a document, create a text field from its detail panel, save a value, find the document through ordinary Library search and `field:"Name=value"`, reopen it, and clear the value. This passed in desktop Chromium (1440×900) and mobile emulation (390×844). The PNGs show the saved field on each layout. The panel shows filled fields and an unused-field picker instead of listing every definition on every document.
+
+The full API suite passed 53 tests. Coverage checks text, number, date, and yes/no values; invalid values; case-insensitive field names; field-qualified and ordinary search; owner and Trash isolation; rename/delete rules; and inclusion in portable export metadata. Migration 0020 applied on the local PostgreSQL stack, migration check reported no changes, the production PWA build passed, and the full browser suite passed 42/42 journeys. Field-specific visual filters, advanced field management, installed mobile PWA capture, and native scanner checks remain open.

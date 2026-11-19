@@ -1,0 +1,91 @@
+# Routes from https://<service>.<DOMAIN> to services on the NAS.
+# Traefik fills in {{ env "..." }} from the variables in compose.yaml (.env). Saved changes apply without a restart.
+#
+# Every browser request needs an Authelia sign-in. The "-direct" routers skip Authelia only for
+# requests the service itself authenticates (share tokens, API/MCP bearer tokens, Jellyfin app tokens).
+# Longer rules win in Traefik; the explicit priorities make that order obvious.
+# Multi-line rules must keep every line at the same indentation, or YAML keeps the line breaks and Traefik rejects the rule.
+
+http:
+  middlewares:
+    authelia:
+      forwardAuth:
+        address: http://authelia:9091/api/authz/forward-auth
+        trustForwardHeader: true
+    hsts:
+      headers:
+        stsSeconds: 31536000
+
+  routers:
+    authelia:
+      rule: Host(`auth.{{ env "DOMAIN" }}`)
+      entryPoints: [websecure]
+      middlewares: [hsts]
+      service: authelia
+
+    # --- Ripiano -------------------------------------------------------------
+    ripiano:
+      rule: Host(`ripiano.{{ env "DOMAIN" }}`)
+      entryPoints: [websecure]
+      middlewares: [hsts, authelia]
+      service: ripiano
+      priority: 10
+
+    # Share links are for people without an account; Ripiano checks the token, expiry, and revocation.
+    # The PWA manifests and icons are fetched without cookies by browsers, so they must not redirect.
+    ripiano-direct-public:
+      rule: >-
+        Host(`ripiano.{{ env "DOMAIN" }}`) && (
+        PathPrefix(`/api/share-links/`) || PathPrefix(`/api/share-bundles/`) ||
+        PathRegexp(`^/manifest(-dark|-amoled)?(-it)?\.webmanifest$`) ||
+        PathRegexp(`^/icon-[0-9]+\.png$`))
+      entryPoints: [websecure]
+      middlewares: [hsts]
+      service: ripiano
+      priority: 100
+
+    # MCP clients ("Bearer" on /mcp) and personal API tokens ("Token rip_..." on /api/) cannot complete a
+    # browser sign-in. Ripiano rejects unknown, expired, or revoked tokens.
+    ripiano-direct-token:
+      rule: >-
+        Host(`ripiano.{{ env "DOMAIN" }}`) && (
+        (Path(`/mcp`) && HeaderRegexp(`Authorization`, `^Bearer \S+$`)) ||
+        (PathPrefix(`/api/`) && HeaderRegexp(`Authorization`, `^Token \S+$`)))
+      entryPoints: [websecure]
+      middlewares: [hsts]
+      service: ripiano
+      priority: 100
+
+    # --- Jellyfin ------------------------------------------------------------
+    jellyfin:
+      rule: Host(`jellyfin.{{ env "DOMAIN" }}`)
+      entryPoints: [websecure]
+      middlewares: [hsts, authelia]
+      service: jellyfin
+      priority: 10
+
+    # TV and phone apps send Jellyfin's own authorization header and cannot show a web sign-in.
+    # Jellyfin checks these itself, so keep strong Jellyfin passwords.
+    jellyfin-direct-apps:
+      rule: >-
+        Host(`jellyfin.{{ env "DOMAIN" }}`) && (
+        HeaderRegexp(`Authorization`, `^MediaBrowser `) || HeaderRegexp(`X-Emby-Authorization`, `.+`) ||
+        HeaderRegexp(`X-Emby-Token`, `.+`) || HeaderRegexp(`X-MediaBrowser-Token`, `.+`))
+      entryPoints: [websecure]
+      middlewares: [hsts]
+      service: jellyfin
+      priority: 100
+
+  services:
+    authelia:
+      loadBalancer:
+        servers:
+          - url: http://authelia:9091
+    ripiano:
+      loadBalancer:
+        servers:
+          - url: http://{{ env "NAS_IP" }}:{{ env "RIPIANO_PORT" }}
+    jellyfin:
+      loadBalancer:
+        servers:
+          - url: http://{{ env "NAS_IP" }}:{{ env "JELLYFIN_PORT" }}

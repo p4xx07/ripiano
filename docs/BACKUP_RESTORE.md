@@ -18,6 +18,10 @@ Set `RIPIANO_BACKUP_PATH` to a persistent NAS folder in the stack's environment,
       media/archive/…
 ```
 
+A backup may run at any time, also while documents are being processed or right after a worker was killed. Document processing keeps its temporary files in a `.work` folder on the media volume; a snapshot never reads that folder (nor unfinished uploads, page previews, and share ZIPs, which are rebuilt). Any other unknown file in the media volume still fails the backup, on purpose. A document that was being processed when the snapshot started is saved as it was at that moment: its original, marked as waiting for processing. After a restore Ripiano queues it again and finishes it within a minute or two of the workers starting; nothing has to be uploaded again. Temporary files of a killed worker are removed when a worker starts and as soon as Ripiano notices the stopped run (a few minutes while the maintenance worker is free; after a running backup otherwise), not hours later.
+
+Because the database is dumped first and the files are copied after it, a snapshot can contain a file its own dump does not mention yet: the finished PDF of a document that completed during the copy, or the parts of a barcode-split scan that was split during the copy. The restore removes such files after loading the database (the document is processed, and the scan split, again), so they do not pile up in the media volume. A file that disappears from the media folder while it is being copied fails the backup if any document uses it.
+
 Configure Synology Hyper Backup to protect the `complete` folder. Its Backblaze B2 destination and credentials remain under your control. Each snapshot has a consistent PostgreSQL dump and immutable original files; unchanged media are hard-linked between local snapshots when the backup filesystem supports it. Snapshot files must not be edited in place.
 
 The `.env` file and any secrets set in your stack manager are deliberately outside the snapshot. Keep a separate secure record of those values and replace credentials after recovery as needed. Backups made by this release require the same database migration set when restored; use a matching Ripiano image.
@@ -25,7 +29,7 @@ The `.env` file and any secrets set in your stack manager are deliberately outsi
 ## Restore into an empty stack
 
 1. Make the completed snapshot folder available as `RIPIANO_BACKUP_PATH` on the target NAS. Get the images of the Ripiano release that made the backup first (`docker compose pull`, or `docker compose build` for a source checkout): `up -d` reuses whatever images are already on the machine, and the restore refuses a different migration set. Then start only `db`, `broker`, and `api` once so migrations create an empty database.
-2. Stop `api`. The target database must have no users or documents, and the media volume must contain no files.
+2. Stop `api`. The target database must have no users or documents, and the media volume must contain no files (leftover temporary files in `.work` do not count).
 3. From the Compose project directory, run:
 
    ```sh
@@ -34,7 +38,7 @@ The `.env` file and any secrets set in your stack manager are deliberately outsi
    docker compose up -d
    ```
 
-4. Sign in with the restored owner account. Search for a known document, open its original, and check the Backups screen.
+4. Sign in with the restored owner account. Search for a known document, open its original, and check the Backups screen. Documents that were still being processed when the backup was made show as processing for a short while and then become ready.
 
 The restore command verifies all checksums and the migration set before writing. It refuses a populated target. Keep the original snapshot until the restored stack has passed those checks. A clean-stack PostgreSQL/media restore is part of the release verification, not just a manifest test.
 

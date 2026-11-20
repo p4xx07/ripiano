@@ -124,7 +124,7 @@ test("Inbox: a retried OCR keeps its card as retrying and announces a new failur
   await expect(status).toContainText("OCR restarted");
   // The card stays, marked as retrying, even though the server no longer lists it as an exception.
   await expect(row).toContainText("Reading the file again…");
-  await expect(row.getByRole("button", { name: "Retrying OCR…" })).toHaveAttribute("aria-disabled", "true");
+  await expect(row.getByRole("button", { name: /^Retrying OCR/ })).toHaveAttribute("aria-disabled", "true");
   await expect(status).toContainText("OCR for “Round nine letter” failed again: The PDF is damaged.", { timeout: 15_000 });
   await expect(row).toContainText("OCR could not finish: The PDF is damaged.");
   await expect(row.getByRole("button", { name: "Retry OCR" })).not.toHaveAttribute("aria-disabled", "true");

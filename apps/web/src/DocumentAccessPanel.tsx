@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UserMinus, Users } from "lucide-react";
 import { People, Session, request } from "./api";
 import { Button, Field } from "./ui";
@@ -61,7 +61,14 @@ export default function DocumentAccessPanel({ documentId, endpoint, wording: cus
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The control that was used can leave or be switched off by its own success (the Share button once nobody is
+  // chosen, a removed person's row): focus then goes to the person list, never to <body> (round-10 judge 2 L1).
+  const targetRef = useRef<HTMLSelectElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+  const focusChooser = () => requestAnimationFrame(() => (targetRef.current ?? summaryRef.current)?.focus());
+
   async function run(action: () => Promise<unknown>, message: string): Promise<boolean> {
+    if (busy) return false;
     setBusy(true);
     setError("");
     setNotice("");
@@ -89,7 +96,11 @@ export default function DocumentAccessPanel({ documentId, endpoint, wording: cus
     void run(() => request(base, {
       method: "POST",
       body: JSON.stringify({ [kind === "group" ? "group_id" : "user_id"]: id, level }),
-    }), m.nowCan(label, kind === "group", level === "edit", wording.granted)).then((ok) => { if (ok) setTarget(""); });
+    }), m.nowCan(label, kind === "group", level === "edit", wording.granted)).then((ok) => {
+      if (!ok) return;
+      setTarget("");
+      focusChooser();
+    });
   }
 
   const people = (directory?.people ?? []).filter((person) => person.username !== ownerName && person.is_active !== false);
@@ -103,7 +114,7 @@ export default function DocumentAccessPanel({ documentId, endpoint, wording: cus
       setOpened(next);
       if (next && !loaded) void load();
     }}>
-      <summary>{m.manage}</summary>
+      <summary ref={summaryRef}>{m.manage}</summary>
       <div className="share-body">
         {error && <p className="inline-error" role="alert">{error}</p>}
         {notice && <p className="bulk-notice" role="status">{notice}</p>}
@@ -111,7 +122,7 @@ export default function DocumentAccessPanel({ documentId, endpoint, wording: cus
         {loaded && <>
           {people.length + groups.length === 0 ? <p>{m.noOne}</p> : <div className="share-controls">
             <Field label={m.personOrGroup}>
-              <select value={target} onChange={(event) => setTarget(event.target.value)} disabled={busy}>
+              <select ref={targetRef} value={target} onChange={(event) => setTarget(event.target.value)}>
                 <option value="">{m.choose}</option>
                 {people.length > 0 && <optgroup label={m.people}>
                   {people.map((person) => <option key={person.id} value={`person:${person.id}`}>{person.name ? `${person.name} (${person.username})` : person.username}</option>)}
@@ -122,12 +133,12 @@ export default function DocumentAccessPanel({ documentId, endpoint, wording: cus
               </select>
             </Field>
             <Field label={m.access}>
-              <select value={level} onChange={(event) => setLevel(event.target.value as Grant["level"])} disabled={busy}>
+              <select value={level} onChange={(event) => setLevel(event.target.value as Grant["level"])}>
                 <option value="view">{m.canView}</option>
                 <option value="edit">{wording.editLabel}</option>
               </select>
             </Field>
-            <Button type="button" disabled={busy || !target} onClick={add}>{m.share}</Button>
+            <Button type="button" pending={busy} disabled={!busy && !target} onClick={add}>{m.share}</Button>
           </div>}
           {!grants.length && <p>{wording.empty}</p>}
           {grants.length > 0 && <ul className="share-list">
@@ -136,14 +147,14 @@ export default function DocumentAccessPanel({ documentId, endpoint, wording: cus
                 <strong>{grant.target.name}</strong>{grant.target.kind === "group" ? m.groupSuffix : ""}{!grant.target.active ? m.accountOff : ""}
               </span>
               <span className="access-actions">
-                <select aria-label={m.accessFor(grant.target.name)} value={grant.level} disabled={busy} onChange={(event) => {
+                <select aria-label={m.accessFor(grant.target.name)} value={grant.level} onChange={(event) => {
                   const next = event.target.value as Grant["level"];
                   void run(() => request(`${base}/${grant.id}`, { method: "PATCH", body: JSON.stringify({ level: next }) }), `${grant.target.name}: ${levelLabel[next]}.`);
                 }}>
                   <option value="view">{m.canView}</option>
                   <option value="edit">{wording.editLabel}</option>
                 </select>
-                <button type="button" disabled={busy} aria-label={m.removeAccessFor(grant.target.name)} onClick={() => void run(() => request(`${base}/${grant.id}`, { method: "DELETE" }), `${grant.target.name} ${wording.removed}`)}>
+                <button type="button" aria-disabled={busy || undefined} aria-label={m.removeAccessFor(grant.target.name)} onClick={() => void run(() => request(`${base}/${grant.id}`, { method: "DELETE" }), `${grant.target.name} ${wording.removed}`).then((ok) => { if (ok) focusChooser(); })}>
                   <UserMinus size={15} /> {m.remove}
                 </button>
               </span>

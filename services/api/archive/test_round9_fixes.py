@@ -369,7 +369,7 @@ def test_a_document_that_keeps_killing_its_worker_stops_after_three_tries():
 
 
 @pytest.mark.django_db
-def test_the_owner_can_retry_or_cancel_a_stalled_document_but_not_a_live_one():
+def test_the_owner_can_retry_or_cancel_a_stalled_document_and_only_cancel_a_live_one():
     owner = User.objects.create_user("owner", password=PASSWORD)
     now = timezone.now()
     live = _doc(owner, "live", status=Document.Status.PROCESSING, processing_started_at=now)
@@ -380,12 +380,12 @@ def test_the_owner_can_retry_or_cancel_a_stalled_document_but_not_a_live_one():
     _claim(other, timedelta(minutes=5))
     client = client_for(owner)
     items = {item["title"]: item for item in client.get("/api/jobs").json()["documents_waiting"]["items"]}
-    assert (items["live"]["stalled"], items["live"]["can_cancel"], items["live"]["can_retry"]) == (False, False, False)
+    # Cancel is offered at any time (round 10, L6); Retry only once the worker is known to have stopped.
+    assert (items["live"]["stalled"], items["live"]["can_cancel"], items["live"]["can_retry"]) == (False, True, False)
     assert (items["stalled"]["stalled"], items["stalled"]["can_cancel"], items["stalled"]["can_retry"]) == (True, True, True)
 
     assert client.post(f"/api/documents/{live.id}/retry").status_code == 409
     assert client.post(f"/api/documents/{live.id}/reprocess").status_code == 409
-    assert client.post(f"/api/documents/{live.id}/cancel-processing").status_code == 409
     with patch("archive.tasks.process_document.delay") as queued:
         assert client.post(f"/api/documents/{stalled.id}/retry").status_code == 202
     queued.assert_called_once_with(str(stalled.id))

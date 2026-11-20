@@ -182,6 +182,9 @@ test("the unsaved-changes question is modal: aria-modal, Tab stays inside, the f
   const keep = question.getByRole("button", { name: "Keep editing" });
   const discard = question.getByRole("button", { name: "Discard changes" });
   await expect(keep).toBeFocused();
+  // Round 10 added "Save changes" between the two.
+  await page.keyboard.press("Tab");
+  await expect(question.getByRole("button", { name: "Save changes" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(discard).toBeFocused();
   await page.keyboard.press("Tab");

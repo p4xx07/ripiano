@@ -22,7 +22,7 @@ from django.db.models import Exists, OuterRef, Q
 from django.db.models.functions import Substr
 from django.utils import timezone
 
-from .classification import _terms
+from .classification import _evidence, file_name_words
 from .models import Document, DocumentTag, FilingModel
 
 logger = logging.getLogger(__name__)
@@ -44,9 +44,12 @@ RETRAIN_COOLDOWN = timedelta(minutes=10)
 KINDS = ("correspondents", "document_types", "tags")
 
 
-def features(title, text, rank=None):
-    """The words a document is judged by. With a vocabulary rank, keep the most frequent words first."""
-    terms = _terms(f"{title} {text[:TEXT_CHARS]}")
+def features(title, text, rank=None, upload_words=frozenset()):
+    """The words a document is judged by. With a vocabulary rank, keep the most frequent words first.
+
+    upload_words are the words of the document's file names: in a title they describe the upload, not the document.
+    """
+    terms = _evidence(title, text[:TEXT_CHARS], upload_words)
     if rank is None:
         return terms
     return sorted((term for term in terms if term in rank), key=rank.__getitem__)[:MAX_TERMS_PER_DOCUMENT]
@@ -63,13 +66,14 @@ def _examples(owner_id):
     rows = list(
         has_manual_filing(owner_id).order_by("-created_at", "-id")[:MAX_DOCUMENTS]
         .annotate(text_start=Substr("extracted_text", 1, TEXT_CHARS))
-        .values("id", "title", "text_start", "correspondent_id", "correspondent_origin", "document_type_id", "document_type_origin")
+        .values("id", "title", "original_name", "split_parent__original_name", "text_start", "correspondent_id", "correspondent_origin", "document_type_id", "document_type_origin")
     )
+    upload_words = file_name_words(rows)
     manual, automatic = defaultdict(set), defaultdict(set)
     for document_id, tag_id, origin in DocumentTag.objects.filter(document_id__in=[row["id"] for row in rows]).values_list("document_id", "tag_id", "origin"):
         (manual if origin == DocumentTag.Origin.MANUAL else automatic)[document_id].add(str(tag_id))
     return [{
-        "terms": features(row["title"], row["text_start"]),
+        "terms": features(row["title"], row["text_start"], upload_words=upload_words[row["id"]]),
         "correspondents": str(row["correspondent_id"]) if row["correspondent_origin"] == Document.FilingOrigin.MANUAL and row["correspondent_id"] else None,
         "document_types": str(row["document_type_id"]) if row["document_type_origin"] == Document.FilingOrigin.MANUAL and row["document_type_id"] else None,
         "tags": manual.get(row["id"], set()),
@@ -384,7 +388,7 @@ def _load(owner_id):
     return model
 
 
-def predict(document, title, text, model=None):
+def predict(document, title, text, model=None, upload_words=frozenset()):
     """Return {kind: [(label id, probability)]} at or above the threshold, best first.
 
     Pass the first TEXT_CHARS characters of the text, as training does, so probabilities stay calibrated.
@@ -392,7 +396,7 @@ def predict(document, title, text, model=None):
     model = model or _load(document.owner_id)
     if model is None:
         return {}
-    terms = features(title, text, model["rank"])
+    terms = features(title, text, model["rank"], upload_words)
     if len(terms) < 2:
         return {}
     result = {}

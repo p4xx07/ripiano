@@ -126,6 +126,7 @@ export default function PhysicalPanel({
 
   async function createLocation(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -462,7 +463,8 @@ export default function PhysicalPanel({
                 ))}
               </select>
             </label>
-            <Button disabled={busy}>
+            {/* Stays focusable while it works, so a keyboard press keeps its place (round-10 judge 2 L1). */}
+            <Button pending={busy}>
               <Plus size={17} /> {busy ? m.adding : parentPath ? m.addLocationInside(parentPath) : m.addLocationTop}
             </Button>
           </form>

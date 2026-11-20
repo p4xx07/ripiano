@@ -35,11 +35,13 @@ MIDDLEWARE = [
     "archive.cache_headers.PrivateApiCacheMiddleware",
     "archive.api_language.ApiLanguageMiddleware",
     "archive.cache_headers.ApiNotFoundMiddleware",
+    "archive.cache_headers.ApiErrorMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "archive.api_tokens.ApiTokenMiddleware",
+    "archive.idempotency.IdempotencyMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -71,9 +73,11 @@ else:
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 12}},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    {"NAME": "archive.password_rules.ContainsUsernameValidator"},
+    {"NAME": "archive.password_rules.GuessablePatternValidator"},
 ]
 REST_FRAMEWORK = {"DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"]}
 
@@ -112,6 +116,8 @@ CELERY_TIMEZONE = "Europe/Rome"
 CELERY_TASK_DEFAULT_QUEUE = "celery"
 CELERY_TASK_ROUTES = {
     "archive.tasks.reclassify_owner": {"queue": "maintenance"},
+    # Stall detection and the cleanup after a stopped run must not wait behind the text recognition they watch.
+    "archive.tasks.reconcile_pending_documents": {"queue": "maintenance"},
     "archive.tasks.train_filing_model": {"queue": "maintenance"},
     "archive.tasks.train_filing_models": {"queue": "maintenance"},
     "archive.tasks.reclassify_filing_candidates": {"queue": "maintenance"},

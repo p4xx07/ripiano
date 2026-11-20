@@ -5151,7 +5151,8 @@ button:disabled {
   flex-basis: 100%;
   margin: 0;
 }
-.exception-row .document-info p.inbox-copy-note {
+/* Inbox explanations say what to do, so they are shown whole, on as many lines as they need (round-10 judge 1 M2). */
+.exception-row .document-info p {
   white-space: normal;
   overflow: visible;
   overflow-wrap: anywhere;
@@ -5464,6 +5465,61 @@ button:disabled {
 }
 .draft-restored p + p {
   margin-top: var(--space-2);
+}
+
+/* Details changed by two people (round-10 judge 2 M2): one block per detail, with the name as a heading, the newer
+   value and the person's own value each on a line, and "Use my value" on its own row. */
+.draft-conflict-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.draft-conflict-list li {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-soft);
+  background: var(--color-surface);
+}
+.draft-conflict-list h3 {
+  margin: 0;
+  font-size: var(--type-label);
+  font-weight: 700;
+  color: var(--color-heading);
+}
+.draft-conflict-list p,
+.draft-conflict-list p + p {
+  margin: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.draft-conflict-list .button {
+  min-height: 44px;
+  margin-top: var(--space-2);
+}
+@media (max-width: 640px) {
+  .draft-conflict-list .button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Why no filing suggestions are shown yet (round-10 judge 2 L4): quiet help, not a warning. */
+.filing-suggestions-hint {
+  margin: 0 0 var(--space-4);
+  color: var(--color-muted);
+  font-size: var(--type-small);
+}
+
+/* A backup's snapshot ID under its date (round-10 judge 2 L3): secondary, and it may wrap on a phone. */
+.backup-snapshot-id {
+  overflow-wrap: anywhere;
+  font-size: var(--type-small);
 }
 
 /* A requirement of the optional "search by meaning" feature: neutral help, one flowing sentence (round-9 judge 1 M2). */

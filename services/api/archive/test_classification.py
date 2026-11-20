@@ -154,8 +154,9 @@ def test_filing_suggestions_skip_existing_tags_cleared_types_and_foreign_or_tras
     client = Client()
     client.force_login(owner)
     endpoint = f"/api/documents/{target.id}/filing-suggestions"
-    # A trained-model lookup adds one bounded query to the original example-only path.
-    with django_assert_max_num_queries(9):
+    # A trained-model lookup adds one bounded query to the original example-only path; the file names behind the
+    # titles add two more (the scan this document was split from, and earlier versions of all examples at once).
+    with django_assert_max_num_queries(11):
         result = client.get(endpoint).json()
     assert result["tags"] == [] and result["correspondents"] == []
     assert [item["name"] for item in result["document_types"]] == ["Invoice"]

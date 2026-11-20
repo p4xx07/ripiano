@@ -2,6 +2,16 @@
 
 EXACT = {
     "Invalid credentials": "Credenziali non valide",
+    "A document's file disappeared from the media folder during the backup":
+        "Il file di un documento è sparito dalla cartella dei file durante il backup",
+    "This request is still being handled. Check whether it was saved before trying again":
+        "Questa richiesta è ancora in corso. Controlla se è stata salvata prima di riprovare",
+    "This Idempotency-Key was already used for a different request": "Questa Idempotency-Key è già stata usata per un'altra richiesta",
+    "Idempotency-Key must be 1 to 64 letters, digits, or symbols without spaces":
+        "Idempotency-Key deve avere da 1 a 64 lettere, cifre o simboli, senza spazi",
+    "Ripiano can't reach its database right now; try again in a moment": "Ripiano non riesce a raggiungere il suo database in questo momento; riprova tra poco",
+    "Ripiano ran into a problem with this request. Try again; the details are in the server log":
+        "Ripiano ha avuto un problema con questa richiesta. Riprova; i dettagli sono nel log del server",
     "This tag limits another agent's access; only a person can add or remove it": "Questa etichetta limita l'accesso di un altro agente; solo una persona può aggiungerla o rimuoverla",
     "Text recognition failed again, so the file is probably damaged. Download the original and open it on your computer, then re-scan it or save it again as PDF and upload the new copy.": "Il riconoscimento del testo non è riuscito di nuovo, quindi il file è probabilmente danneggiato. Scarica l'originale e aprilo sul computer, poi scansionalo di nuovo o salvalo di nuovo come PDF e carica la nuova copia.",
     "Text recognition failed for this file. Choose Retry OCR. If it fails again, the file may be damaged: open it on your computer, and re-scan it or save it again as PDF before uploading.": "Il riconoscimento del testo non è riuscito per questo file. Scegli Riprova l'OCR. Se non riesce di nuovo, il file potrebbe essere danneggiato: aprilo sul computer e scansionalo di nuovo o salvalo di nuovo come PDF prima di caricarlo.",
@@ -28,6 +38,18 @@ EXACT = {
     "Your password is not correct": "La password non è corretta",
     "Use a new password of at least 12 characters": "Usa una nuova password di almeno 12 caratteri",
     "Use a password of at least 12 characters": "Usa una password di almeno 12 caratteri",
+    "Use a password of at most 128 characters": "Usa una password di al massimo 128 caratteri",
+    "Your password cannot be mostly your username.": "La password non può essere fatta quasi solo del tuo nome utente.",
+    "Your password cannot be a repeated character or a row of keys.": "La password non può essere un carattere ripetuto o una fila di tasti.",
+    "Only a queued or processing document can be cancelled": "Si può annullare solo un documento in coda o in elaborazione",
+    "This password is too close to the username. Choose a different one": "Questa password è troppo simile al nome utente. Scegline un'altra",
+    "This password is on the list of commonly used passwords. Choose one that is harder to guess":
+        "Questa password è nell'elenco delle password più usate. Scegline una più difficile da indovinare",
+    "A password of only digits is too easy to guess. Add letters or words": "Una password di sole cifre è troppo facile da indovinare. Aggiungi lettere o parole",
+    "This password repeats the same few characters. Choose one that is harder to guess":
+        "Questa password ripete gli stessi pochi caratteri. Scegline una più difficile da indovinare",
+    "This password is a row of neighbouring keys or letters. Choose one that is harder to guess":
+        "Questa password è una fila di tasti o lettere vicini. Scegline una più difficile da indovinare",
     "Username and a password of at least 12 characters are required": "Servono un nome utente e una password di almeno 12 caratteri",
     "That username is taken": "Questo nome utente è già in uso",
     "Invalid setup key": "Chiave di configurazione non valida",
@@ -667,6 +689,10 @@ RUN_DETAILS = {
     "marked as needing action": "segnato come da gestire",
     "added a note": "aggiunta una nota",
     "queued webhook": "webhook in coda",
+    "skipped sharing (an agent made the change; share the document yourself if you want to)":
+        "condivisione non eseguita (la modifica è di un agente; condividi tu il documento, se vuoi)",
+    "skipped webhook (an agent made the change)": "webhook non inviato (la modifica è di un agente)",
+    "skipped email (an agent made the change)": "email non inviata (la modifica è di un agente)",
     "queued email": "email in coda",
     "shared with {0} (view)": "condiviso con {0} (visualizzazione)",
     "shared with {0} (edit)": "condiviso con {0} (modifica dei dettagli)",

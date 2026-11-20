@@ -110,7 +110,7 @@ def _run_json(run, request=None):
     from .api_language import run_detail
 
     return {"id": str(run.id), "workflow": run.workflow.name, "document": {"id": str(run.document_id), "title": run.document.title},
-            "trigger": run.trigger, "status": run.status, "detail": run_detail(request, run.detail), "created_at": run.created_at.isoformat()}
+            "trigger": run.trigger, "status": run.status, "held_back": run.held_back, "detail": run_detail(request, run.detail), "created_at": run.created_at.isoformat()}
 
 
 def _owned(model, owner, value, label):
@@ -290,7 +290,8 @@ def workflow_run_now(request, workflow_id):
         document = None
     if item is None or document is None:
         return JsonResponse({"error": "Workflow or document not found"}, status=404)
-    run = run_workflow(item, document, Workflow.Trigger.UPDATED)
+    # Run now is the owner's explicit choice for this document: nothing is held back for an agent-set value.
+    run = run_workflow(item, document, Workflow.Trigger.UPDATED, confirmed=True)
     if run is None:
         from .api_language import to_italian, wants_italian
 

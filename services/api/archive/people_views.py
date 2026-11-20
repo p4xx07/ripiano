@@ -8,7 +8,6 @@ import json
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
@@ -68,13 +67,9 @@ def _group_json(group, admin):
 
 
 def _password_error(password, user=None):
-    if not isinstance(password, str) or len(password) < 12:
-        return "Use a password of at least 12 characters"
-    try:
-        validate_password(password, user)
-    except ValidationError as exc:
-        return " ".join(exc.messages)
-    return None
+    from .password_rules import password_problem
+
+    return password_problem(password, user)
 
 
 @require_http_methods(["GET", "POST"])
@@ -109,7 +104,8 @@ def people(request):
         User.username_validator(username)
     except ValidationError:
         return JsonResponse({"error": "Use letters, numbers, and @ . + - _ in the username"}, status=400)
-    candidate = User(username=username)
+    # The name counts too: "Annamaria-Rossi" is no password for Annamaria Rossi.
+    candidate = User(username=username, first_name=str(body.get("name", "")).strip()[:150])
     error = _password_error(body.get("password"), candidate)
     if error:
         return JsonResponse({"error": error}, status=400)

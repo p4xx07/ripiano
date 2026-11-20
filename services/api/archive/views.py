@@ -398,6 +398,11 @@ def setup_owner(request):
     password = str(body.get("password", ""))
     if not username or len(password) < 12:
         return JsonResponse({"error": "Username and a password of at least 12 characters are required"}, status=400)
+    from .password_rules import password_problem
+
+    problem = password_problem(password, get_user_model()(username=username))
+    if problem:
+        return JsonResponse({"error": problem}, status=400)
     user = get_user_model().objects.create_superuser(username=username, password=password)
     login(request, user)
     return JsonResponse({"username": user.get_username()}, status=201)
@@ -591,6 +596,9 @@ def documents(request):
         # Preserve the owner/metadata filters before keyword matching so semantic-only hits obey them too.
         filtered_queryset = queryset
         if free_query:
+            # A plain archive number ("900011", or "ASN00042" as printed on the label) finds its document without asn:.
+            number = None if shared else re.fullmatch(rf"(?:{re.escape(settings.RIPIANO_BARCODE_ASN_PREFIX)}\s*)?(\d{{1,9}})", free_query.strip(), re.IGNORECASE)
+            asn_match = Q(asn=int(number[1])) if number else Q(pk__in=[])
             queryset = queryset.annotate(
                 tag_match=Exists(Tag.objects.filter(document_links__document_id=OuterRef("pk"), name__icontains=free_query)),
                 sticker_match=Exists(PhysicalCopy.objects.filter(document_id=OuterRef("pk"), sticker_code__icontains=free_query)) if not shared else Value(False, output_field=BooleanField()),
@@ -603,9 +611,9 @@ def documents(request):
                 queryset = queryset.annotate(
                     search_vector=vector,
                     search_score=Cast(SearchRank(vector, search_query) * 1000000, BigIntegerField()),
-                ).filter(Q(search_vector=search_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query) | Q(original_name__icontains=free_query))
+                ).filter(Q(search_vector=search_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query) | Q(original_name__icontains=free_query) | asn_match)
             else:
-                queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query) | Q(original_name__icontains=free_query))
+                queryset = queryset.filter(Q(title__icontains=free_query) | Q(extracted_text__icontains=free_query) | Q(action_note__icontains=free_query) | Q(tag_match=True) | Q(sticker_match=True) | Q(note_match=True) | Q(field_match=True) | Q(correspondent__name__icontains=free_query) | Q(document_type__name__icontains=free_query) | Q(original_name__icontains=free_query) | asn_match)
         hybrid = False
         semantic_ids = []
         eligible_for_hybrid = (view == "search" and sort == "relevance" and not shared and requested_view in (None, "documents")
@@ -1225,9 +1233,13 @@ def document_detail(request, document_id):
                 for tag_id in existing - selected:
                     DocumentTag.objects.filter(document=document, tag_id=tag_id).delete()
                     TagOverride.objects.get_or_create(document=document, tag_id=tag_id)
+                # A tag an agent added stays the agent's when a save merely lists it again with the others: only an
+                # explicit add (below, or the bulk action) makes it the person's own (round-10 review, M1).
+                by_agent = set(DocumentTag.objects.filter(document=document, origin=DocumentTag.Origin.MODEL).values_list("tag_id", flat=True))
                 for tag in chosen:
                     TagOverride.objects.filter(document=document, tag=tag).delete()
-                    DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
+                    if tag.id not in by_agent:
+                        DocumentTag.objects.update_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.MANUAL})
             if added_tag is not None:
                 TagOverride.objects.filter(document=document, tag=added_tag).delete()
                 DocumentTag.objects.update_or_create(document=document, tag=added_tag, defaults={"origin": DocumentTag.Origin.MANUAL})

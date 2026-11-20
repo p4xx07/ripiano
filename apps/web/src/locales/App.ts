@@ -160,7 +160,7 @@ export default defineMessages({
   privateAndYours: "Privato e tuo",
   footerBrand: "Ripiano · Documenti a casa",
   footerOriginals: "I file originali vengono conservati",
-  moreTags: (count: number) => `+${count} altre`,
+  moreTags: (count: number) => count === 1 ? "+1 altra" : `+${count} altre`,
   paperAwaitingLocation: "Copia cartacea in attesa di una posizione",
   paperMissing: (count: number) => count === 1 ? "Copia cartacea segnalata come mancante" : `${count} copie cartacee segnalate come mancanti`,
 });

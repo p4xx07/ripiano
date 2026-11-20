@@ -26,3 +26,20 @@ The MCP URL is shown on the token card. A compatible client must send `Authoriza
 Every signed-in person can create agents for their own archive under **Agents**; an agent only ever sees its creator's documents, and only that person sees its grants and activity. Creating an agent asks for your password, and changing your password revokes every agent (and every personal API token, public share link, and bundle; docs/DECISIONS.md D11), so a stolen session cannot leave a long-lived agent behind. An admin resetting your password, or turning your account off, does the same; turning the account on again does not bring old agents, tokens, or sessions back. Turning semantic search on or off stays with the archive owner.
 
 A tag used as an agent's document filter decides what that agent may read. To keep one agent from widening or narrowing another agent's view, an agent can never add or remove a tag that is the filter of another active agent; only a person can. Its own filter tag and ordinary tags are unaffected. Requests an agent was refused still name the document in the owner's activity log.
+
+## Workflows started by an agent's change
+
+An agent's tag, sender, or type change can make one of your workflows match. Such a run still does what stays inside your archive (tags, sender, type, fields, title, a note, a follow-up), but it never discloses the document: **sharing with people or groups, the webhook, and the email are held back** (docs/DECISIONS.md D12). Otherwise an agent that may only add tags could cause a private document to be shared or sent out.
+
+Exactly when something is held back:
+
+- **The run the agent's own change starts** ("when updated" workflows): always.
+- **Any later run, whoever or whatever starts it** — the daily pass of a scheduled workflow, your next edit of the document, a bulk change — **while the workflow's tag, sender, or type condition is met by a value an agent set.** Ripiano remembers who set each tag, sender, and type. Saving the document with its tag list unchanged, or editing its title, does not make the agent's tag yours.
+- What such a run files itself (tags it adds, a sender or type it sets) is marked as coming from an agent too, so a second workflow that matches on it is held back in the same way.
+
+What releases it:
+
+- **You set the value yourself:** add that tag to the document (the one-tap add, the bulk "add tag" action, or remove it and add it again), or choose the sender or type yourself. Your change starts "when updated" workflows as usual, now with nothing held back; a scheduled workflow completes on its next daily pass.
+- **Run now** on the workflow for that document: your explicit choice, nothing is held back.
+
+A held-back run does not use up the workflow's one-time webhook and email: they are sent once, with the first run that is allowed to send them. The note a workflow adds is still added only once. The workflow's run history says what was held back ("skipped sharing (an agent made the change; …)", "skipped webhook …", "skipped email …") and the API marks the run `held_back`; a run in which nothing else happened is listed as *skipped*. Nothing is sent later by itself. Workflows whose conditions do not involve an agent-set tag, sender, or type run for your own changes exactly as before.

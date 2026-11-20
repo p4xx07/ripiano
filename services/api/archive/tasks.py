@@ -2,7 +2,7 @@ import logging
 import os
 import subprocess
 import sys
-import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import timedelta
 
@@ -14,7 +14,7 @@ from django.utils import timezone
 from PIL import Image
 from pypdf import PdfReader
 
-from .backup import BackupError, backup_media_lock, create_snapshot
+from .backup import WORK_DIR, BackupError, backup_media_lock, create_snapshot, media_path_in_use
 from .browse_export import build_browse_tree, prune_old_browse_trees
 from .classification import apply_rules
 from .models import BackupRun, BrowseExportRun, Document, DocumentTag, FilingRule, ProcessingClaim, PurgeJob, TrashRetentionPolicy
@@ -77,7 +77,11 @@ HEARTBEAT_RETRY_SECONDS = 5
 STALE_AFTER = timedelta(minutes=2)
 # Interrupted this many times in a row, a document stops being retried by itself (it may be what kills the worker).
 MAX_INTERRUPTIONS = 3
-# A work directory older than this belongs to a run that was killed: no run lasts longer than the task time limit.
+# Every run works in <media>/.work/<its claim token>. The folder is on the media volume so the finished PDF can be
+# moved into place atomically, but it is never part of a backup (backup.WORK_DIR; judge 3 round 10, H1). A folder
+# whose claim is gone belongs to a run that finished, was killed and requeued, or was cancelled: it is removed at once.
+# Folders that earlier versions left directly in the media folder ("work-…", "tmp…") have no token to check; they
+# are removed once older than any run can last.
 WORK_DIR_PREFIX = "work-"
 WORK_DIR_MAX_AGE = timedelta(hours=2)
 SPLIT_JOURNAL = "split-parts.txt"
@@ -164,16 +168,20 @@ def _holds_claim(document, token):
     return ProcessingClaim.objects.filter(document_id=document.pk, token=token).exists()
 
 
-def _save_result(document, token, fields):
+def _save_result(document, token, fields, publish=None):
     """Save a run's result only if the run still holds the document; return whether it did.
 
     The check and the save happen under the document's row lock, the same lock Retry, Cancel, and the scheduler's
-    requeue take before they remove the claim. A run that lost its claim changes nothing.
+    requeue take before they remove the claim. A run that lost its claim changes nothing. ``publish`` moves the
+    finished PDF into place; it runs under the same lock, after the check, so a cancelled run never writes the
+    archive file (round-10 review, L1).
     """
     with transaction.atomic():
         status = Document.objects.select_for_update().filter(pk=document.pk).values_list("status", flat=True).first()
         if status != Document.Status.PROCESSING or not ProcessingClaim.objects.filter(document_id=document.pk, token=token).delete()[0]:
             return False
+        if publish is not None:
+            publish()
         document.save(update_fields=fields)
     return True
 
@@ -197,6 +205,20 @@ def process_document(document_id):
         _process_claimed(document, token)
 
 
+@contextmanager
+def _work_directory(media_root, token):
+    """This run's own folder, named after its claim token so leftovers of a killed run can be told apart."""
+    import shutil
+
+    work_dir = Path(media_root) / WORK_DIR / str(token)
+    shutil.rmtree(work_dir, ignore_errors=True)
+    work_dir.mkdir(parents=True)
+    try:
+        yield work_dir
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
 def _process_claimed(document, token):
     first_run = document.processed_at is None
 
@@ -208,8 +230,7 @@ def _process_claimed(document, token):
     unlocked_by = None
 
     try:
-        with tempfile.TemporaryDirectory(dir=media_root, prefix=WORK_DIR_PREFIX) as work_dir:
-            work_dir = Path(work_dir)
+        with _work_directory(media_root, token) as work_dir:
             input_file = original
             output_type = "pdfa"
             if document.original_mime.startswith("image/"):
@@ -237,7 +258,7 @@ def _process_claimed(document, token):
                         raise LockedPdfError(
                             "This PDF is password-protected. Add its password to a workflow’s “Unlock PDFs” action, then retry.")
             if settings.RIPIANO_BARCODES and (document.original_mime == "application/pdf" or document.original_mime.startswith("image/")):
-                apply_barcodes(document, original, input_file, work_dir)
+                apply_barcodes(document, original, input_file, work_dir, token=token)
             output_file = work_dir / "archive.pdf"
             subprocess.run(
                 [
@@ -261,51 +282,66 @@ def _process_claimed(document, token):
             if not _holds_claim(document, token):
                 logger.warning("Document %s was requeued or cancelled while this run was working; its result is discarded", document.id)
                 return
-            os.replace(output_file, archive)
-        document.archive_path = str(archive.relative_to(media_root))
-        document.extracted_text = text
-        if damaged:
-            # Keep the original and the readable pages, and file the document like any other, but flag it so the
-            # owner checks it against the paper (Needs attention) instead of offering a retry that cannot help
-            # (judge 1 round 8, M2).
-            logger.warning("Document %s is a damaged PDF; OCR recovered %s page(s)", document.id, page_count)
-            if document.processing_warning != "damaged_pdf":
-                document.processing_warning_reviewed_at = None
-            document.processing_warning = "damaged_pdf"
-        else:
-            document.processing_warning = ""
-            document.processing_warning_reviewed_at = None
-        document.status = Document.Status.READY
-        document.error = ""
-        document.processing_failures = document.processing_interruptions = 0
-        document.processed_at = timezone.now()
-        if not _save_result(document, token, ["archive_path", "extracted_text", "status", "error", "processed_at", "processing_failures",
-                                              "processing_interruptions", "processing_warning", "processing_warning_reviewed_at"]):
+            saved = _finish(document, token, text, damaged, page_count, output_file, archive, media_root)
+        if not saved:
             # Declared gone and requeued, or cancelled by the owner, while still working: the newer state stands,
             # and nothing is filed and no workflow runs for this late result (round-9 review, M1).
             logger.warning("Document %s was requeued or cancelled while this run was working; its result is discarded", document.id)
             return
     except Exception as exc:
-        if isinstance(exc, LockedPdfError):
-            logger.info("Document %s is a locked PDF with no matching workflow password", document.id)
-        else:
-            logger.exception("Document processing failed: %s", document.id)
-        if isinstance(exc, subprocess.CalledProcessError):
-            logger.error("OCR diagnostic: %s", (exc.stderr or "")[-2000:])
-        document.status = Document.Status.FAILED
-        document.processing_failures = min(document.processing_failures + 1, 1000)
-        # A warning from an earlier run no longer describes this file (judge round 8 review, L5).
-        document.processing_warning, document.processing_warning_reviewed_at = "", None
-        diagnostic = (exc.stderr or "").strip() if isinstance(exc, subprocess.CalledProcessError) else ""
-        fallback = PROCESSING_ERRORS["generic_again" if document.processing_failures > 1 else "generic"]
-        document.error = readable_error((diagnostic.splitlines()[-1] if diagnostic else str(exc)), fallback)[:500]
-        try:
-            if not _save_result(document, token, ["status", "error", "processing_failures", "processing_warning", "processing_warning_reviewed_at"]):
-                logger.warning("Document %s was requeued or cancelled while this run was working; its failure is not recorded", document.id)
-        except Exception:
-            # The database is away: the claim goes stale and the scheduler requeues the document.
-            logger.exception("Could not record the failed processing of %s", document.id)
+        _record_failure(document, token, exc)
         return
+    _after_processing(document, first_run, unlocked_by)
+
+
+def _finish(document, token, text, damaged, page_count, output_file, archive, media_root):
+    """Record a finished run: the archive PDF moves into place and the document becomes ready, or neither happens."""
+    document.archive_path = str(archive.relative_to(media_root))
+    document.extracted_text = text
+    if damaged:
+        # Keep the original and the readable pages, and file the document like any other, but flag it so the
+        # owner checks it against the paper (Needs attention) instead of offering a retry that cannot help
+        # (judge 1 round 8, M2).
+        logger.warning("Document %s is a damaged PDF; OCR recovered %s page(s)", document.id, page_count)
+        if document.processing_warning != "damaged_pdf":
+            document.processing_warning_reviewed_at = None
+        document.processing_warning = "damaged_pdf"
+    else:
+        document.processing_warning = ""
+        document.processing_warning_reviewed_at = None
+    document.status = Document.Status.READY
+    document.error = ""
+    document.processing_failures = document.processing_interruptions = 0
+    document.processed_at = timezone.now()
+    return _save_result(document, token, ["archive_path", "extracted_text", "status", "error", "processed_at", "processing_failures",
+                                          "processing_interruptions", "processing_warning", "processing_warning_reviewed_at"],
+                        publish=lambda: os.replace(output_file, archive))
+
+
+def _record_failure(document, token, exc):
+    if isinstance(exc, LockedPdfError):
+        logger.info("Document %s is a locked PDF with no matching workflow password", document.id)
+    else:
+        logger.exception("Document processing failed: %s", document.id)
+    if isinstance(exc, subprocess.CalledProcessError):
+        logger.error("OCR diagnostic: %s", (exc.stderr or "")[-2000:])
+    document.status = Document.Status.FAILED
+    document.processing_failures = min(document.processing_failures + 1, 1000)
+    # A warning from an earlier run no longer describes this file (judge round 8 review, L5).
+    document.processing_warning, document.processing_warning_reviewed_at = "", None
+    diagnostic = (exc.stderr or "").strip() if isinstance(exc, subprocess.CalledProcessError) else ""
+    fallback = PROCESSING_ERRORS["generic_again" if document.processing_failures > 1 else "generic"]
+    document.error = readable_error((diagnostic.splitlines()[-1] if diagnostic else str(exc)), fallback)[:500]
+    try:
+        if not _save_result(document, token, ["status", "error", "processing_failures", "processing_warning", "processing_warning_reviewed_at"]):
+            logger.warning("Document %s was requeued or cancelled while this run was working; its failure is not recorded", document.id)
+    except Exception:
+        # The database is away: the claim goes stale and the scheduler requeues the document.
+        logger.exception("Could not record the failed processing of %s", document.id)
+
+
+def _after_processing(document, first_run, unlocked_by):
+    """File a document that just became ready: rules, date and sender, learned filing, "added" workflows."""
     try:
         apply_rules(document)
     except Exception:
@@ -375,35 +411,74 @@ def _remove_split_leftovers(work_dir, media_root):
     originals = (media_root / "originals").resolve()
     for line in journal.read_text(encoding="utf-8").splitlines():
         path = (media_root / line.strip()).resolve()
-        if not line.strip() or originals not in path.parents or Document.objects.filter(original_path=line.strip()).exists():
+        if not line.strip() or originals not in path.parents or media_path_in_use(line.strip()):
             continue
         path.unlink(missing_ok=True)
 
 
-def remove_stale_work_dirs(now=None):
-    """Remove work directories left in the media folder by runs that were killed (round-9 review, L7)."""
-    import re
+def _remove_work_dir(entry, media_root):
     import shutil
+
+    _remove_split_leftovers(entry, media_root)
+    shutil.rmtree(entry, ignore_errors=True)
+
+
+def remove_stale_work_dirs(now=None):
+    """Remove the work folders of runs that are gone; return how many were removed.
+
+    Called every minute after stalled documents were requeued, and when a worker starts. A folder under ``.work`` is
+    named after its run's claim token: once that claim is gone (the run finished, was requeued as stalled, or was
+    cancelled) nothing may use the folder any more, so it is removed without waiting. A killed run whose claim is
+    still there keeps its folder for the few minutes until the stall is detected; backups skip it meanwhile.
+    """
+    import re
     import time
+    import uuid
 
     media_root = Path(settings.MEDIA_ROOT)
     cutoff = (now or time.time()) - WORK_DIR_MAX_AGE.total_seconds()
+    removed = 0
+
+    def old(entry):
+        return entry.stat().st_mtime <= cutoff
+
+    try:
+        # Listed before the claims are read: a run creates its claim before its folder, so a folder seen here
+        # whose claim is missing afterwards can only belong to a run that no longer holds its document.
+        current = [entry for entry in (media_root / WORK_DIR).iterdir()]
+    except OSError:
+        current = []
+    tokens = {}
+    for entry in current:
+        try:
+            tokens[entry] = uuid.UUID(entry.name)
+        except ValueError:
+            tokens[entry] = None
+    held = set(ProcessingClaim.objects.filter(token__in=[token for token in tokens.values() if token]).values_list("token", flat=True))
+    for entry, token in tokens.items():
+        try:
+            if entry.is_symlink() or not entry.is_dir():
+                continue
+            if token in held or (token is None and not old(entry)):
+                continue
+            _remove_work_dir(entry, media_root)
+            removed += 1
+        except Exception:  # noqa: BLE001 - housekeeping must never stop the queue from being refilled
+            logger.warning("Could not remove the work directory %s", entry.name, exc_info=True)
     try:
         entries = list(media_root.iterdir())
     except OSError:
-        return 0
-    removed = 0
+        return removed
     for entry in entries:
-        # "tmp" plus eight characters is what earlier versions named them.
+        # "tmp" plus eight characters is what the earliest versions named them.
         if not (entry.name.startswith(WORK_DIR_PREFIX) or re.fullmatch(r"tmp[a-z0-9_]{8}", entry.name)):
             continue
         try:
-            if entry.is_symlink() or not entry.is_dir() or entry.stat().st_mtime > cutoff:
+            if entry.is_symlink() or not entry.is_dir() or not old(entry):
                 continue
-            _remove_split_leftovers(entry, media_root)
-            shutil.rmtree(entry, ignore_errors=True)
+            _remove_work_dir(entry, media_root)
             removed += 1
-        except Exception:  # noqa: BLE001 - housekeeping must never stop the queue from being refilled
+        except Exception:  # noqa: BLE001
             logger.warning("Could not remove the old work directory %s", entry.name, exc_info=True)
     return removed
 
@@ -692,7 +767,7 @@ def _note(document, body):
         DocumentNote.objects.create(document=document, author_id=document.owner_id, body=body)
 
 
-def _split(document, pdf, ranges, journal=None):
+def _split(document, pdf, ranges, journal=None, token=None):
     """Create one document per page range, carrying over the source's filing. All or nothing."""
     from io import BytesIO
 
@@ -709,6 +784,10 @@ def _split(document, pdf, ranges, journal=None):
         with transaction.atomic():
             locked = Document.objects.select_for_update().get(pk=document.pk)
             if locked.trashed_at or locked.is_split_source:
+                return False
+            # Checked under the row lock that requeue and Cancel take: a run that lost its document must not write
+            # parts, because the cleanup of its work folder may already be removing them (judge 3 round 10, H1).
+            if token is not None and not _holds_claim(locked, token):
                 return False
             links = list(DocumentTag.objects.filter(document=locked).exclude(origin=DocumentTag.Origin.RULE))
             origin = DocumentEmail.objects.filter(document=locked).first()
@@ -747,7 +826,7 @@ def _split(document, pdf, ranges, journal=None):
     return True
 
 
-def apply_barcodes(document, original, pdf, work_dir):
+def apply_barcodes(document, original, pdf, work_dir, token=None):
     """Split at PATCHT or ASN starts, then assign this document's ASN and tags. Never fails processing."""
     from django.db import IntegrityError
 
@@ -759,6 +838,8 @@ def apply_barcodes(document, original, pdf, work_dir):
     except Exception:  # noqa: BLE001 - barcodes are optional; OCR continues
         logger.warning("Barcode scan failed for document %s", document.id, exc_info=True)
         return
+    if token is not None and not _holds_claim(document, token):
+        return  # Cancelled or requeued during the scan: this run no longer touches the document.
     # Only a document's first processing may split it: reprocessing must never hide a curated document.
     first_run = document.processed_at is None
     if first_run and document.original_mime == "application/pdf" and document.split_parent_id is None and not document.is_split_source:
@@ -767,13 +848,28 @@ def apply_barcodes(document, original, pdf, work_dir):
             if scan.truncated:
                 marker = "separator sheets" if scan.separators else "ASN barcodes"
                 _note(document, f"This scan has {marker}, but only the first {scan.scanned} pages are checked, so it was kept as one document.")
-            elif _split(document, pdf, ranges, journal=work_dir / SPLIT_JOURNAL):
+            elif _split(document, pdf, ranges, journal=work_dir / SPLIT_JOURNAL, token=token):
                 return
         elif scan.truncated and scan.asn_pages and not scan.separators:
             _note(document, f"This scan has an ASN barcode, but only the first {scan.scanned} pages are checked, so its archive number was not assigned.")
     if document.is_split_source:
         return
     from . import history
+
+    with transaction.atomic():
+        # Under the row lock Cancel and the requeue take: a run that lost its document adds no barcode tags, archive
+        # number, or notes to it (round-10 review, L1).
+        Document.objects.select_for_update().filter(pk=document.pk).first()
+        if token is not None and not _holds_claim(document, token):
+            return
+        _apply_barcode_filing(document, scan, history)
+
+
+def _apply_barcode_filing(document, scan, history):
+    from django.db import IntegrityError
+
+    from .barcodes import asn_split_ranges
+    from .models import Tag, TagOverride
 
     before = history.snapshot(document)
     suppressed = set(TagOverride.objects.filter(document=document).values_list("tag_id", flat=True))

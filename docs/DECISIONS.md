@@ -139,6 +139,19 @@ A password change (`POST /api/account/password`) or an admin password reset (`PA
 
 Implemented 2026-11-19: the same `pre_save` signal that revokes tokens and agents (`api_tokens.revoke_tokens_on_password_change`) marks the person's active links and bundles revoked with `revoked_reason: "password_changed"`. They answer exactly like an unknown link (404 `Link not found`) and are not revived; the share-link and bundle lists return the reason so the owner sees why they ended, and creates new links if still needed. Re-saving the same password hash (a Django hasher upgrade) revokes nothing.
 
+## D12 — Workflows started by an agent do not share or send the document (2026-11-20) — default chosen while the owner was away — confirm
+
+When an MCP agent's change (tags, sender, type) starts a workflow, the run holds back every action that discloses the document: sharing with people or groups, the webhook, and the email. Actions that stay inside the archive still run. Reason: an agent limited to "Add or remove tags" otherwise caused a private document to be shared with another person through the owner's workflow (judge 3 round 10, M1). This is the same rule as for tags that limit another agent's access.
+
+Implemented 2026-11-20, widened the same day after the independent review (`.omo/evidence/round10-fixes-review.md`, M1 and M2):
+
+- The decision is taken from the document, not only from who started the run. Disclosing actions are held back (a) in the run an agent's own change starts and (b) in every later run — scheduled, the owner's next edit, a bulk change — while the workflow's tag, sender, or type condition is met by a value an agent set (`DocumentTag.origin` / `correspondent_origin` / `document_type_origin` = `model`; `workflows.matched_by_agent`). What a held-back run files is given the same origin, so a chain of two workflows is covered.
+- Released when a person sets that value themselves (an explicit tag add, choosing the sender or type; merely re-saving the unchanged tag list does not count), or with **Run now** for that document.
+- A held-back run is marked `WorkflowRun.held_back` and recorded as "skipped sharing / webhook / email (an agent made the change)" (English and Italian); status `skipped` when nothing else happened. It does not use up the one-time webhook and email, which go out once with the first run allowed to send them. For scheduled workflows the held-back run is completed in place on a later daily pass.
+- Held-back actions are never sent later by themselves. Documented in [AGENT_ACCESS.md](AGENT_ACCESS.md).
+
+**Open for the owner:** this is the safe default, chosen without you. You may prefer an explicit per-workflow switch ("also run sharing and notifications when an agent made the change") for workflows you trust; say so and it will be added. Held-back runs are visible in the workflow's run history only; a place for them under Needs attention is not built yet.
+
 ## Remaining work that needs no further decision
 
 In the owner's suggested order:

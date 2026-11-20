@@ -2,6 +2,7 @@ import os
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_ready
 from django.conf import settings
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ripiano.settings")
@@ -66,3 +67,16 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=settings.RIPIANO_BACKUP_HOUR, minute=settings.RIPIANO_BACKUP_MINUTE),
     },
 }
+
+
+@worker_ready.connect
+def _remove_leftover_work_folders(**_kwargs):
+    """A worker that was killed left its temporary files behind; remove them as soon as a worker is back."""
+    import logging
+
+    try:
+        from archive.tasks import remove_stale_work_dirs
+
+        remove_stale_work_dirs()
+    except Exception:  # noqa: BLE001 - never stop a worker from starting; the scheduler cleans up every minute too
+        logging.getLogger(__name__).warning("Could not remove leftover work folders at start", exc_info=True)

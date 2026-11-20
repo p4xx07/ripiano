@@ -782,6 +782,9 @@ class WorkflowRun(models.Model):
     trigger = models.CharField(max_length=10, choices=Workflow.Trigger.choices)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPLIED)
     detail = models.CharField(max_length=500, blank=True)
+    # Sharing, the webhook, or the email was held back because an agent's change started the run or made the
+    # workflow match (docs/DECISIONS.md D12). Such a run does not use up the one-time webhook and email.
+    held_back = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -790,6 +793,20 @@ class WorkflowRun(models.Model):
             # "Added" and scheduled workflows act once per document; "updated" may run on every change.
             models.UniqueConstraint(fields=["workflow", "document", "trigger"], condition=~Q(trigger="updated"), name="workflow_runs_once"),
         ]
+
+
+class IdempotencyRecord(models.Model):
+    """The answer to a POST that carried an ``Idempotency-Key``, kept ten minutes (archive/idempotency.py)."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    key = models.CharField(max_length=64)
+    path = models.CharField(max_length=300)
+    status = models.PositiveSmallIntegerField(null=True)  # null while the first request is still running
+    body = models.TextField(blank=True)  # encrypted like mailbox passwords: an answer may hold a one-time token
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "key"], name="idempotency_key_once")]
 
 
 class AccountSecurity(models.Model):

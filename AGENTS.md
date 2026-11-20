@@ -8,7 +8,7 @@ Read these before starting work in this repository:
 
 Rules:
 
-- Work on branch `codex/initial-implementation`; never merge into `main`.
+- Work on branch `codex/initial-implementation`; merge into `main` only through a pull request when the owner asks.
 - Never add AI co-author or attribution lines to commits or PRs.
 - Each feature slice gets tests, README/parity updates, and an independent review recorded in `.omo/evidence/`.
 - Keep the Synology NAS light: if a change adds noticeable image size, RAM, or CPU load, report it to the owner before continuing.

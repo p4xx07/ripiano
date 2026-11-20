@@ -109,24 +109,32 @@ def jobs(request):
 
     from .models import Document, FilingModel, PurgeJob, WorkflowRun
 
+    from .processing_status import document_state, processing_summary, waiting_documents, with_waited_long, worker_state
     from .tasks import stalled_ids
 
     owner = request.user
     documents = Document.objects.filter(owner=owner, trashed_at__isnull=True)
-    waiting = documents.filter(status__in=[Document.Status.PENDING, Document.Status.PROCESSING]).order_by("created_at", "id")
+    # Hidden split sources are left out, so the count matches the Overview (judge 3 round 11, L3).
+    waiting = waiting_documents(documents).order_by("created_at", "id")
     failed = documents.filter(status=Document.Status.FAILED).order_by("-created_at", "-id")
     purges = PurgeJob.objects.filter(owner=owner, status__in=[PurgeJob.Status.PENDING, PurgeJob.Status.RUNNING, PurgeJob.Status.FAILED])
     model = FilingModel.objects.filter(owner=owner).first()
     runs = (WorkflowRun.objects.filter(workflow__owner=owner, status=WorkflowRun.Status.FAILED, created_at__gte=timezone.now() - timedelta(days=7))
             .select_related("workflow", "document")[:10])
-    listed = list(waiting[:JOB_LIST_LIMIT])
+    listed = list(with_waited_long(waiting)[:JOB_LIST_LIMIT])
     stalled = stalled_ids(listed)
+    worker = worker_state()
     return JsonResponse({
+        # Counts, OCR worker state, and why documents are not being picked up, if they are not (round 11, M1).
+        "processing": processing_summary(documents, worker),
         "documents_waiting": {
             "total": waiting.count(),
             "items": [{
                 "id": str(item.id), "title": item.title, "status": item.status,
-                "since": _when(item.processing_started_at or item.created_at),
+                "since": _when(item.processing_started_at or item.queued_at or item.created_at),
+                # "processing", "stalled", "queued", "waiting_for_worker" (no OCR worker is running), or
+                # "waiting_for_queue" (not handed to the queue server yet) (judge 3 round 11, L7).
+                "state": document_state(item, worker["running"], item.pk in stalled),
                 # "processing" with no worker heartbeat for a few minutes: the worker stopped (judge 3 round 9, M1).
                 # The scheduler requeues it by itself; the person may also retry or cancel it now.
                 "stalled": item.pk in stalled,

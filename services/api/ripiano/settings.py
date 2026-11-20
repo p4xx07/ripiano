@@ -125,6 +125,9 @@ CELERY_TASK_ROUTES = {
     "archive.tasks.backup_archive": {"queue": "maintenance"},
     "archive.tasks.build_browse_export": {"queue": "maintenance"},
     "archive.tasks.reconcile_browse_exports": {"queue": "maintenance"},
+    # Was missing: every 5 minutes it landed in the OCR queue, waiting behind scans or piling up while the OCR worker
+    # was stopped (round 11 fix check).
+    "archive.tasks.reconcile_backup_runs": {"queue": "maintenance"},
     "archive.tasks.purge_document": {"queue": "maintenance"},
     "archive.tasks.reconcile_purge_jobs": {"queue": "maintenance"},
     "archive.tasks.purge_expired_trash": {"queue": "maintenance"},

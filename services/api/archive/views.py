@@ -1046,16 +1046,17 @@ def bulk_reprocess_documents(request):
                 document.status = Document.Status.PENDING
                 document.error = ""
                 document.processing_started_at = None
-                document.save(update_fields=["status", "error", "processing_started_at"])
+                document.queued_at = None  # Marked again once the queue server has it.
+                document.save(update_fields=["status", "error", "processing_started_at", "queued_at"])
                 scheduled.append(str(document.id))
             else:
                 skipped.append(str(document.id))
     if scheduled:
-        from .tasks import process_document
+        from .tasks import queue_document
 
         for document_id in scheduled:
             try:
-                process_document.delay(document_id)
+                queue_document(document_id)
             except Exception:
                 logger.exception("Document processing queue unavailable; pending document will be reconciled: %s", document_id)
     return JsonResponse({"scheduled": len(scheduled), "skipped": len(skipped), "skipped_ids": skipped, "mode": mode})
@@ -1476,12 +1477,13 @@ def _restart_document_processing(request, document_id, allowed_statuses, conflic
         document.processing_started_at = None
         # A person's Retry starts the count of interruptions afresh; the stopped run loses its claim.
         document.processing_interruptions = 0
-        document.save(update_fields=["status", "error", "processing_started_at", "processing_interruptions"])
+        document.queued_at = None  # Marked again once the queue server has it.
+        document.save(update_fields=["status", "error", "processing_started_at", "processing_interruptions", "queued_at"])
         release_claim(document)
     try:
-        from .tasks import process_document
+        from .tasks import queue_document
 
-        process_document.delay(str(document.id))
+        queue_document(document.id)
     except Exception:
         logger.exception("Document processing queue unavailable; pending document will be reconciled")
     return JsonResponse(_document_json(document), status=202)

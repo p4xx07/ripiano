@@ -304,7 +304,10 @@ def _requeue_interrupted_processing():
     from .models import ProcessingClaim
 
     ProcessingClaim.objects.all().delete()
-    return Document.objects.filter(status=Document.Status.PROCESSING).update(status=Document.Status.PENDING, processing_started_at=None)
+    requeued = Document.objects.filter(status=Document.Status.PROCESSING).update(status=Document.Status.PENDING, processing_started_at=None)
+    # The snapshot's queue marks describe the old stack's queue server: send every waiting document again.
+    Document.objects.filter(status=Document.Status.PENDING).update(queued_at=None)
+    return requeued
 
 
 def _remove_unknown_media(copied, media_root):

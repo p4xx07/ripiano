@@ -1,6 +1,6 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Boxes, Camera, MapPin, Pencil, Plus, Printer, ScanLine, Trash2, X } from "lucide-react";
-import { ApiError, Location, PhysicalCopy, request } from "./api";
+import { ApiError, byLocationPath, Location, PhysicalCopy, request } from "./api";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/PhysicalPanel";
@@ -37,9 +37,12 @@ export default function PhysicalPanel({
   initialSticker,
   initialLocation,
   onOpenDocument,
+  documentOpen = false,
 }: {
   initialSticker: string;
   initialLocation: string;
+  /** Whether a document dialog is open over this screen; when it closes, the found sticker is loaded again. */
+  documentOpen?: boolean;
   onOpenDocument: (id: string) => void;
 }) {
   const m = useMessages(messages);
@@ -61,6 +64,14 @@ export default function PhysicalPanel({
   // says to type the code or open the QR with the phone's camera app, which opens Ripiano on the sticker.
   const cameraQr = useCameraQrSupport();
   const [scanning, setScanning] = useState(false);
+  // Moving or marking the copy found by its sticker, right on the result card (round-11 judge 3 M2, judge 2 M3).
+  const [foundTarget, setFoundTarget] = useState("");
+  const [copyBusy, setCopyBusy] = useState(false);
+  const foundRef = useRef<HTMLElement>(null);
+  // A sticker opened from its QR on a phone: bring the result and its Move control into view.
+  useEffect(() => {
+    if (found) foundRef.current?.scrollIntoView({ block: "nearest" });
+  }, [found?.copy.id]);
 
   const pathOf = (id: string) => locations.find((item) => item.id === id)?.path.join(" / ") ?? "";
   const parentPath = parent ? pathOf(parent) : "";
@@ -83,7 +94,7 @@ export default function PhysicalPanel({
   const load = useCallback(async () => {
     try {
       setLocations(
-        (await request<{ locations: Location[] }>("/api/locations")).locations,
+        byLocationPath((await request<{ locations: Location[] }>("/api/locations")).locations),
       );
     } catch (cause) {
       setError(
@@ -115,6 +126,7 @@ export default function PhysicalPanel({
       } else {
         const result = await request<Lookup>(`/api/stickers/${encodeURIComponent(normalized)}`);
         setFound(result);
+        setFoundTarget(result.copy.location_id ?? "");
         setNotice(m.stickerFound(result.document.title, result.copy.location_path.join(" / "), Boolean(result.copy.missing_at)));
       }
     } catch (cause) {
@@ -226,6 +238,86 @@ export default function PhysicalPanel({
     }
   }
 
+  /**
+   * Load the found sticker again, quietly: the copy may have been moved or marked in the document dialog, or on another
+   * device (independent review M1). Returns the fresh copy, or null when the sticker is gone (the error says why).
+   */
+  async function reloadFound(code: string, keepTarget = false): Promise<PhysicalCopy | null> {
+    try {
+      const fresh = await request<Lookup>(`/api/stickers/${encodeURIComponent(code)}`);
+      setFound((current) => current?.copy.sticker_code === code ? fresh : current);
+      if (!keepTarget) setFoundTarget(fresh.copy.location_id ?? "");
+      return fresh.copy;
+    } catch (cause) {
+      setFound((current) => current?.copy.sticker_code === code ? null : current);
+      setError(cause instanceof ApiError && cause.status === 404 ? m.stickerNotFound : cause instanceof Error ? cause.message : m.stickerNotFound);
+      return null;
+    }
+  }
+  // Closing the document dialog opened from the card: show what the dialog changed.
+  const dialogWasOpen = useRef(documentOpen);
+  useEffect(() => {
+    if (dialogWasOpen.current && !documentOpen && found) void reloadFound(found.copy.sticker_code);
+    dialogWasOpen.current = documentOpen;
+  }, [documentOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Same calls as the document's Paper copies section: PATCH /api/copies/<id> and /api/copies/<id>/status. */
+  async function moveFound() {
+    if (!found || copyBusy) return;
+    const code = found.copy.sticker_code;
+    const target = foundTarget;
+    setError("");
+    setNotice("");
+    setCopyBusy(true);
+    try {
+      // Compare with where the copy is now on the server, not with what the card showed earlier.
+      const copy = await reloadFound(code, true);
+      if (!copy) return;
+      if (copy.missing_at) {
+        setFoundTarget(copy.location_id ?? "");
+        return;
+      }
+      if (target === (copy.location_id ?? "")) {
+        setNotice(m.copyAlreadyThere(code));
+        return;
+      }
+      const moved = await request<PhysicalCopy>(`/api/copies/${copy.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ location_id: target || null }),
+      });
+      setFound((current) => current?.copy.id === moved.id ? { ...current, copy: moved } : current);
+      setFoundTarget(moved.location_id ?? "");
+      setNotice(moved.location_id ? m.copyMovedTo(moved.sticker_code, moved.location_path.join(" / ")) : m.copyMovedNowhere(moved.sticker_code));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.moveError);
+      // Refused (for example marked missing meanwhile) or gone: show the copy as it is now.
+      if (cause instanceof ApiError && (cause.status === 409 || cause.status === 404)) await reloadFound(code);
+    } finally {
+      setCopyBusy(false);
+    }
+  }
+
+  async function setFoundMissing(missing: boolean) {
+    if (!found || copyBusy) return;
+    setCopyBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const changed = await request<PhysicalCopy>(`/api/copies/${found.copy.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ missing }),
+      });
+      setFound((current) => current?.copy.id === changed.id ? { ...current, copy: changed } : current);
+      setFoundTarget(changed.location_id ?? "");
+      setNotice(missing ? m.copyMarkedMissing(changed.sticker_code) : m.copyMarkedFound(changed.sticker_code));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.statusError);
+      if (cause instanceof ApiError && (cause.status === 409 || cause.status === 404)) await reloadFound(found.copy.sticker_code);
+    } finally {
+      setCopyBusy(false);
+    }
+  }
+
   async function loadMoreContents(kind: "present" | "missing") {
     const location = foundLocation;
     if (!location || loadingContents) return;
@@ -315,22 +407,51 @@ export default function PhysicalPanel({
             )}
           </div>
           {found && (
-            <div className="sticker-result">
+            <section ref={foundRef} className="sticker-result" aria-labelledby="sticker-result-title">
               <div className="sticker-code">{found.copy.sticker_code}</div>
-              <h3>{found.document.title}</h3>
+              <h3 id="sticker-result-title">{found.document.title}</h3>
               {found.copy.missing_at && <p className="copy-missing-label">{m.copyMissing}</p>}
               <p>
                 <MapPin size={16} />{" "}
                 {found.copy.missing_at ? m.lastKnown : ""}{found.copy.location_path.join(" / ") ||
                   m.notAssigned}
               </p>
+              {/* The usual next step after scanning a sticker: put the paper somewhere else, here and now. */}
+              {found.copy.missing_at ? (
+                <p className="sticker-result-hint">{m.markFoundFirst}</p>
+              ) : (
+                <form className="copy-move sticker-result-move" onSubmit={(event) => { event.preventDefault(); void moveFound(); }}>
+                  <select
+                    aria-label={m.moveCopyTo(found.copy.sticker_code)}
+                    value={foundTarget}
+                    disabled={copyBusy}
+                    onChange={(event) => setFoundTarget(event.target.value)}
+                  >
+                    <option value="">{m.noLocation}</option>
+                    {locations.map((location) => (
+                      <option key={location.id} value={location.id}>{location.path.join(" / ")}</option>
+                    ))}
+                  </select>
+                  <Button pending={copyBusy} aria-label={m.moveCopyButton(found.copy.sticker_code)}>{m.move}</Button>
+                </form>
+              )}
+              <div className="copy-actions sticker-result-actions">
+                <button type="button" aria-disabled={copyBusy || undefined}
+                  aria-label={found.copy.missing_at ? m.markFoundFor(found.copy.sticker_code) : m.markMissingFor(found.copy.sticker_code)}
+                  onClick={() => void setFoundMissing(!found.copy.missing_at)}>
+                  {found.copy.missing_at ? m.markFound : m.markMissing}
+                </button>
+                <a href={`/api/copies/${found.copy.id}/label`} target="_blank" rel="noreferrer" aria-label={m.printStickerFor(found.copy.sticker_code)}>
+                  <Printer size={16} aria-hidden="true" /> {m.printSticker}
+                </a>
+              </div>
               <Button
                 variant="secondary"
                 onClick={() => onOpenDocument(found.document.id)}
               >
                 {m.openDocument} <ArrowRight size={16} />
               </Button>
-            </div>
+            </section>
           )}
           {foundLocation && <div className="sticker-result location-result">
             <div className="sticker-code">{foundLocation.location.sticker_code}</div>

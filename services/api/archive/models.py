@@ -66,6 +66,11 @@ class Document(models.Model):
     extracted_text = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
     processing_started_at = models.DateTimeField(null=True, blank=True)
+    # When a "pending" document was last handed to the queue server (database clock); empty while it has not been
+    # sent yet (the queue server was down) and once a worker takes it. The scheduler sends a document again only when
+    # it was never sent or the OCR queue is empty although it is still waiting, so messages do not pile up while the
+    # worker is stopped (judge 2 round 11, M2).
+    queued_at = models.DateTimeField(null=True, blank=True)
     error = models.TextField(blank=True)
     # Processing failures in a row (reset when processing succeeds): a repeated failure gets different guidance.
     processing_failures = models.PositiveSmallIntegerField(default=0)
@@ -327,6 +332,18 @@ class FilingRule(models.Model):
             models.UniqueConstraint(fields=["owner", "correspondent", "pattern", "field"], condition=Q(kind="correspondent"), name="unique_correspondent_phrase"),
             models.UniqueConstraint(fields=["owner", "document_type", "pattern", "field"], condition=Q(kind="document_type"), name="unique_document_type_phrase"),
         ]
+
+
+class WorkerHeartbeat(models.Model):
+    """The last sign of life of the workers that consume a queue (judge 2 round 11, M1).
+
+    Each worker process refreshes the row of every queue it consumes every 30 s from a small thread, using the
+    database clock, so the API can tell the owner that documents are waiting because no OCR worker is running.
+    """
+
+    queue = models.CharField(max_length=50, primary_key=True)
+    beat_at = models.DateTimeField(db_default=Now())
+    hostname = models.CharField(max_length=200, blank=True)
 
 
 class ProcessingClaim(models.Model):

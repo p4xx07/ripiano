@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, Copy, Link2 } from "lucide-react";
-import { request } from "./api";
+import { request, formatDate } from "./api";
 import { Button, Field } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/BundlePanel";
@@ -96,7 +96,7 @@ export default function BundlePanel({ selectedIds }: { selectedIds: string[] }) 
             {bundles.filter((item) => item.active).map((item) => (
               <li key={item.id}>
                 <span>
-                  <strong>{item.title}</strong> · {item.status === "building" ? m.preparing : item.status === "failed" ? m.failed : m.downloaded(item.downloads)} · {m.expires(new Date(item.expires_at).toLocaleDateString())}
+                  <strong>{item.title}</strong> · {item.status === "building" ? m.preparing : item.status === "failed" ? m.failed : m.downloaded(item.downloads)} · {m.expires(formatDate(item.expires_at))}
                   <small className="bundle-documents">{item.documents.map((document) => document.title).join(", ")}</small>
                 </span>
                 <Button type="button" variant="secondary" disabled={busy} onClick={() => void revoke(item)} aria-label={m.revokeLabel(item.title)}>{m.revoke}</Button>

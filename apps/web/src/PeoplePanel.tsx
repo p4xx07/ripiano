@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { KeyRound, Plus, RotateCcw, Trash2, UserPlus, Users } from "lucide-react";
-import { ApiError, isPasswordRefusal, People, Person, PersonGroup, request } from "./api";
+import { ApiError, formatDate, isPasswordRefusal, People, Person, PersonGroup, request } from "./api";
 import { Button, Field, tooShortMessage, useFieldError } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/PeoplePanel";
@@ -103,7 +103,7 @@ export default function PeoplePanel({ currentUsername }: { currentUsername: stri
         {data.people.map((person) => <li key={person.id} className={person.is_active ? "" : "person-off"}>
           <div className="person-head">
             <strong>{person.name || person.username}</strong>
-            <small>{person.name ? `${person.username} · ` : ""}{person.is_admin ? m.admin : m.member}{person.is_active ? "" : m.accountOff}{person.last_login ? m.lastSignedIn(new Date(person.last_login).toLocaleDateString()) : m.neverSignedIn}</small>
+            <small>{person.name ? `${person.username} · ` : ""}{person.is_admin ? m.admin : m.member}{person.is_active ? "" : m.accountOff}{person.last_login ? m.lastSignedIn(formatDate(person.last_login)) : m.neverSignedIn}</small>
           </div>
           {data.groups.length > 0 && <fieldset className="person-groups">
             <legend>{m.groups}</legend>

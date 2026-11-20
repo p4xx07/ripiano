@@ -128,6 +128,7 @@ export default defineMessages({
   checkPages: "Check pages",
   partlyReadable: "Only part of this file could be read. Open it to check the pages.",
   processing: "Processing",
+  waiting: "Waiting",
   retryNamed: (name: string) => `Retry OCR for ${name}`,
   stalledRow: "Taking longer than usual. Processing was interrupted and will be tried again by itself.",
   stalledAnnounce: (count: number) => count === 1
@@ -341,7 +342,7 @@ export default defineMessages({
   type: "Tipo:",
   viaTelegram: "tramite Telegram",
   scannedAndroid: "scansionato su Android",
-  fromNas: "dalla cartella NAS",
+  fromNas: "dalla cartella del NAS",
   note: "Nota",
   sticker: "Adesivo",
   customField: "Campo personalizzato",
@@ -354,6 +355,7 @@ export default defineMessages({
   checkPages: "Controlla le pagine",
   partlyReadable: "Solo una parte di questo file è leggibile. Aprilo per controllarne le pagine.",
   processing: "In elaborazione",
+  waiting: "In attesa",
   retryNamed: (name: string) => `Riprova l'OCR di ${name}`,
   stalledRow: "Ci vuole più del solito. L'elaborazione si è interrotta e verrà ripetuta da sola.",
   stalledAnnounce: (count: number) => count === 1

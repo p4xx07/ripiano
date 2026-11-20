@@ -719,14 +719,22 @@ test("Italian: an existing type typed again is chosen and announced", async ({ p
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
   await signIn(page, true);
   await mockDocument(page);
-  await page.route("**/api/document-types", (route: Route) => route.request().method() === "GET"
-    ? route.fulfill({ json: { document_types: [{ ...EXISTING_TYPE, name: "Fattura" }] } }) : route.fallback());
+  // The create request is faked too, so this test can never add a real type to the account.
+  let creates = 0;
+  await page.route("**/api/document-types", (route: Route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { document_types: [{ ...EXISTING_TYPE, name: "Fattura" }] } });
+    creates += 1;
+    return route.fulfill({ status: 409, json: { error: "Esiste già un tipo con questo nome" } });
+  });
   const dialog = await openFake(page);
+  // Wait for the type list, so the typed name is compared with it (the test was flaky when Enter came first).
+  await expect(dialog.locator(`#detail-document-type option[value="${EXISTING_TYPE.id}"]`)).toHaveCount(1);
   await dialog.locator("#detail-add-type").click();
   await dialog.locator("#detail-new-type").fill("fattura");
   await page.keyboard.press("Enter");
   await expect(dialog.locator("p.visually-hidden[role=status]")).toHaveText("Il tipo Fattura esiste già ed è stato scelto. Salva le modifiche per tenerlo su questo documento.");
   await expect(dialog.locator("#detail-document-type")).toHaveValue(EXISTING_TYPE.id);
+  expect(creates).toBe(0);
 });
 
 // Review of the H2 fix (M-1, L-4): an upload still running when the person on this device changes sends nothing more,

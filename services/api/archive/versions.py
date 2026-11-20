@@ -126,7 +126,7 @@ def add_version(document_id, owner, upload, note, *, expected_version=None, expe
 
     Active share links are revoked: they must never start serving different content.
     """
-    from .tasks import process_document
+    from .tasks import queue_document
 
     try:
         path, mime, digest, size = save_original(upload)
@@ -152,15 +152,16 @@ def add_version(document_id, owner, upload, note, *, expected_version=None, expe
             document.version_created_at = timezone.now()
             document.status = Document.Status.PENDING
             document.error = ""
+            document.queued_at = None  # Marked again once the queue server has it.
             document.save(update_fields=["original_name", "original_path", "original_mime", "original_sha256", "original_size",
-                                         "version_number", "version_note", "version_created_at", "status", "error"])
+                                         "version_number", "version_note", "version_created_at", "status", "error", "queued_at"])
             from . import history
 
             history.log(document, history.Action.VERSION_ADDED, owner,
                         changes=[{"field": "version", "from": str(previous_number), "to": str(document.version_number)}])
             document.revoked_shares = ShareLink.objects.filter(document=document, revoked_at__isnull=True, expires_at__gt=timezone.now()).update(revoked_at=timezone.now())
             document.revoked_shares += revoke_bundles_containing([document.id])
-            transaction.on_commit(lambda: process_document.delay(str(document.id)), robust=True)
+            transaction.on_commit(lambda: queue_document(document.id), robust=True)
     except Exception:
         _media(path).unlink(missing_ok=True)
         raise
@@ -251,7 +252,7 @@ def edit_pages(document, owner, order, rotations, *, accept_signature_loss, expe
 def split_pages(document, owner, groups, rotations=None):
     """Create new documents from groups of 0-based pages (with optional rotations). The source is unchanged."""
     from .ingestion import ingest_document
-    from .tasks import process_document
+    from .tasks import queue_document
 
     reader, _, _ = _reader(document)
     count = len(reader.pages)
@@ -266,7 +267,7 @@ def split_pages(document, owner, groups, rotations=None):
                 part = ingest_document(owner, File(BytesIO(_new_pdf(reader, group, rotations)), name=f"{Path(document.original_name).stem}-{number}.pdf"),
                                        title=f"{document.title} ({number}/{len(groups)})", queue=False)
                 created.append(part)
-                transaction.on_commit(lambda part_id=str(part.id): process_document.delay(part_id), robust=True)
+                transaction.on_commit(lambda part_id=str(part.id): queue_document(part_id), robust=True)
     except InvalidDocument as exc:
         for part in created:
             _media(part.original_path).unlink(missing_ok=True)

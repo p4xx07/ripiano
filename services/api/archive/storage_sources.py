@@ -298,10 +298,10 @@ def run(source, backend=None, now=None):
                             document = ingest_document(source.owner, File(handle, name=entry.name), source=document_source(source),
                                                        source_ref=document_ref, queue=False)
                             _file(document, source)
-                        from .tasks import process_document
+                        from .tasks import queue_document
 
                         try:
-                            process_document.delay(str(document.id))
+                            queue_document(document.id)
                         except Exception:  # noqa: BLE001 - the pending document is reconciled later
                             logger.warning("Queue unavailable; document %s will be reconciled", document.id)
                 except InvalidDocument as error:

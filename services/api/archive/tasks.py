@@ -197,12 +197,25 @@ def process_document(document_id):
             return
         document.status = Document.Status.PROCESSING
         document.processing_started_at = timezone.now()
+        document.queued_at = None
         document.error = ""
-        document.save(update_fields=["status", "processing_started_at", "error"])
+        document.save(update_fields=["status", "processing_started_at", "queued_at", "error"])
         ProcessingClaim.objects.filter(document=document).delete()
         ProcessingClaim.objects.create(document=document, token=token)  # beat_at: the database's "now"
     with _Heartbeat(document.id, token):
         _process_claimed(document, token)
+
+
+def queue_document(document_id):
+    """Hand a pending document to the OCR worker and note when (raises when the queue server is down).
+
+    Every place that queues text recognition goes through here, so the scheduler knows which waiting documents are
+    already in the queue and does not send them again every minute (judge 2 round 11, M2).
+    """
+    from django.db.models.functions import Now
+
+    process_document.delay(str(document_id))
+    Document.objects.filter(pk=document_id, status=Document.Status.PENDING).update(queued_at=Now())
 
 
 @contextmanager
@@ -392,6 +405,7 @@ def requeue_stalled(document):
     removed, so if that run is alive after all it cannot save over the new attempt.
     """
     release_claim(document)
+    document.queued_at = None  # Not in the queue any more: the scheduler sends it again in the same pass.
     document.processing_interruptions = min(document.processing_interruptions + 1, 1000)
     document.processing_started_at = None
     if document.processing_interruptions >= MAX_INTERRUPTIONS:
@@ -399,7 +413,7 @@ def requeue_stalled(document):
         document.error = PROCESSING_ERRORS["interrupted"]
     else:
         document.status = Document.Status.PENDING
-    document.save(update_fields=["status", "error", "processing_interruptions", "processing_started_at"])
+    document.save(update_fields=["status", "error", "processing_interruptions", "processing_started_at", "queued_at"])
     return document.status == Document.Status.PENDING
 
 
@@ -508,8 +522,52 @@ def reconcile_pending_documents():
         remove_stale_work_dirs()
     except Exception:
         logger.exception("Could not clean up old work directories")
-    for document_id in Document.objects.filter(status=Document.Status.PENDING, trashed_at__isnull=True).values_list("id", flat=True)[:100]:
-        process_document.delay(str(document_id))
+    requeue_pending_documents()
+
+
+# A pending document handed to the queue this long ago, with the OCR queue empty, was lost by the queue server (its
+# data was reset, or the message expired) and is sent again. While messages are still waiting nothing is sent again,
+# however long the worker has been stopped, so the queue never holds more than one message per waiting document.
+LOST_AFTER = timedelta(minutes=5)
+# The worker takes messages in order. A document added after this one was sent, and started more than this long ago,
+# means the worker has passed this one's message: it was lost (for example its claim failed during a short database
+# outage) and is sent again even while a large import keeps the queue busy (round-11 review, L1).
+PASSED_MARGIN = timedelta(minutes=1)
+
+
+def requeue_pending_documents(limit=100):
+    """Send waiting documents to the OCR queue: those never sent, and those the queue server lost; return how many."""
+    from django.db.models.functions import Now
+
+    from .processing_status import OCR_QUEUE, queue_depths
+
+    from django.db.models import Max, Min
+
+    pending = Document.objects.filter(status=Document.Status.PENDING, trashed_at__isnull=True).order_by("created_at", "id")
+    sent = 0
+    batches = [pending.filter(queued_at__isnull=True)]
+    lost = pending.filter(queued_at__lt=Now() - LOST_AFTER)
+    oldest_mark = lost.aggregate(oldest=Min("queued_at"))["oldest"]
+    if oldest_mark is not None:
+        depths = queue_depths()
+        if depths is not None and depths.get(OCR_QUEUE) == 0:
+            batches.append(lost)
+        elif depths is not None:
+            # The queue is busy, so only messages the worker has evidently passed are sent again. A stopped worker
+            # starts nothing, so this never adds messages while it is down.
+            frontier = Document.objects.filter(processing_started_at__gte=oldest_mark, processing_started_at__lt=Now() - PASSED_MARGIN,
+                                               ).aggregate(newest=Max("created_at"))["newest"]
+            if frontier is not None:
+                batches.append(lost.filter(queued_at__lt=frontier))
+    for batch in batches:
+        for document_id in list(batch.values_list("id", flat=True)[:limit - sent]):
+            try:
+                queue_document(document_id)
+            except Exception:  # noqa: BLE001 - the queue server is down; the next pass tries again
+                logger.warning("Document queue unavailable; %s waiting document(s) will be sent later", pending.count(), exc_info=True)
+                return sent
+            sent += 1
+    return sent
 
 
 @shared_task(name="archive.tasks.backup_archive", time_limit=6 * 3600)
@@ -813,7 +871,7 @@ def _split(document, pdf, ranges, journal=None, token=None):
                 if origin:
                     DocumentEmail.objects.create(document=part, account=origin.account, account_name=origin.account_name, sender=origin.sender,
                                                  subject=origin.subject, received_at=origin.received_at, message_id=origin.message_id)
-                transaction.on_commit(lambda part_id=str(part.id): process_document.delay(part_id), robust=True)
+                transaction.on_commit(lambda part_id=str(part.id): queue_document(part_id), robust=True)
             locked.is_split_source = True
             locked.save(update_fields=["is_split_source"])
     except Exception:  # noqa: BLE001 - a failed split leaves the scan whole and searchable

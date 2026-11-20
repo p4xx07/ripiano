@@ -36,7 +36,8 @@ const empty: Draft = {
 const TITLE_PLACEHOLDERS = ["{correspondent}", "{document_type}", "{date}", "{year}", "{month}", "{day}", "{added_date}", "{added_year}",
   "{added_month}", "{added_day}", "{original_filename}", "{title}", "{asn}", "{tag}", "{source}"];
 type M = typeof messages.en;
-const sourcesFor = (m: M): Record<string, string> => ({ web: m.sourceWeb, android: m.sourceAndroid, telegram: m.sourceTelegram, folder: m.sourceFolder, email: m.sourceEmail, s3: m.sourceS3 });
+const sourcesFor = (m: M): Record<string, string> => ({ web: m.sourceWeb, android: m.sourceAndroid, telegram: m.sourceTelegram, folder: m.sourceFolder, email: m.sourceEmail, s3: m.sourceS3,
+  webdav: m.sourceWebdav, gdrive: "Google Drive", onedrive: "OneDrive", dropbox: "Dropbox" });
 const triggersFor = (m: M): Record<Trigger, string> => ({ added: m.triggerAdded, updated: m.triggerUpdated, scheduled: m.triggerScheduled });
 const dateFieldsFor = (m: M): Record<DateField, string> => ({ created: m.dateCreated, document_date: m.dateDocument, action_due_date: m.dateActionDue });
 const recipesFor = (m: M): { label: string; icon: typeof TagIcon; draft: Partial<Draft> }[] => [
@@ -58,11 +59,13 @@ function fieldValueText(entry: FieldValue, names: Names, m: M) {
 function describe(flow: Flow, all: Names, m: M) {
   const names = all.items;
   const sources = sourcesFor(m);
+  const inSentence: Record<string, string> = { web: m.fromWeb, android: m.fromAndroid, telegram: m.fromTelegram, folder: m.fromFolder,
+    email: m.fromEmail, s3: m.fromS3, webdav: m.fromWebdav };
   const when = flow.trigger === "scheduled"
     ? m.whenScheduled(Math.abs(flow.schedule_days), flow.schedule_days < 0, dateFieldsFor(m)[flow.schedule_field])
     : triggersFor(m)[flow.trigger].replace("When ", "when ");
   const conditions = [
-    flow.filter_sources.length ? m.condFrom(flow.filter_sources.map((item) => sources[item] ?? item)) : "",
+    flow.filter_sources.length ? m.condFrom(flow.filter_sources.map((item) => inSentence[item] ?? sources[item] ?? item)) : "",
     flow.filter_text ? m.condMentions(flow.filter_text) : "",
     flow.filter_filename ? m.condFileName(flow.filter_filename) : "",
     flow.filter_tag_id ? m.condTagged(names.get(flow.filter_tag_id) ?? "…") : "",

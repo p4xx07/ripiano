@@ -15,6 +15,14 @@ export default defineMessages({
   stalledAnnounce: (count: number) => count === 1
     ? "One document is taking longer than usual. It was interrupted and will be tried again by itself; you can also retry or cancel it."
     : `${count} documents are taking longer than usual. They were interrupted and will be tried again by themselves; you can also retry or cancel them.`,
+  stalledNoWorker: (when: string) => `Taking longer than usual (started ${when}). It was interrupted; it is tried again once text recognition is running again.`,
+  stalledAnnounceNoWorker: (count: number) => count === 1
+    ? "One document was interrupted. It is tried again once text recognition is running again."
+    : `${count} documents were interrupted. They are tried again once text recognition is running again.`,
+  waitingForWorker: (when: string) => `${when ? `Waiting since ${when}` : "Waiting"}: text recognition is not running`,
+  waitingForQueue: (when: string) => `${when ? `Waiting since ${when}` : "Waiting"} for the queue server`,
+  problemWorker: (since: string, lastSeen: string, owner: boolean) => `${since ? `Documents have been waiting since ${since}` : "Documents are waiting"}: text recognition is not running${lastSeen ? ` (last seen ${lastSeen})` : " (it has not reported yet)"}. ${owner ? "Start the Ripiano worker container again; the waiting documents are then processed by themselves." : "Ask the archive owner to start it again; the waiting documents are then processed by themselves."}`,
+  problemQueue: (since: string) => `${since ? `Documents have been waiting since ${since}` : "Documents are waiting"}: the queue server cannot be reached. They are sent as soon as it is back.`,
   retryNowLabel: (title: string) => `Retry processing of ${title} now`,
   cancelLabel: (title: string) => `Cancel processing of ${title}`,
   cancelled: (title: string) => `“${title}” was taken out of the queue. It stays in your archive; choose Retry OCR to process it later.`,
@@ -51,6 +59,14 @@ export default defineMessages({
   stalledAnnounce: (count: number) => count === 1
     ? "Un documento richiede più tempo del solito. L'elaborazione si è interrotta e verrà ripetuta da sola; puoi anche riprovare o annullarla."
     : `${count} documenti richiedono più tempo del solito. L'elaborazione si è interrotta e verrà ripetuta da sola; puoi anche riprovare o annullarla.`,
+  stalledNoWorker: (when: string) => `Ci vuole più del solito (iniziato il ${when}). L'elaborazione si è interrotta; verrà ripetuta quando il riconoscimento del testo sarà di nuovo attivo.`,
+  stalledAnnounceNoWorker: (count: number) => count === 1
+    ? "L'elaborazione di un documento si è interrotta. Verrà ripetuta quando il riconoscimento del testo sarà di nuovo attivo."
+    : `L'elaborazione di ${count} documenti si è interrotta. Verrà ripetuta quando il riconoscimento del testo sarà di nuovo attivo.`,
+  waitingForWorker: (when: string) => `${when ? `In attesa dal ${when}` : "In attesa"}: il riconoscimento del testo non è attivo`,
+  waitingForQueue: (when: string) => `In attesa del server delle code${when ? ` dal ${when}` : ""}`,
+  problemWorker: (since: string, lastSeen: string, owner: boolean) => `${since ? `Ci sono documenti in attesa dal ${since}` : "Ci sono documenti in attesa"}: il riconoscimento del testo non è attivo${lastSeen ? ` (ultimo segnale il ${lastSeen})` : " (non ha ancora dato segnali)"}. ${owner ? "Avvia di nuovo il container worker di Ripiano; i documenti in attesa verranno poi elaborati da soli." : "Chiedi al proprietario dell'archivio di riavviarlo; i documenti in attesa verranno poi elaborati da soli."}`,
+  problemQueue: (since: string) => `${since ? `Ci sono documenti in attesa dal ${since}` : "Ci sono documenti in attesa"}: il server delle code non è raggiungibile. Verranno inviati appena torna disponibile.`,
   retryNowLabel: (title: string) => `Riprova subito l'elaborazione di ${title}`,
   cancelLabel: (title: string) => `Annulla l'elaborazione di ${title}`,
   cancelled: (title: string) => `“${title}” è stato tolto dalla coda. Resta nel tuo archivio; scegli Riprova l'OCR per elaborarlo più tardi.`,

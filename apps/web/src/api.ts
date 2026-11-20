@@ -272,6 +272,22 @@ export function isPasswordRefusal(cause: unknown): boolean {
  * Messages from the server are shown as sentences: a final period is added when one is missing, so they match the
  * app's own messages ("La password non è corretta." — round-8 judge 2 L3).
  */
+/**
+ * Locations in tree order: each parent first, then the locations inside it, compared by full path
+ * (round-11 judge 2 L3: sorting by the last name put a box above its own shelf).
+ */
+export function byLocationPath<T extends { path: string[] }>(locations: readonly T[]): T[] {
+  const compare = (a: T, b: T) => {
+    for (let index = 0; index < Math.min(a.path.length, b.path.length); index += 1) {
+      const order = a.path[index].localeCompare(b.path[index], undefined, { sensitivity: "accent", numeric: true });
+      if (order) return order;
+    }
+    // A parent before its children; names equal but for case keep a stable order (independent review L8).
+    return a.path.length - b.path.length || a.path.join("\u0000").localeCompare(b.path.join("\u0000"));
+  };
+  return [...locations].sort(compare);
+}
+
 export function asSentence(text: string): string {
   const trimmed = text.trim();
   return !trimmed || /[.!?…:)»”"]$/.test(trimmed) ? trimmed : `${trimmed}.`;

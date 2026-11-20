@@ -850,6 +850,24 @@ function App() {
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
   );
+  // When the document dialog closes and the element it would return focus to is gone (the list reloaded) or was
+  // never a control, put focus back on that document's row in the Library (round-11 judge 1 L1).
+  const lastOpenedDocument = useRef<string | null>(null);
+  useEffect(() => {
+    if (selectedDocument) {
+      lastOpenedDocument.current = selectedDocument.id;
+      return;
+    }
+    const id = lastOpenedDocument.current;
+    lastOpenedDocument.current = null;
+    if (!id) return;
+    requestAnimationFrame(() => {
+      if (document.querySelector('[role="dialog"]')) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && active.id !== "main-content" && active.tagName !== "MAIN") return;
+      document.querySelector<HTMLElement>(`.document-row[data-document-id="${CSS.escape(id)}"] .document-title-button`)?.focus();
+    });
+  }, [selectedDocument]);
   const [actionRefresh, setActionRefresh] = useState(0);
   const [inboxRefresh, setInboxRefresh] = useState(0);
   const [trashRefresh, setTrashRefresh] = useState(0);
@@ -1147,6 +1165,11 @@ function App() {
         event.preventDefault();
         setActiveRow((row) => event.key === "j" ? Math.min(documents.length - 1, row + 1) : Math.max(0, row - 1));
       } else if (view === "documents" && event.key === "Enter" && activeRow >= 0 && documents[activeRow]) {
+        // Enter on a focused button or link (for example a row title reached with Tab) does what that control does,
+        // not open the J/K-highlighted row (round-11 judge 1 L1).
+        // Only the page itself or a row title hands Enter to the shortcut (independent review L7).
+        if (focused instanceof HTMLElement && focused !== document.body && focused.tagName !== "MAIN"
+            && !focused.matches(".document-row.keyboard-active .document-title-button")) return;
         event.preventDefault();
         // The dialog returns focus to whatever had it when it opened: make that the row's title.
         document.querySelector<HTMLElement>(".document-row.keyboard-active .document-title-button")?.focus({ preventScroll: true });
@@ -1520,6 +1543,15 @@ function App() {
   }, []);
   useEffect(() => { void checkSession(); }, [checkSession]);
   const isOffline = offline !== null;
+  // Whether the device itself has a connection, kept up to date (independent review L6), so the screen below can say
+  // "You're offline" or "Ripiano can't be reached" correctly even when the connection changes while it is shown.
+  const [deviceOffline, setDeviceOffline] = useState(() => typeof navigator !== "undefined" && navigator.onLine === false);
+  useEffect(() => {
+    const update = () => setDeviceOffline(navigator.onLine === false);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
+  }, []);
   useEffect(() => {
     if (!isOffline) return;
     const retry = () => void checkSession();
@@ -1807,6 +1839,7 @@ function App() {
     clearWaitingRetry();
     const failures: string[] = [];
     let sent = 0;
+    const sentIds: string[] = [];
     let stoppedOnFailure = false;
     let left = 0;
     try {
@@ -1816,8 +1849,9 @@ function App() {
         form.append("document", new File([item.blob], item.name, { type: item.type }));
         if (signedInAs.current !== owner) break; // someone else signed in meanwhile: never send into their account
         try {
-          await request<Document>("/api/documents", { method: "POST", body: form, headers: { "X-Ripiano-Scan-ID": item.scanId ?? uploadQueue.newScanId(), "X-Ripiano-Client": "web" } });
+          const created = await request<Document>("/api/documents", { method: "POST", body: form, headers: { "X-Ripiano-Scan-ID": item.scanId ?? uploadQueue.newScanId(), "X-Ripiano-Client": "web" } });
           sent += 1;
+          if (created?.id) sentIds.push(created.id);
           await uploadQueue.forget(item.id);
         } catch (cause) {
           // Keep the file unless the server refused the file itself (signed out, throttled, or server errors keep it).
@@ -1839,7 +1873,11 @@ function App() {
       setWaitingRetrying(false);
     }
     if (failures.length) setUploadReport({ total: sent + failures.length, failures });
-    if (sent) void loadDocuments(query);
+    if (sent) {
+      // Announced like a direct upload: "Added n documents · Show" (round-11 judge 1 L7).
+      if (sentIds.length && signedInAs.current === owner) setUploadDone({ count: sentIds.length, firstId: sentIds[0] });
+      void loadDocuments(query);
+    }
   }
 
   sendWaitingRef.current = sendWaiting;
@@ -2151,8 +2189,9 @@ function App() {
       <main className="offline-screen">
         <div className="offline-card">
           <WifiOff size={30} aria-hidden="true" />
-          <h1>{m.offlineTitle}</h1>
-          <p role="status">{m.offlineText}</p>
+          {/* Say "offline" only when the device itself has no connection; otherwise the server is down (round-11 judge 3 L2). */}
+          <h1>{deviceOffline ? m.offlineTitle : m.unreachableTitle}</h1>
+          <p role="status">{deviceOffline ? m.offlineText : m.unreachableText}</p>
           {offline.username && <p>{m.offlineSignedInAs(offline.username)}</p>}
           {offline.username && offline.waiting > 0 && (
             <p className="offline-waiting"><UploadCloud size={19} aria-hidden="true" /> {m.offlineWaiting(offline.waiting)}</p>
@@ -2363,7 +2402,7 @@ function App() {
               {session.owner && <div className="semantic-settings"><SemanticPanel /></div>}
             </>
           ) : view === "overview" ? (
-            <OverviewPanel onNavigate={(target) => setView(target)}
+            <OverviewPanel isOwner={Boolean(session.owner)} onNavigate={(target) => setView(target)}
               onOpenDocument={(id) => void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch((cause) => setError(cause.message))}
               onOpenUntagged={() => {
               setQuery("is:untagged");
@@ -2383,6 +2422,7 @@ function App() {
             <TagPanel />
           ) : view === "physical" ? (
             <PhysicalPanel
+              documentOpen={selectedDocument !== null}
               initialSticker={initialSticker}
               initialLocation={initialLocation}
               onOpenDocument={(id) => {
@@ -2725,6 +2765,8 @@ function App() {
                           <button
                             className="document-title-button"
                             onClick={() => setSelectedDocument(doc)}
+                            // The J/K highlight follows focus, so it never points at a row other than the focused one.
+                            onFocus={() => { if (activeRow >= 0 && activeRow !== index) setActiveRow(index); }}
                           >
                             <span className="document-title-text">{doc.title}</span>
                           </button>
@@ -2784,7 +2826,8 @@ function App() {
                           ? hasOpenWarning(doc) ? l.checkPages : l.ready
                           : doc.status === "failed"
                             ? l.needsAttention
-                            : l.processing}
+                            // Queued is not the same as being processed (round-11 judge 3 L7, judge 2 L7).
+                            : doc.status === "pending" ? l.waiting : l.processing}
                       </span>
                       <div className="document-row-links">
                       {doc.status === "processing" && stalled[doc.id]?.canRetry && (

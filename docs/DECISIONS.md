@@ -121,6 +121,37 @@ The owner wants external storage to work like Synology Hyper Backup destinations
 
 Full-text search stores Italian and English stems plus the words as written (migration 0055, `archive/fulltext.py`). The owner accepted the disk cost (about 130 MB per 10,000 typical documents); do not drop English to save space.
 
+## D9 — Deactivated accounts' public share links (2026-11-19) — Agreed
+
+When an account is turned off, its public share links (single documents and bundles) stop working at once, as its sessions, API tokens and agents already do. Turning the account back on does not revive them silently: the owner decides again (implementation records how).
+
+Implemented 2026-11-19: turning an account off (People) marks its active links and bundles revoked with `revoked_reason: "account_off"`, next to ending its sessions, API tokens, and agents (`people_views._end_access`). They answer exactly like an unknown link (404 `Link not found`) and stay revoked after the account is turned on again; the owner creates new links if still needed. The public link views also refuse any link whose owner is inactive, as a second guard.
+
+## D10 — Removing a revoked agent's activity log (2026-11-19) — Agreed
+
+Removing a revoked or expired agent together with its activity log (`DELETE /api/agents/<id>?forget=1`) asks for the owner's password, like creating an agent. The log is the audit trail, so deleting it is treated as a sensitive action.
+
+Implemented 2026-11-19: the request carries `{"password": "..."}` in its JSON body and uses the same check, sign-in throttle, and messages as creating an agent (see [AGENT_ACCESS.md](AGENT_ACCESS.md)).
+
+## D11 — Password changes end public share links (2026-11-19) — Agreed
+
+A password change (`POST /api/account/password`) or an admin password reset (`PATCH /api/people/<id>` with `password`) ends that person's public share links and bundles, exactly as it already ends their API tokens and agents. Changing the password is the documented way to recover from a stolen session, and a link or bundle made from that session must not keep anonymous download access afterwards (judge 3 round 8, M1).
+
+Implemented 2026-11-19: the same `pre_save` signal that revokes tokens and agents (`api_tokens.revoke_tokens_on_password_change`) marks the person's active links and bundles revoked with `revoked_reason: "password_changed"`. They answer exactly like an unknown link (404 `Link not found`) and are not revived; the share-link and bundle lists return the reason so the owner sees why they ended, and creates new links if still needed. Re-saving the same password hash (a Django hasher upgrade) revokes nothing.
+
+## D12 — Workflows started by an agent do not share or send the document (2026-11-20) — default chosen while the owner was away — confirm
+
+When an MCP agent's change (tags, sender, type) starts a workflow, the run holds back every action that discloses the document: sharing with people or groups, the webhook, and the email. Actions that stay inside the archive still run. Reason: an agent limited to "Add or remove tags" otherwise caused a private document to be shared with another person through the owner's workflow (judge 3 round 10, M1). This is the same rule as for tags that limit another agent's access.
+
+Implemented 2026-11-20, widened the same day after the independent review (`.omo/evidence/round10-fixes-review.md`, M1 and M2):
+
+- The decision is taken from the document, not only from who started the run. Disclosing actions are held back (a) in the run an agent's own change starts and (b) in every later run — scheduled, the owner's next edit, a bulk change — while the workflow's tag, sender, or type condition is met by a value an agent set (`DocumentTag.origin` / `correspondent_origin` / `document_type_origin` = `model`; `workflows.matched_by_agent`). What a held-back run files is given the same origin, so a chain of two workflows is covered.
+- Released when a person sets that value themselves (an explicit tag add, choosing the sender or type; merely re-saving the unchanged tag list does not count), or with **Run now** for that document.
+- A held-back run is marked `WorkflowRun.held_back` and recorded as "skipped sharing / webhook / email (an agent made the change)" (English and Italian); status `skipped` when nothing else happened. It does not use up the one-time webhook and email, which go out once with the first run allowed to send them. For scheduled workflows the held-back run is completed in place on a later daily pass.
+- Held-back actions are never sent later by themselves. Documented in [AGENT_ACCESS.md](AGENT_ACCESS.md).
+
+**Open for the owner:** this is the safe default, chosen without you. You may prefer an explicit per-workflow switch ("also run sharing and notifications when an agent made the change") for workflows you trust; say so and it will be added. Held-back runs are visible in the workflow's run history only; a place for them under Needs attention is not built yet.
+
 ## Remaining work that needs no further decision
 
 In the owner's suggested order:

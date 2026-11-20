@@ -88,3 +88,79 @@ test("share one document with another person, who can edit its details but nothi
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByRole("heading", { name: "No matches." })).toBeVisible();
 });
+
+// Round-9 review M2: two people with edit access. The shared editor's save carries the version it was loaded with
+// and only the details that person changed, so the owner's newer changes are never overwritten silently.
+test("a shared editor's save keeps the owner's newer changes and asks about a detail both changed", async ({ page, browser }, testInfo) => {
+  test.skip(!owner.username || !owner.password || !reader.username || !reader.password, "Set the RIPIANO_E2E_* and RIPIANO_E2E_2FA_* accounts");
+  test.skip(testInfo.project.name !== "desktop", "The second account is shared, so this runs once");
+  test.setTimeout(180000);
+  await page.goto("/");
+  await signIn(page, owner);
+  const headers = { "X-CSRFToken": (await page.context().cookies()).find((cookie) => cookie.name === "csrftoken")?.value ?? "" };
+  const name = `shared-conflict-${Date.now()}`;
+  const uploaded = await page.request.post("/api/documents", { headers, multipart: { document: { name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) } } });
+  expect(uploaded.status()).toBe(202);
+  const id = (await uploaded.json()).id as string;
+  await expect.poll(async () => (await (await page.request.get(`/api/documents/${id}`)).json()).status, { timeout: 90000 }).toBe("ready");
+  const people = (await (await page.request.get("/api/people")).json()).people as { id: number; username: string }[];
+  const shared = await page.request.post(`/api/documents/${id}/access`, { headers, data: { user_id: people.find((person) => person.username === reader.username)!.id, level: "edit" } });
+  expect(shared.ok()).toBe(true);
+
+  const other = await browser.newContext({ baseURL: testInfo.project.use.baseURL, locale: "en-US", viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
+  try {
+    const theirs = await other.newPage();
+    await theirs.goto("/");
+    await signIn(theirs, reader);
+    await openNav(theirs, "Shared with me");
+    await theirs.getByRole("textbox", { name: "Search shared documents" }).fill(name);
+    await theirs.getByRole("button", { name: "Search", exact: true }).click();
+    await theirs.getByRole("button", { name, exact: true }).click();
+    const dialog = theirs.getByRole("dialog", { name });
+    await expect(dialog.getByLabel("Title")).toHaveValue(name);
+
+    // The owner renames the document and sets a follow-up while the shared editor's dialog is open.
+    const first = await page.request.patch(`/api/documents/${id}`, { headers, data: { title: `${name} by owner`, action_status: "open", action_due_date: "2026-12-24" } });
+    expect(first.ok()).toBe(true);
+
+    // The editor only sets the date: nothing else is sent, so nothing of the owner's is replaced.
+    const bodies: Record<string, unknown>[] = [];
+    theirs.on("request", (sent) => {
+      if (sent.method() === "PATCH" && sent.url().endsWith(`/api/documents/${id}`)) bodies.push(sent.postDataJSON() as Record<string, unknown>);
+    });
+    await dialog.getByLabel("Document date").fill("2026-02-03");
+    await dialog.getByRole("button", { name: "Save changes" }).click();
+    await expect(dialog.getByRole("status").filter({ hasText: "Changes saved." })).toBeVisible();
+    expect(Object.keys(bodies[0]).sort()).toEqual(["base_version", "document_date"]);
+    let saved = await (await page.request.get(`/api/documents/${id}`)).json();
+    expect(saved.title).toBe(`${name} by owner`);
+    expect(saved.action_due_date).toBe("2026-12-24");
+    expect(saved.document_date).toBe("2026-02-03");
+    await expect(dialog.getByLabel("Title")).toHaveValue(`${name} by owner`);
+
+    // Both change the title: the editor's save is refused, shows the owner's value, and offers their own.
+    const second = await page.request.patch(`/api/documents/${id}`, { headers, data: { title: `${name} owner again` } });
+    expect(second.ok()).toBe(true);
+    await dialog.getByLabel("Title").fill(`${name} by editor`);
+    await dialog.getByRole("button", { name: "Save changes" }).click();
+    const box = dialog.locator(".draft-restored");
+    await expect(box).toContainText("Someone else saved this document while you were editing it.");
+    await expect(box).toBeFocused();
+    await expect(dialog.getByLabel("Title")).toHaveValue(`${name} owner again`);
+    expect((await (await page.request.get(`/api/documents/${id}`)).json()).title).toBe(`${name} owner again`);
+    const conflict = box.locator(".draft-conflict-list li").filter({ hasText: "Title" });
+    await expect(conflict).toContainText(`Your value: ${name} by editor`);
+    await conflict.getByRole("button", { name: "Use my value for Title" }).click();
+    await expect(dialog.getByLabel("Title")).toHaveValue(`${name} by editor`);
+    await dialog.getByRole("button", { name: "Save changes" }).click();
+    await expect(dialog.getByRole("status").filter({ hasText: "Changes saved." })).toBeVisible();
+    saved = await (await page.request.get(`/api/documents/${id}`)).json();
+    expect(saved.title).toBe(`${name} by editor`);
+    expect(saved.action_due_date).toBe("2026-12-24");
+    await theirs.locator("button[title=\"Sign out\"]").click().catch(() => undefined);
+  } finally {
+    await other.close();
+    const grants = (await (await page.request.get(`/api/documents/${id}/access`)).json()).grants as { id: string }[];
+    for (const grant of grants ?? []) await page.request.delete(`/api/documents/${id}/access/${grant.id}`, { headers });
+  }
+});

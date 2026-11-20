@@ -1,10 +1,18 @@
 import { expect, test } from "@playwright/test";
+import { removeLeftovers } from "./cleanup";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const username = process.env.RIPIANO_E2E_USERNAME;
 const password = process.env.RIPIANO_E2E_PASSWORD;
 const fixture = path.resolve(process.cwd(), "e2e/fixtures/judge.png");
+
+// The e2e account is shared: remove this spec's custom fields, saved searches, and workflows even when it fails.
+let leftovers = "";
+test.afterEach(async ({ page }) => {
+  await removeLeftovers(page, leftovers);
+  leftovers = "";
+});
 
 test("create a typed detail, find it by value, and clear it", async ({ page }, testInfo) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
@@ -14,6 +22,7 @@ test("create a typed detail, find it by value, and clear it", async ({ page }, t
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
   const stamp = `${Date.now()}-${testInfo.project.name}`;
+  leftovers = stamp;
   const name = `policy-${stamp}`;
   const field = `Policy number ${stamp}`;
   const reference = `PN-${stamp}`;

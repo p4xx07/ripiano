@@ -24,6 +24,9 @@ export default defineMessages({
   expires: (date: string) => `expires ${date}`,
   revokeLabel: (title: string) => `Revoke bundle ${title}`,
   revoke: "Revoke",
+  revokedState: "revoked",
+  revokedPassword: "revoked because your password changed",
+  revokedAccountOff: "revoked because the account was turned off",
 }, {
   loadError: "Impossibile caricare i pacchetti condivisi",
   createError: "Impossibile creare il link",
@@ -48,4 +51,7 @@ export default defineMessages({
   expires: (date: string) => `scade il ${date}`,
   revokeLabel: (title: string) => `Revoca il pacchetto ${title}`,
   revoke: "Revoca",
+  revokedState: "revocato",
+  revokedPassword: "revocato perché la password è cambiata",
+  revokedAccountOff: "revocato perché l'account è stato disattivato",
 });

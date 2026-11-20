@@ -23,7 +23,7 @@ FORMAT = "ripiano-export"
 FORMAT_VERSION = 1
 # Runtime bookkeeping (jobs, cursors, audit noise) is not part of the archive.
 # Derived or per-installation state that a restore rebuilds (semantic passages live outside the models).
-SKIPPED = {"InputCursor", "BackupRun", "BrowseExportRun", "PurgeJob", "FilingModel", "SemanticDocument"}
+SKIPPED = {"InputCursor", "BackupRun", "BrowseExportRun", "PurgeJob", "FilingModel", "SemanticDocument", "ProcessingClaim"}
 
 
 class PortableError(Exception):

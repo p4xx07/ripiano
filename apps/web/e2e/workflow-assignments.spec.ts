@@ -1,10 +1,18 @@
 import { expect, test } from "@playwright/test";
+import { removeLeftovers } from "./cleanup";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const username = process.env.RIPIANO_E2E_USERNAME;
 const password = process.env.RIPIANO_E2E_PASSWORD;
 const fixture = readFileSync(path.resolve(process.cwd(), "e2e/fixtures/judge.png"));
+
+// The e2e account is shared: remove this spec's custom fields, saved searches, and workflows even when it fails.
+let leftovers = "";
+test.afterEach(async ({ page }) => {
+  await removeLeftovers(page, leftovers);
+  leftovers = "";
+});
 
 test("a workflow sets a title from a pattern and a custom field on new documents", async ({ page }, testInfo) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
@@ -16,6 +24,7 @@ test("a workflow sets a title from a pattern and a custom field on new documents
   await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
 
   const suffix = `${Date.now().toString(36)}${testInfo.project.name}`;
+  leftovers = suffix;
   const fieldName = `Checked ${suffix}`;
   const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "csrftoken")?.value ?? "";
   const created = await page.request.post("/api/custom-fields", { headers: { "X-CSRFToken": csrf }, data: { name: fieldName, kind: "text" } });
@@ -60,7 +69,7 @@ test("a workflow sets a title from a pattern and a custom field on new documents
 
   if (await menu.isVisible()) await menu.click();
   await page.getByRole("button", { name: "Workflows", exact: true }).click();
-  const run = page.locator(".agent-events > div").filter({ hasText: `${flowName} ·` });
+  const run = page.getByRole("list", { name: "Recent runs" }).getByRole("listitem").filter({ hasText: flowName });
   await expect(run).toContainText(`set field ${fieldName} to by workflow`);
   await expect(run).toContainText(`set title ${title}`);
   await run.getByRole("button", { name: title }).click();

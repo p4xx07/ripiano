@@ -271,7 +271,7 @@ def _apply_filing(document, rule, tags, origin_values):
 def import_message(rule, raw, *, uid_validity, uid, folder):
     """Import one fetched message for a rule. Returns the number of new documents."""
     from .ingestion import ingest_document
-    from .tasks import process_document
+    from .tasks import queue_document
 
     message = email.message_from_bytes(raw, policy=policy.default)
     sender = _sender(message)
@@ -318,7 +318,7 @@ def import_message(rule, raw, *, uid_validity, uid, folder):
                                            source_ref=source_ref, title=title[:300], queue=False)
                 _apply_filing(document, rule, tags, origin_values)
                 # OCR starts only once the document and its filing are committed together.
-                transaction.on_commit(lambda document_id=str(document.id): process_document.delay(document_id), robust=True)
+                transaction.on_commit(lambda document_id=str(document.id): queue_document(document_id), robust=True)
             created += 1
         except InvalidDocument as exc:
             skipped.append(f"{name}: {exc}")

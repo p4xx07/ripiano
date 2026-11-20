@@ -111,7 +111,8 @@ test("reloading while offline shows who is signed in and the files waiting, then
   // The app shell still loads (as from the installed PWA's cache); Ripiano itself cannot be reached.
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.reload().catch(() => undefined);
-  await expect(page.getByRole("heading", { name: "You're offline" })).toBeVisible();
+  // The device is online; only the server is unreachable, so it is not called "offline" (round-11 judge 3 L2).
+  await expect(page.getByRole("heading", { name: "Ripiano can't be reached" })).toBeVisible();
   await expect(page.getByText(`Last signed in on this device as ${username}.`)).toBeVisible();
   await expect(page.getByText("1 file is waiting on this device")).toBeVisible();
   await expect(page.getByLabel("Password")).toHaveCount(0); // not shown as signed out

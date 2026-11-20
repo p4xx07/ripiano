@@ -6,7 +6,7 @@ from django.conf import settings
 from .models import Document
 from .email_render import EML_TYPE, subject_of
 from .storage import save_original
-from .tasks import process_document
+from .tasks import process_document, queue_document  # noqa: F401 - tests patch process_document.delay here
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def ingest_document(owner, upload, *, source=Document.Source.WEB, source_ref="",
     if not queue:
         return document  # The caller queues processing once its own transaction commits.
     try:
-        process_document.delay(str(document.id))
+        queue_document(document.id)
     except Exception:
         logger.exception("Queue unavailable; pending document will be reconciled")
     return document

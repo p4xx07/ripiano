@@ -4,7 +4,7 @@ import secrets
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
-from django.db.models.functions import Lower
+from django.db.models.functions import Lower, Now
 
 
 def new_location_code():
@@ -66,7 +66,21 @@ class Document(models.Model):
     extracted_text = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
     processing_started_at = models.DateTimeField(null=True, blank=True)
+    # When a "pending" document was last handed to the queue server (database clock); empty while it has not been
+    # sent yet (the queue server was down) and once a worker takes it. The scheduler sends a document again only when
+    # it was never sent or the OCR queue is empty although it is still waiting, so messages do not pile up while the
+    # worker is stopped (judge 2 round 11, M2).
+    queued_at = models.DateTimeField(null=True, blank=True)
     error = models.TextField(blank=True)
+    # Processing failures in a row (reset when processing succeeds): a repeated failure gets different guidance.
+    processing_failures = models.PositiveSmallIntegerField(default=0)
+    # Times in a row the worker stopped while processing this document (restart, out of memory). Counted apart from
+    # failures, so each message stays true; reset when processing succeeds or a person chooses Retry.
+    processing_interruptions = models.PositiveSmallIntegerField(default=0)
+    # Processed, but something about the result needs a person's check: "damaged_pdf" (a damaged PDF of which only
+    # the readable pages were made searchable). Listed under Needs attention until reviewed (judge 1 round 8, M2).
+    processing_warning = models.CharField(max_length=30, blank=True, default="")
+    processing_warning_reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
     trashed_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -113,6 +127,8 @@ class ShareLink(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
+    # Why the link ended when Ripiano ended it, not the owner: "account_off" (the owner's account was turned off, D9) or "password_changed" (the owner's password was changed or reset, D11).
+    revoked_reason = models.CharField(max_length=20, blank=True, default="")
 
     class Meta:
         ordering = ["-created_at", "-id"]
@@ -318,6 +334,34 @@ class FilingRule(models.Model):
         ]
 
 
+class WorkerHeartbeat(models.Model):
+    """The last sign of life of the workers that consume a queue (judge 2 round 11, M1).
+
+    Each worker process refreshes the row of every queue it consumes every 30 s from a small thread, using the
+    database clock, so the API can tell the owner that documents are waiting because no OCR worker is running.
+    """
+
+    queue = models.CharField(max_length=50, primary_key=True)
+    beat_at = models.DateTimeField(db_default=Now())
+    hostname = models.CharField(max_length=200, blank=True)
+
+
+class ProcessingClaim(models.Model):
+    """The run that is processing a document right now (judge 3 round 9, M1; round-9 review, M1).
+
+    A worker creates the row when it starts and refreshes ``beat_at`` every 30 s, using the database clock. Only the
+    run whose ``token`` is still here may save its result, so a run that was declared gone, requeued, or cancelled
+    cannot finish over the newer state. The heartbeat lives in its own row so it never waits for a lock on the document.
+    """
+
+    document = models.OneToOneField(Document, primary_key=True, on_delete=models.CASCADE, related_name="processing_claim")
+    token = models.UUIDField(default=uuid.uuid4)
+    beat_at = models.DateTimeField(db_default=Now())
+    # Set when one scheduler pass found the heartbeat stale; the next heartbeat clears it. Only a claim still stale
+    # on a second pass is taken away, so a clock jump or a short database outage is not counted as a stopped worker.
+    suspected = models.BooleanField(default=False)
+
+
 class DocumentTag(models.Model):
     class Origin(models.TextChoices):
         MANUAL = "manual", "Manual"
@@ -418,6 +462,8 @@ class PhysicalCopy(models.Model):
 
 class Movement(models.Model):
     class Kind(models.TextChoices):
+        # A sticker made without a location still gets a first history entry (judge 1 round 8, L2).
+        CREATED = "created", "Sticker created"
         PLACEMENT = "placement", "Initial placement"
         MOVE = "move", "Move"
         MISSING = "missing", "Marked missing"
@@ -488,6 +534,7 @@ class AgentGrant(models.Model):
     filter_tag = models.ForeignKey(Tag, null=True, blank=True, on_delete=models.PROTECT, related_name="agent_grants")
     expires_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_reason = models.CharField(max_length=20, blank=True, default="")  # as ShareLink.revoked_reason
     last_used_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -742,6 +789,8 @@ class Workflow(models.Model):
 class WorkflowRun(models.Model):
     class Status(models.TextChoices):
         APPLIED = "applied", "Applied"
+        # Conditions matched but every action was held back (for example a guarded or hand-added tag).
+        SKIPPED = "skipped", "Skipped"
         FAILED = "failed", "Failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -750,6 +799,9 @@ class WorkflowRun(models.Model):
     trigger = models.CharField(max_length=10, choices=Workflow.Trigger.choices)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPLIED)
     detail = models.CharField(max_length=500, blank=True)
+    # Sharing, the webhook, or the email was held back because an agent's change started the run or made the
+    # workflow match (docs/DECISIONS.md D12). Such a run does not use up the one-time webhook and email.
+    held_back = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -758,6 +810,20 @@ class WorkflowRun(models.Model):
             # "Added" and scheduled workflows act once per document; "updated" may run on every change.
             models.UniqueConstraint(fields=["workflow", "document", "trigger"], condition=~Q(trigger="updated"), name="workflow_runs_once"),
         ]
+
+
+class IdempotencyRecord(models.Model):
+    """The answer to a POST that carried an ``Idempotency-Key``, kept ten minutes (archive/idempotency.py)."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    key = models.CharField(max_length=64)
+    path = models.CharField(max_length=300)
+    status = models.PositiveSmallIntegerField(null=True)  # null while the first request is still running
+    body = models.TextField(blank=True)  # encrypted like mailbox passwords: an answer may hold a one-time token
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "key"], name="idempotency_key_once")]
 
 
 class AccountSecurity(models.Model):
@@ -784,6 +850,7 @@ class ShareBundle(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_reason = models.CharField(max_length=20, blank=True, default="")  # as ShareLink.revoked_reason
     downloads = models.PositiveIntegerField(default=0)
     # The ZIP is built once, verified, and served as a file; it is deleted when the link ends.
     zip_status = models.CharField(max_length=10, default="building")

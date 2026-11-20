@@ -32,9 +32,36 @@ def grant_json(grant):
         "filter_tag_name": grant.filter_tag.name if grant.filter_tag_id else None,
         "expires_at": grant.expires_at.isoformat() if grant.expires_at else None,
         "revoked_at": grant.revoked_at.isoformat() if grant.revoked_at else None,
+        # Why Ripiano ended the grant (not the owner): "password_changed" (D11) or "account_off" (D9); null otherwise.
+        "revoked_reason": grant.revoked_reason or None,
         "last_used_at": grant.last_used_at.isoformat() if grant.last_used_at else None,
         "created_at": grant.created_at.isoformat(),
     }
+
+
+def _json_body(request):
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def _password_refused(request, body):
+    """The response refusing a sensitive agent action without the owner's current password, or None.
+
+    Used to create an agent and to remove an agent with its activity log (docs/DECISIONS.md D10).
+    Failed attempts count towards the sign-in limit.
+    """
+    from .throttle import record_sign_in_failure, sign_in_blocked, sign_in_throttle_key
+
+    keys = sign_in_throttle_key(request, request.user.get_username())
+    if sign_in_blocked(keys):
+        return JsonResponse({"error": "Too many attempts. Wait a few minutes and try again."}, status=429)
+    if not request.user.check_password(str(body.get("password", ""))):
+        record_sign_in_failure(keys)
+        return JsonResponse({"error": "Your password is not correct"}, status=400)
+    return None
 
 
 @require_http_methods(["GET", "POST"])
@@ -46,22 +73,14 @@ def grants(request):
             "scopes": SCOPES,
             "grants": [grant_json(grant) for grant in AgentGrant.objects.filter(owner=request.user).select_related("filter_tag")[:100]],
         })
-    try:
-        body = json.loads(request.body)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        body = None
-    if not isinstance(body, dict):
+    body = _json_body(request)
+    if body is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
     # An agent token can read document text for up to a year: confirm it is really the account's owner asking,
-    # as for personal API tokens (judge 3 round 4, M2). Failed attempts count towards the sign-in limit.
-    from .throttle import record_sign_in_failure, sign_in_blocked, sign_in_throttle_key
-
-    keys = sign_in_throttle_key(request, request.user.get_username())
-    if sign_in_blocked(keys):
-        return JsonResponse({"error": "Too many attempts. Wait a few minutes and try again."}, status=429)
-    if not request.user.check_password(str(body.get("password", ""))):
-        record_sign_in_failure(keys)
-        return JsonResponse({"error": "Your password is not correct"}, status=400)
+    # as for personal API tokens (judge 3 round 4, M2).
+    refused = _password_refused(request, body)
+    if refused:
+        return refused
     name = body.get("name")
     scopes = body.get("scopes")
     days = body.get("expires_in_days", 30)
@@ -106,6 +125,13 @@ def grant_detail(request, grant_id):
         # read is kept once the owner chose to forget it. Document history entries it made stay.
         if grant.revoked_at is None and (grant.expires_at is None or grant.expires_at > timezone.now()):
             return JsonResponse({"error": "Revoke this agent before removing it"}, status=409)
+        # The log is the audit trail: removing it needs the owner's password, like creating an agent (D10).
+        body = _json_body(request)
+        if body is None:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+        refused = _password_refused(request, body)
+        if refused:
+            return refused
         grant.delete()
         return JsonResponse({"deleted": True})
     if grant.revoked_at is None:

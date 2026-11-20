@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Check, Copy, LockKeyhole, Plus, Shield, Trash2, X } from "lucide-react";
-import { formatDate, formatDateTime, request, Tag } from "./api";
-import { Button } from "./ui";
+import { ApiError, formatDate, formatDateTime, isPasswordRefusal, request, Tag } from "./api";
+import { Button, useFieldError } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/AgentPanel";
 
@@ -13,6 +13,8 @@ type Grant = {
   filter_tag_name: string | null;
   expires_at: string;
   revoked_at: string | null;
+  /** Why the agent stopped, when the server ended it (e.g. "password_changed", docs/DECISIONS.md D11). */
+  revoked_reason?: string | null;
   last_used_at: string | null;
   created_at: string;
 };
@@ -26,6 +28,8 @@ type Event = {
   at: string;
 };
 
+const EVENTS_PAGE = 20;
+
 export default function AgentPanel() {
   const m = useMessages(messages);
   const scopeNames: Record<string, string> = {
@@ -34,7 +38,8 @@ export default function AgentPanel() {
     "documents:tag": m.scopeTag,
     "documents:filing": m.scopeFiling,
   };
-  // Tool names and outcomes come from the MCP audit log; unknown tools fall back to their raw name.
+  // Tool names and outcomes come from the MCP audit log; a tool Ripiano does not offer (an agent asked for a wrong
+  // name) is described in plain words with the name it used (round-8 judge 2 L3).
   const toolNames: Record<string, string> = {
     search_documents: m.toolSearchDocuments,
     get_document_text: m.toolGetDocumentText,
@@ -51,6 +56,15 @@ export default function AgentPanel() {
   const [showInactive, setShowInactive] = useState(false);
   const [grants, setGrants] = useState<Grant[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
+  // The activity log shows the newest entries first, a page at a time (round-8 judge 3 L5).
+  const [shownEvents, setShownEvents] = useState(EVENTS_PAGE);
+  const firstNewEvent = useRef<number | null>(null);
+  const eventsListRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (firstNewEvent.current === null) return;
+    eventsListRef.current?.querySelectorAll<HTMLElement>("li")[firstNewEvent.current]?.focus();
+    firstNewEvent.current = null;
+  }, [shownEvents]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<string[]>(["documents:search"]);
@@ -66,6 +80,13 @@ export default function AgentPanel() {
   const [announcement, setAnnouncement] = useState("");
   const [focusTarget, setFocusTarget] = useState<{ kind: "token" } | { kind: "grant" | "revoke" | "remove" | "inactive"; id: string } | null>(null);
   const tokenCardRef = useRef<HTMLDivElement>(null);
+  // A refused "Connect an agent" marks and focuses the field it is about (round-7 judge 2 M1).
+  const createInvalid = useFieldError<"name" | "password">("agent-create-error");
+  const [createError, setCreateError] = useState("");
+  // Removing a revoked agent with its activity log asks for the password too (docs/DECISIONS.md D10).
+  const [removePassword, setRemovePassword] = useState("");
+  const [removeError, setRemoveError] = useState("");
+  const removeInvalid = useFieldError<"password">("agent-remove-error");
 
   const load = useCallback(async () => {
     try {
@@ -75,7 +96,7 @@ export default function AgentPanel() {
         request<{ tags: Tag[] }>("/api/tags"),
       ]);
       setGrants(grantsResponse.grants);
-      setEvents(eventsResponse.events);
+      setEvents([...eventsResponse.events].sort((a, b) => b.at.localeCompare(a.at)));
       setTags(tagsResponse.tags);
     } catch (cause) {
       setError(
@@ -108,8 +129,11 @@ export default function AgentPanel() {
 
   async function create(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
+    setCreateError("");
+    createInvalid.clear();
     setNewToken("");
     try {
       const grant = await request<Grant & { token: string }>("/api/agents", {
@@ -126,13 +150,18 @@ export default function AgentPanel() {
       setNewToken(grant.token);
       setCopied(false);
       setName("");
+      // The next agent starts from the safe defaults, not this one's permissions and scope (round-9 judge 2 L5).
+      setScopes(["documents:search"]);
+      setFilterTag("");
+      setDays(30);
       await load();
       setAnnouncement(m.createdAnnouncement(grant.name));
       setFocusTarget({ kind: "token" });
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : m.createError,
-      );
+      // Shown next to the form; focus goes to the field the server refused, or stays on the button.
+      setCreateError(cause instanceof Error ? cause.message : m.createError);
+      if (isPasswordRefusal(cause)) createInvalid.fail("password");
+      else if (cause instanceof ApiError && (cause.status === 400 || cause.status === 409) && /name|nome/i.test(cause.message)) createInvalid.fail("name");
     } finally {
       setBusy(false);
     }
@@ -158,17 +187,38 @@ export default function AgentPanel() {
     }
   }
 
-  async function remove(grant: Grant) {
+  function startRemove(grant: Grant) {
+    setConfirmRemove(grant.id);
+    setRemovePassword("");
+    setRemoveError("");
+    removeInvalid.clear();
+  }
+
+  function cancelRemove(grant: Grant) {
+    setConfirmRemove(null);
+    setRemovePassword("");
+    setRemoveError("");
+    removeInvalid.clear();
+    setFocusTarget({ kind: "remove", id: grant.id });
+  }
+
+  async function remove(event: FormEvent, grant: Grant) {
+    event.preventDefault();
+    if (busy || !removePassword) return;
     setBusy(true);
     setError("");
+    setRemoveError("");
+    removeInvalid.clear();
     try {
-      await request(`/api/agents/${grant.id}?forget=1`, { method: "DELETE" });
+      await request(`/api/agents/${grant.id}?forget=1`, { method: "DELETE", body: JSON.stringify({ password: removePassword }) });
+      setRemovePassword("");
       setConfirmRemove(null);
       await load();
       setAnnouncement(m.removedAnnouncement(grant.name));
       setFocusTarget({ kind: "inactive", id: "summary" });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : m.removeError);
+      setRemoveError(cause instanceof Error ? cause.message : m.removeError);
+      if (isPasswordRefusal(cause)) removeInvalid.fail("password");
     } finally {
       setBusy(false);
     }
@@ -188,8 +238,9 @@ export default function AgentPanel() {
         <div className="agent-card-body">
           <strong>{grant.name}</strong>
           <span>
-            {grant.revoked_at ? m.revoked : inactive ? m.expired : m.active}{" "}
-            {m.expires(formatDate(grant.expires_at))}
+            {grant.revoked_at
+              ? (grant.revoked_reason === "password_changed" ? m.revokedPassword : grant.revoked_reason === "account_off" ? m.revokedAccountOff : m.revoked)
+              : <>{inactive ? m.expired : m.active}{" "}{m.expires(formatDate(grant.expires_at))}</>}
           </span>
           <div className="agent-scopes">
             {grant.scopes.map((scope) => (
@@ -206,33 +257,44 @@ export default function AgentPanel() {
           )}
         </div>
         {inactive ? (confirmRemove === grant.id ? (
-          <div className="agent-revoke-confirm" role="group" aria-label={m.removeConfirm(grant.name)}>
+          <form className="agent-revoke-confirm agent-remove-confirm" aria-label={m.removeConfirm(grant.name)}
+            onSubmit={(event) => void remove(event, grant)}
+            onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); cancelRemove(grant); } }}>
             <strong>{m.removeConfirm(grant.name)}</strong>
-            <Button variant="danger" disabled={busy} autoFocus onClick={() => void remove(grant)}>
-              {m.confirmRemove}
-            </Button>
-            <Button variant="secondary" disabled={busy} onClick={() => { setConfirmRemove(null); setFocusTarget({ kind: "remove", id: grant.id }); }}>
-              {m.cancel}
-            </Button>
-          </div>
+            <label>
+              {m.removePassword}
+              <input type="password" autoComplete="current-password" required autoFocus
+                {...removeInvalid.props("password")}
+                value={removePassword} onChange={(event) => setRemovePassword(event.target.value)} />
+            </label>
+            {removeError && <p className="form-error" role="alert" id="agent-remove-error">{removeError}</p>}
+            <div className="agent-remove-actions">
+              <Button variant="danger" pending={busy || !removePassword}>
+                {m.confirmRemove}
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => cancelRemove(grant)}>
+                {m.cancel}
+              </Button>
+            </div>
+          </form>
         ) : (
-          <Button variant="secondary" disabled={busy} aria-label={m.removeNamed(grant.name)} data-agent-remove={grant.id} onClick={() => setConfirmRemove(grant.id)}>
+          <Button variant="secondary" pending={busy} aria-label={m.removeNamed(grant.name)} data-agent-remove={grant.id} onClick={() => startRemove(grant)}>
             <Trash2 size={16} aria-hidden="true" /> {m.remove}
           </Button>
         )) : confirmRevoke === grant.id ? (
           <div className="agent-revoke-confirm" role="group" aria-label={m.revokeConfirm(grant.name)}>
             <strong>{m.revokeConfirm(grant.name)}</strong>
-            <Button variant="danger" disabled={busy} autoFocus onClick={() => void revoke(grant)}>
+            <Button variant="danger" pending={busy} autoFocus onClick={() => void revoke(grant)}>
               {m.confirmRevoke}
             </Button>
-            <Button variant="secondary" disabled={busy} onClick={() => { setConfirmRevoke(null); setFocusTarget({ kind: "revoke", id: grant.id }); }}>
+            <Button variant="secondary" pending={busy} onClick={() => { setConfirmRevoke(null); setFocusTarget({ kind: "revoke", id: grant.id }); }}>
               {m.cancel}
             </Button>
           </div>
         ) : (
           <Button
             variant="secondary"
-            disabled={busy}
+            pending={busy}
             aria-label={m.revokeNamed(grant.name)}
             data-agent-revoke={grant.id}
             onClick={() => setConfirmRevoke(grant.id)}
@@ -336,11 +398,12 @@ export default function AgentPanel() {
             </div>
           </div>
           {events.length ? (
-            <ul className="agent-events" aria-label={m.activityHeading}>
-              {events.map((event, index) => (
-                <li key={`${event.at}-${index}`}>
+            <>
+            <ul ref={eventsListRef} className="agent-events" aria-label={m.activityHeading}>
+              {events.slice(0, shownEvents).map((event, index) => (
+                <li key={`${event.at}-${index}`} tabIndex={-1}>
                   <span>{event.agent}</span>
-                  <strong>{toolNames[event.action] ?? event.action.replaceAll("_", " ")}</strong>
+                  <strong>{toolNames[event.action] ?? m.toolUnknown(event.action.replaceAll("_", " "))}</strong>
                   {event.document_title && <span className="agent-event-document">{m.onDocument(event.document_title)}</span>}
                   <small>
                     {outcomeNames[event.outcome] ?? event.outcome} · <time dateTime={event.at}>{formatDateTime(event.at)}</time>
@@ -348,6 +411,13 @@ export default function AgentPanel() {
                 </li>
               ))}
             </ul>
+            {events.length > shownEvents && (
+              <Button type="button" variant="secondary" className="load-more" onClick={() => {
+                firstNewEvent.current = shownEvents;
+                setShownEvents((value) => value + EVENTS_PAGE);
+              }}>{m.showMoreActivity(Math.min(EVENTS_PAGE, events.length - shownEvents), events.length - shownEvents)}</Button>
+            )}
+            </>
           ) : (
             <p className="agent-empty-activity">{m.noActivity}</p>
           )}
@@ -364,6 +434,7 @@ export default function AgentPanel() {
             <label>
               {m.name}
               <input
+                {...createInvalid.props("name")}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder={m.namePlaceholder}
@@ -414,13 +485,15 @@ export default function AgentPanel() {
               <input
                 type="password"
                 autoComplete="current-password"
+                {...createInvalid.props("password")}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
               />
             </label>
+            {createError && <p className="form-error" role="alert" id="agent-create-error">{createError}</p>}
             <Button
-              disabled={busy || scopes.length === 0 || !password}
+              pending={busy || scopes.length === 0 || !password}
             >
               <Plus size={17} /> {busy ? m.creating : m.create}
             </Button>

@@ -30,6 +30,7 @@ test("one-tap filing suggestions use a manually filed example", async ({ page },
 
   if (await menu.isVisible()) await menu.click();
   await page.getByRole("button", { name: "All documents" }).click();
+  let uploads = 0;
   async function upload(name: string) {
     const add = page.getByRole("button", { name: "Add document", exact: true });
     if (await add.isVisible()) await add.click();
@@ -37,9 +38,15 @@ test("one-tap filing suggestions use a manually filed example", async ({ page },
     const response = page.waitForResponse((item) => item.url().endsWith("/api/documents") && item.request().method() === "POST" && item.status() === 202);
     const chooser = page.waitForEvent("filechooser");
     await page.getByRole("button", { name: /Browse files/ }).click();
-    await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
+    // The title is one the person gave, not the file name: a title that is still the file name is no evidence
+    // for a suggestion (judge 1 round 9, L2).
+    await (await chooser).setFiles({ name: `scan-${uploads += 1}-${suffix}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
     const document = await (await response).json() as { id: string };
     await expect.poll(async () => (await (await page.request.get(`/api/documents/${document.id}`)).json()).status, { timeout: 60000 }).toBe("ready");
+    const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "csrftoken")?.value ?? "";
+    expect((await page.request.patch(`/api/documents/${document.id}`, { headers: { "X-CSRFToken": csrf }, data: { title: name } })).status()).toBe(200);
+    await page.getByRole("textbox", { name: "Search documents" }).fill(name);
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
     return document.id;
   }
 

@@ -5,7 +5,7 @@ import { Button, Field } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/ShareLinksPanel";
 
-type Share = { id: string; created_at: string; expires_at: string; revoked_at: string | null; active: boolean };
+type Share = { id: string; created_at: string; expires_at: string; revoked_at: string | null; revoked_reason?: string | null; active: boolean };
 type CreatedShare = Share & { url: string };
 
 export default function ShareLinksPanel({ documentId }: { documentId: string }) {
@@ -104,7 +104,10 @@ export default function ShareLinksPanel({ documentId }: { documentId: string }) 
         {loaded && !shares.length && <p>{m.empty}</p>}
         {shares.length > 0 && <ul className="share-list">
           {shares.map((share) => <li key={share.id}>
-            <span>{share.active ? m.active : share.revoked_at ? m.revokedState : m.expired} · <time dateTime={share.expires_at}>{m.expires} {new Date(share.expires_at).toLocaleString()}</time></span>
+            {/* A revoked link says why (round-8 judge 3 L4) instead of an expiry date that no longer applies. */}
+            {share.revoked_at
+              ? <span>{share.revoked_reason === "password_changed" ? m.revokedPassword : share.revoked_reason === "account_off" ? m.revokedAccountOff : m.revokedState} · <time dateTime={share.revoked_at}>{new Date(share.revoked_at).toLocaleString()}</time></span>
+              : <span>{share.active ? m.active : m.expired} · <time dateTime={share.expires_at}>{m.expires} {new Date(share.expires_at).toLocaleString()}</time></span>}
             {share.active && <button type="button" disabled={busy} onClick={() => void revoke(share.id)}><ShieldOff size={15} /> {m.revoke}</button>}
           </li>)}
         </ul>}

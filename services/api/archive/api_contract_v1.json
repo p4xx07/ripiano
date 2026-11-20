@@ -321,6 +321,11 @@
           "null"
          ]
         },
+        "edit_version": {
+         "type": [
+          "string"
+         ]
+        },
         "email": {
          "type": [
           "null"
@@ -349,6 +354,16 @@
         "physical_copies": {
          "type": [
           "array"
+         ]
+        },
+        "processing_warning": {
+         "type": [
+          "null"
+         ]
+        },
+        "processing_warning_reviewed_at": {
+         "type": [
+          "null"
          ]
         },
         "shared_by": {
@@ -438,6 +453,11 @@
         "version_number": {
          "type": [
           "integer"
+         ]
+        },
+        "warning": {
+         "type": [
+          "string"
          ]
         }
        }
@@ -562,6 +582,11 @@
        "null"
       ]
      },
+     "edit_version": {
+      "type": [
+       "string"
+      ]
+     },
      "email": {
       "type": [
        "null"
@@ -590,6 +615,16 @@
      "physical_copies": {
       "type": [
        "array"
+      ]
+     },
+     "processing_warning": {
+      "type": [
+       "null"
+      ]
+     },
+     "processing_warning_reviewed_at": {
+      "type": [
+       "null"
       ]
      },
      "shared_by": {
@@ -672,6 +707,11 @@
      "version_number": {
       "type": [
        "integer"
+      ]
+     },
+     "warning": {
+      "type": [
+       "string"
       ]
      }
     }
@@ -1218,6 +1258,11 @@
         ]
        },
        "waiting": {
+        "type": [
+         "integer"
+        ]
+       },
+       "warnings": {
         "type": [
          "integer"
         ]
@@ -2061,6 +2106,11 @@
        "null"
       ]
      },
+     "edit_version": {
+      "type": [
+       "string"
+      ]
+     },
      "email": {
       "type": [
        "null"
@@ -2089,6 +2139,16 @@
      "physical_copies": {
       "type": [
        "array"
+      ]
+     },
+     "processing_warning": {
+      "type": [
+       "null"
+      ]
+     },
+     "processing_warning_reviewed_at": {
+      "type": [
+       "null"
       ]
      },
      "shared_by": {
@@ -2171,6 +2231,11 @@
      "version_number": {
       "type": [
        "integer"
+      ]
+     },
+     "warning": {
+      "type": [
+       "string"
       ]
      }
     }
@@ -2488,6 +2553,11 @@
        "null"
       ]
      },
+     "edit_version": {
+      "type": [
+       "string"
+      ]
+     },
      "email": {
       "type": [
        "null"
@@ -2516,6 +2586,16 @@
      "physical_copies": {
       "type": [
        "array"
+      ]
+     },
+     "processing_warning": {
+      "type": [
+       "null"
+      ]
+     },
+     "processing_warning_reviewed_at": {
+      "type": [
+       "null"
       ]
      },
      "shared_by": {
@@ -2571,6 +2651,11 @@
      "version_number": {
       "type": [
        "integer"
+      ]
+     },
+     "warning": {
+      "type": [
+       "string"
       ]
      }
     }

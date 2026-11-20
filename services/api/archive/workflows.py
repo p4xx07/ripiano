@@ -236,14 +236,46 @@ def guarded_tags(agent_grant):
                      .exclude(pk=agent_grant.pk).values_list("filter_tag_id", flat=True))
 
 
-def _apply(workflow, document, *, first_time=True, access_changes=None, guarded=frozenset()):
+# Actions that disclose a document are held back when an agent's change started the run (judge 3 round 10, M1;
+# docs/DECISIONS.md D12): tag permission must not let an agent cause a share, a webhook, or an email.
+HELD_SHARE = "skipped sharing (an agent made the change; share the document yourself if you want to)"
+HELD_WEBHOOK = "skipped webhook (an agent made the change)"
+HELD_EMAIL = "skipped email (an agent made the change)"
+
+
+def matched_by_agent(workflow, document):
+    """True when the workflow's tag, sender, or type filter is met by a value an agent set and no person confirmed.
+
+    An agent's tag (or sender, or type) stays on the document after the agent's call, so a scheduled workflow or the
+    owner's next unrelated edit would otherwise complete the disclosure the agent's own run held back (round-10
+    review, M1). A person choosing that value themselves (adding the tag, choosing the sender or type) makes it
+    theirs and releases the workflow; so does **Run now**.
+    """
+    if workflow.filter_tag_id and DocumentTag.objects.filter(document=document, tag_id=workflow.filter_tag_id, origin=DocumentTag.Origin.MODEL).exists():
+        return True
+    if workflow.filter_correspondent_id and document.correspondent_id == workflow.filter_correspondent_id \
+            and document.correspondent_origin == Document.FilingOrigin.MODEL:
+        return True
+    return bool(workflow.filter_document_type_id and document.document_type_id == workflow.filter_document_type_id
+                and document.document_type_origin == Document.FilingOrigin.MODEL)
+
+
+def _apply(workflow, document, *, first_time=True, access_changes=None, guarded=frozenset(), outcome=None, by_agent=False, notify=None):
     """Apply metadata actions; return a short description of what changed.
 
     Notes, webhooks, and emails happen only the first time a workflow applies to a document.
     ``access_changes`` collects sharing changes for the document history (the snapshot does not track grants).
-    ``guarded`` tags are left alone (see ``guarded_tags``).
+    ``guarded`` tags are left alone (see ``guarded_tags``). ``outcome["skipped"]`` is set when every action was held back.
+    ``by_agent``: an agent's change started the run or is why the workflow matches, so sharing, the webhook, and the
+    email are held back and recorded as such (``outcome["held"]``), and what the run files is marked as coming from
+    an agent too, so a second workflow matching on it is held back as well.
+    ``notify``: whether the one-time webhook and email are still due (default: ``first_time``);
+    ``outcome["notify"]`` says whether one was queued.
     """
     changes = []
+    notify = first_time if notify is None else notify
+    tag_origin = DocumentTag.Origin.MODEL if by_agent else DocumentTag.Origin.SOURCE
+    filing_origin = Document.FilingOrigin.MODEL if by_agent else Document.FilingOrigin.SOURCE
     access_changes = [] if access_changes is None else access_changes
     suppressed = set(TagOverride.objects.filter(document=document).values_list("tag_id", flat=True))
     present = set(DocumentTag.objects.filter(document=document).values_list("tag_id", flat=True)) if guarded else set()
@@ -252,22 +284,27 @@ def _apply(workflow, document, *, first_time=True, access_changes=None, guarded=
             changes.append(f"skipped tag {tag.name} (it limits another agent's access and an agent made the change)")
     added = [tag for tag in workflow.add_tags.all() if tag.id not in suppressed and tag.id not in guarded]
     for tag in added:
-        link, created = DocumentTag.objects.get_or_create(document=document, tag=tag, defaults={"origin": DocumentTag.Origin.SOURCE})
+        link, created = DocumentTag.objects.get_or_create(document=document, tag=tag, defaults={"origin": tag_origin})
         if created:
             changes.append(f"added tag {tag.name}")
-    removed = (DocumentTag.objects.filter(document=document, tag__in=workflow.remove_tags.all()).exclude(origin=DocumentTag.Origin.MANUAL)
-               .exclude(tag_id__in=guarded))
+    to_remove = DocumentTag.objects.filter(document=document, tag__in=workflow.remove_tags.all())
+    removed = to_remove.exclude(origin=DocumentTag.Origin.MANUAL).exclude(tag_id__in=guarded)
+    # A tag the owner added by hand is never removed by automation; the run says so (judge 3 round 7, L3).
+    for link in to_remove.filter(origin=DocumentTag.Origin.MANUAL).select_related("tag"):
+        changes.append(f"kept tag {link.tag.name} (added by hand)")
+    for link in to_remove.exclude(origin=DocumentTag.Origin.MANUAL).filter(tag_id__in=guarded).select_related("tag"):
+        changes.append(f"kept tag {link.tag.name} (it limits another agent's access and an agent made the change)")
     for link in removed.select_related("tag"):
         changes.append(f"removed tag {link.tag.name}")
     removed.delete()
     fields = []
     # A sender or type the owner chose by hand is never overwritten by automation.
     if workflow.set_correspondent_id and document.correspondent_origin != Document.FilingOrigin.MANUAL and document.correspondent_id != workflow.set_correspondent_id:
-        document.correspondent_id, document.correspondent_origin = workflow.set_correspondent_id, Document.FilingOrigin.SOURCE
+        document.correspondent_id, document.correspondent_origin = workflow.set_correspondent_id, filing_origin
         fields += ["correspondent", "correspondent_origin"]
         changes.append(f"set sender {workflow.set_correspondent.name}")
     if workflow.set_document_type_id and document.document_type_origin != Document.FilingOrigin.MANUAL and document.document_type_id != workflow.set_document_type_id:
-        document.document_type_id, document.document_type_origin = workflow.set_document_type_id, Document.FilingOrigin.SOURCE
+        document.document_type_id, document.document_type_origin = workflow.set_document_type_id, filing_origin
         fields += ["document_type", "document_type_origin"]
         changes.append(f"set type {workflow.set_document_type.name}")
     # After sender and type, so a title template sees the values this workflow just set.
@@ -286,19 +323,37 @@ def _apply(workflow, document, *, first_time=True, access_changes=None, guarded=
         DocumentNote.objects.create(document=document, author_id=document.owner_id, body=workflow.add_note)
         changes.append("added a note")
     if workflow.share_with:
-        _share(workflow, document, changes, access_changes)
-    if workflow.webhook_url and first_time:
-        changes.append("queued webhook")
-    if workflow.email_to and first_time:
-        changes.append("queued email")
+        if by_agent:
+            changes.append(HELD_SHARE)
+        else:
+            _share(workflow, document, changes, access_changes)
+    if workflow.webhook_url and notify:
+        changes.append(HELD_WEBHOOK if by_agent else "queued webhook")
+    if workflow.email_to and notify:
+        changes.append(HELD_EMAIL if by_agent else "queued email")
+    if outcome is not None:
+        outcome["notify"] = "queued webhook" in changes or "queued email" in changes
+        outcome["held"] = any(entry in (HELD_SHARE, HELD_WEBHOOK, HELD_EMAIL) for entry in changes)
+        # Every action held back (a guarded or hand-added tag, an unusable field value, a full sharing list): the run
+        # did not apply anything, so it must not say "applied" (judge 3 round 8, L2).
+        outcome["skipped"] = bool(changes) and all(entry.startswith(SKIPPED_PREFIXES) for entry in changes)
     return ", ".join(changes) or "conditions matched; nothing needed changing"
 
 
-def run_workflow(workflow, document, trigger, *, agent_grant=None):
+# Run detail entries that describe an action held back rather than done.
+SKIPPED_PREFIXES = ("skipped ", "kept tag ", "could not share with ")
+
+
+def run_workflow(workflow, document, trigger, *, agent_grant=None, confirmed=False):
     """Run one workflow for one document. Returns the WorkflowRun, or None if it already ran or did not match.
 
     ``agent_grant`` is the MCP agent whose change started this run, if any: the run then leaves other agents'
-    filter tags alone (``guarded_tags``).
+    filter tags alone (``guarded_tags``) and does not share the document, call the webhook, or send the email.
+    The same holding back applies, whoever starts the run, while the workflow matches only because of a value an
+    agent set (``matched_by_agent``), unless ``confirmed``: the owner chose **Run now** for this document.
+
+    A run that held something back is marked ``held_back``. It does not use up the one-time webhook and email, and
+    for "added" and scheduled workflows (one run per document) it is completed in place once nothing is held back.
     """
     from .tasks import send_workflow_notifications
 
@@ -308,20 +363,36 @@ def run_workflow(workflow, document, trigger, *, agent_grant=None):
         with transaction.atomic():
             Document.objects.select_for_update().filter(pk=document.pk).first()
             # Side effects (note, webhook, email) happen on the first run only, whatever its delivery outcome.
-            first_time = not WorkflowRun.objects.filter(workflow=workflow, document=document).exists()
-            try:
-                with transaction.atomic():
-                    run = WorkflowRun.objects.create(workflow=workflow, document=document, trigger=trigger)
-            except IntegrityError:
-                return None  # Already ran for this document and trigger.
+            earlier = WorkflowRun.objects.filter(workflow=workflow, document=document)
+            first_time = not earlier.exists()
+            # A run that held the webhook and email back did not send them: they are still due once (review M2).
+            notify = not earlier.filter(held_back=False).exists()
+            if agent_grant is not None:
+                document.refresh_from_db(fields=["correspondent_origin", "document_type_origin"])
+            hold = agent_grant is not None or (not confirmed and matched_by_agent(workflow, document))
+            run = None
+            if trigger != Workflow.Trigger.UPDATED:
+                run = earlier.filter(trigger=trigger, held_back=True).first()
+                if run is not None and hold:
+                    return None  # Still held back; nothing new to record.
+            if run is None:
+                try:
+                    with transaction.atomic():
+                        run = WorkflowRun.objects.create(workflow=workflow, document=document, trigger=trigger)
+                except IntegrityError:
+                    return None  # Already ran for this document and trigger.
             from . import history
 
             before = history.snapshot(document)
             access_changes = []
-            run.detail = _apply(workflow, document, first_time=first_time, access_changes=access_changes, guarded=guarded_tags(agent_grant))[:500]
+            outcome = {}
+            run.detail = _apply(workflow, document, first_time=first_time, access_changes=access_changes, guarded=guarded_tags(agent_grant),
+                                outcome=outcome, by_agent=hold, notify=notify)[:500]
+            run.status = WorkflowRun.Status.SKIPPED if outcome.get("skipped") else WorkflowRun.Status.APPLIED
+            run.held_back = bool(outcome.get("held"))
             history.record(document, before, actor_label=workflow.name, actor_kind=history.Kind.WORKFLOW, extra=access_changes)
-            run.save(update_fields=["detail"])
-            if first_time and (workflow.webhook_url or workflow.email_to):
+            run.save(update_fields=["detail", "status", "held_back"])
+            if outcome.get("notify"):
                 transaction.on_commit(lambda run_id=str(run.id): send_workflow_notifications.delay(run_id), robust=True)
     except Exception:
         logger.exception("Workflow %s failed for document %s", workflow.id, document.id)
@@ -371,7 +442,9 @@ def run_scheduled():
             candidates = candidates.filter(created_at__date__gte=since)
         else:
             candidates = candidates.filter(**{f"{workflow.schedule_field}__gte": since})
-        done = WorkflowRun.objects.filter(workflow=workflow, trigger=Workflow.Trigger.SCHEDULED, document=OuterRef("pk"))
+        # A run that held sharing or notifications back (an agent set the matching value) is looked at again each day
+        # and completed once a person confirmed the value.
+        done = WorkflowRun.objects.filter(workflow=workflow, trigger=Workflow.Trigger.SCHEDULED, document=OuterRef("pk"), held_back=False)
         candidates = candidates.filter(~Exists(done)).order_by("created_at", "id")
         applied, after = 0, None
         while applied < SCHEDULE_BATCH:

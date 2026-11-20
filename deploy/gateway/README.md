@@ -39,7 +39,7 @@ Internet ─80/443─▶ Router ─▶ Raspberry Pi 4
 
 1. **Copy this folder to the Pi**, for example to `~/gateway`, and open a shell there.
 2. **Settings:** `cp gateway.env.example .env`, then edit `.env`: `DOMAIN`, `NAS_IP`, the ports, and `ACME_EMAIL`.
-   On the NAS, set `RIPIANO_TRUSTED_PROXIES` to the Pi's fixed LAN address in the Ripiano stack (Portainer environment) and redeploy, so Ripiano throttles failed sign-ins per person instead of for everyone coming through the Pi.
+   On the NAS, set `RIPIANO_TRUSTED_PROXIES` to the Pi's fixed LAN address in the Ripiano stack's environment and redeploy, so Ripiano throttles failed sign-ins per person instead of for everyone coming through the Pi.
 3. **Secrets** (random values Authelia uses to sign and encrypt):
    ```sh
    mkdir -p secrets
@@ -70,7 +70,7 @@ Internet ─80/443─▶ Router ─▶ Raspberry Pi 4
 
 ## Ripiano settings
 
-- In the Ripiano stack (Portainer), set `RIPIANO_PUBLIC_ORIGIN=https://ripiano.<domain>` and `RIPIANO_ALLOWED_HOSTS=ripiano.<domain>`.
+- In the Ripiano stack's environment, set `RIPIANO_PUBLIC_ORIGIN=https://ripiano.<domain>` and `RIPIANO_ALLOWED_HOSTS=ripiano.<domain>`.
 - **Android app:** on the server screen, enter the Ripiano address and, under **Sign-in address**, `https://auth.<domain>`. The Authelia page then opens inside the app and its cookie stays there. See [apps/android/README.md](../../apps/android/README.md).
 - These requests **skip the Authelia sign-in**, because Ripiano checks them itself:
   - share links and share bundles (`/api/share-links/…`, `/api/share-bundles/…`), so people without an account can download what you shared;

@@ -6,13 +6,46 @@ Ripiano is a self-hosted document archive for a NAS. It combines quick mobile ca
 
 Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability baseline, not a backend dependency or a workflow template. The product target is feature parity with that release plus a better day-to-day filing process.
 
+## Features at a glance
+
+This is the summary that used to open the README; each item is explained in the sections below.
+
+**Capture**
+- Add documents from the phone camera, gallery, or files: PDF, images, Word/Excel/PowerPoint, OpenDocument, RTF, and emails (`.eml`, `.msg`). The original is always kept unchanged.
+- If a session expires while a file is being added, the file waits on that device and resumes after the same person signs in.
+- Background OCR turns every document into a searchable PDF. Barcodes on scans can split documents, set an archive number (ASN), or add tags.
+- Optional inputs, off until you enable them: a consume folder, watched NAS folders, S3/WebDAV/Google Drive/OneDrive/Dropbox, a Telegram bot, and IMAP mailboxes.
+
+**Find**
+- Full-text search with field filters (`tag:`, `sender:`, `date:2026-01..2026-03`, …), saved searches, and matching passages in the results. Common Italian accents can be omitted when typing a search; older indexes update in small background batches.
+- Optional semantic ("search by meaning") search, off by default, using Ollama on another computer or a small model on the NAS.
+
+**File**
+- Tags, senders, document types, custom fields, and storage paths, filled automatically by matching rules, workflows, and suggestions learned on your own server from your own choices.
+- An exception-only Inbox (failed OCR, duplicates) and a separate Needs-action list for follow-ups.
+
+**Paper copies**
+- Give each paper original a QR sticker, place it in nested shelves and boxes, and scan the sticker or shelf label to find it again. Moving a copy confirms the change in the document panel.
+
+**Sharing and people**
+- Multiple accounts with private archives, groups, per-document view/edit sharing, expiring public links, and optional email sending.
+
+**AI through MCP agents**
+- Grant an AI agent (for example Claude, or a local Ollama model) narrow, revocable access through MCP: search, read text, tag, or file. Ripiano itself never calls a paid AI API.
+
+**Privacy and backup**
+- Two-step sign-in, personal API tokens, scheduled checksum-verified backups for Hyper Backup, a browsable NAS copy, and a portable export to move to a new server.
+
+The stack is a Docker Compose set of services (Django API, OCR workers, PostgreSQL) with an installable web app (PWA) for iOS and Android and an Android client with a native scanner. Everything stays on your server; no cloud AI provider is ever called.
+
 ## Contents
 
+- [Features at a glance](#features-at-a-glance)
 - [Current state (first implementation slice)](#first-implementation-slice)
 - [Interface language and appearance](#interface-language)
 - [Install and run](#install-and-run)
   - [Run locally](#run-locally)
-  - [NAS deployment (Portainer)](#nas-deployment-portainer)
+  - [NAS deployment](#nas-deployment)
   - [Work on the services](#work-on-the-services)
 - [Adding documents](#adding-documents)
   - [Uploads and file types](#uploads-and-file-types)
@@ -57,7 +90,7 @@ Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability
 
 ## First implementation slice
 
-The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and Office/OpenDocument/RTF upload, IMAP email intake, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, tag-changing, and sender/type-filing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags and fill empty sender/type fields through separately granted MCP scopes and write settings. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. Locally trained filing suggestions can also be applied automatically to new documents when the owner opts in and strict confidence checks pass. AI suggestions and document chat are served through MCP agents rather than by Ripiano calling a model provider (see [DECISIONS.md](DECISIONS.md) D1). Release still requires the owner-side checks and the row-by-row verification of the [parity matrix](FEATURE_PARITY.md).
+The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and Office/OpenDocument/RTF upload, IMAP email intake, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, tag-changing, and sender/type-filing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags and fill empty sender/type fields through separately granted MCP scopes and write settings. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. Locally trained filing suggestions can also be applied automatically to new documents when the owner opts in and strict confidence checks pass. AI suggestions and document chat are served through MCP agents rather than by Ripiano calling a model provider (see [DECISIONS.md](DECISIONS.md) D1). Release still requires the owner-side checks on the NAS and real devices and the row-by-row verification of the [parity matrix](FEATURE_PARITY.md); the [quality judges](QUALITY_JUDGES.md) list the release blockers. No Paperless source code is included in this repository; see [LICENSE](../LICENSE) for the license terms.
 
 ## Interface language
 
@@ -71,13 +104,15 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 
 ### Run locally
 
-1. Copy `.env.example` to `.env` and replace the three example secrets with strong unique values.
-2. Run `docker compose up --build -d` from the repository root.
-3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner account.
+1. Clone the repository (`git clone https://github.com/p4xx07/ripiano.git`) and copy `.env.example` to `.env`. Replace the example `RIPIANO_SECRET_KEY`, `RIPIANO_SETUP_KEY`, and `RIPIANO_DB_PASSWORD` with long random values.
+2. Run `docker compose up --build -d` from the repository root. The default [`compose.yaml`](../compose.yaml) builds the images from source.
+3. Open `http://localhost:8080`. Enter the `RIPIANO_SETUP_KEY` from `.env` to create the owner (admin) account.
 
-### NAS deployment (Portainer)
+Required variables in `.env`: `RIPIANO_SECRET_KEY`, `RIPIANO_SETUP_KEY`, `RIPIANO_DB_PASSWORD`, `RIPIANO_PUBLIC_ORIGIN` (the exact URL in the browser), and `RIPIANO_ALLOWED_HOSTS` (its hostname). `RIPIANO_PORT` changes the published port (default 8080). Without path variables, data lives in Docker volumes.
 
-For a NAS deployment, use the [complete Portainer Compose example](../deploy/compose.portainer.yaml) and the [example environment values](../deploy/portainer.env.example). The example maps the database, media, and backup folders to persistent Synology paths and publishes only the web port; the API, OCR worker, maintenance worker, scheduler, broker, and MCP stay inside the stack. OCR work has its own queue so a long rule recheck or backup does not hold new uploads. Portainer should receive the complete Compose file and the environment variables, with real secrets and released image digests. A short excerpt shows the important mounts:
+### NAS deployment
+
+For a NAS deployment, use the [complete pull-only Compose example](../deploy/docker-compose.yaml) and the [example environment values](../deploy/env.example). The example maps the database, media, and backup folders to persistent Synology paths and publishes only the web port; the API, OCR worker, maintenance worker, scheduler, broker, and MCP stay inside the stack. OCR work has its own queue so a long rule recheck or backup does not hold new uploads. Whatever runs the stack (`docker compose` or a Compose-based manager) needs the complete Compose file and the environment variables, with real secrets and released image digests. A short excerpt shows the important mounts:
 
 ```yaml
 services:
@@ -101,6 +136,8 @@ services:
 ```
 
 This excerpt illustrates storage and exposure; use the linked full stack for deployment. Set an HTTPS `RIPIANO_PUBLIC_ORIGIN`, the reverse proxy hostname in `RIPIANO_ALLOWED_HOSTS`, and give container UID 10001 write access to the media and backup folders. Point Synology's HTTPS reverse proxy at the web port and Hyper Backup at the backup folder's `complete/` subfolder. [Deployment details](../deploy/README.md) include image pinning and NAS permissions; [backup/restore instructions](BACKUP_RESTORE.md) cover recovery. Backblaze B2 configuration stays in Synology. A local clean-stack restore passed with documents, locations, duplicate links, and revoked agent grants, but NAS-specific permissions and restore still need verification before storing real documents. No release images have been published from this draft PR yet.
+
+For monitoring, `/healthz` answers 200 while the database and the queue server are reachable and 503 otherwise; `/livez` only says Ripiano itself is answering. Details are in [Backup and restore](BACKUP_RESTORE.md#health-checks).
 
 To reach Ripiano from outside the home network through one sign-in, see the [Raspberry Pi gateway](../deploy/gateway/README.md) (Traefik + Authelia).
 
@@ -178,7 +215,7 @@ Set `RIPIANO_BARCODES=0` to turn this off. `RIPIANO_BARCODE_SEPARATOR`, `RIPIANO
 
 ### Search
 
-Simple search finds titles, OCR text, tag names, correspondent names, document types, action notes, and sticker codes. Full-text terms must match the query together; a partial rank alone does not pull an unrelated document into results. Search results show the matching passage from OCR text or action notes, or the matching sticker code; the unfiltered Library stays compact.
+Simple search finds titles, OCR text, tag names, correspondent names, document types, action notes, and sticker codes. A search that is only an archive number, typed as `900011` or as printed on the label (`ASN00900011`), also finds the document with that number in your own Library. Full-text terms must match the query together; a partial rank alone does not pull an unrelated document into results. Search results show the matching passage from OCR text or action notes, or the matching sticker code; the unfiltered Library stays compact.
 
 To narrow search by field, use `title:`, `text:`, `note:`, `tag:`, `sender:`, `type:`, `sticker:`, or `date:YYYY-MM-DD`; quote values containing spaces, such as `sender:"City office"`. Multiple field terms and ordinary text combine. Put `-` before a word or field term to exclude it (`-tag:Draft`), and `OR` between terms when either may match (`tag:Bills OR tag:Car`, `invoice OR receipt`). Date terms accept a year, a month, a day, a range, or a comparison: `date:2026`, `date:2026-01..2026-03`, `date:>=2026-01-01`; `added:` uses the day Ripiano received the document, and `created:` is accepted as another name for `date:`.
 
@@ -217,9 +254,9 @@ With a hardware keyboard (shortcuts stay inactive while typing or while a dialog
 - In the Library, **J** / **K** move through the list and **Enter** opens the highlighted document; **Esc** closes it.
 - **Tab** from the top of the page reaches a **Skip to content** link.
 
-Each screen has its own address (`/inbox`, `/tags`, `/paper`, `/agents`, …) and an open document adds `?document=<id>`, so the browser's Back button, the Android back gesture, and an installed PWA's back go to the previous screen or close the open document instead of leaving Ripiano; addresses can be bookmarked and survive a reload. On phones the closed menu is hidden from Tab and screen readers; opening it moves focus to the current screen's link, and **Esc** or a tap anywhere outside it closes it. On a phone the Library keeps **Add** in the top bar and shows one line of counts; saved searches and the precise-search help open with **Filters**, so the first documents fit on the first screen. If Ripiano cannot be reached, the Library keeps the documents it last loaded and says when they were loaded, instead of showing an empty archive. A finished upload says how many documents were added and offers **Show** (on phones the first new document is brought into view). If the session ends elsewhere, Ripiano returns to the sign-in screen with a short notice and, after signing in, to the same screen.
+Each screen has its own address (`/inbox`, `/tags`, `/paper`, `/agents`, …) and an open document adds `?document=<id>`, so the browser's Back button, the Android back gesture, and an installed PWA's back go to the previous screen or close the open document instead of leaving Ripiano; addresses can be bookmarked and survive a reload. On phones the closed menu is hidden from Tab and screen readers; opening it moves focus to the current screen's link, and **Esc** or a tap anywhere outside it closes it. On a phone the Library keeps **Add** in the top bar and shows one line of counts; saved searches and the precise-search help open with **Filters**, so the first documents fit on the first screen. If Ripiano cannot be reached, the Library keeps the documents it last loaded and says when they were loaded, instead of showing an empty archive. A file you add is kept on this device from the moment you choose it until Ripiano confirms it has it: if the page is reloaded or closed mid-upload (the browser asks first), the file is still there, the Library says it is waiting to upload, and it is sent once, without a second copy. If you sign out while files are still being sent, Ripiano asks whether to keep or discard them; kept files are sent only after you sign in again on this device, never into another person's account. A finished upload says how many documents were added and offers **Show** (on phones the first new document is brought into view). If the session ends elsewhere, Ripiano returns to the sign-in screen with a short notice and, after signing in, to the same screen.
 
-Dialogs keep focus inside until closed and return it afterwards. `apps/web/e2e/accessibility.spec.ts` checks the sign-in page and the main screens for controls without names, unlabeled fields, duplicate ids, images without alt text, skipped heading levels, and missing landmarks.
+Dialogs keep focus inside until closed and return it afterwards; a document opened from the Library returns focus to its row, also after the list reloaded. In the Library, Enter on a row you reached with Tab opens that row, and the J/K highlight follows focus. `apps/web/e2e/accessibility.spec.ts` checks the sign-in page and the main screens for controls without names, unlabeled fields, duplicate ids, images without alt text, skipped heading levels, and missing landmarks.
 
 ## Filing
 
@@ -227,7 +264,7 @@ Dialogs keep focus inside until closed and return it afterwards. `apps/web/e2e/a
 
 Documents can optionally be marked **Needs action** with a due date and note. The separate action list shows only open follow-ups; completing one keeps the document in the archive. Uploading and automatic tags do not require this step.
 
-The **Inbox** shows exceptions only: failed OCR and exact copies that have not been reviewed. Retry OCR, keep both copies, or choose **Move this copy to Trash**. **Resolve all exact copies** asks first, then keeps every original and moves every listed copy to the Trash, where you can restore it. Ordinary uploads go straight to the Library.
+The **Inbox** shows exceptions only: failed OCR, exact copies that have not been reviewed, and damaged PDFs of which only the readable pages could be kept. Such a PDF is searchable and previewable from what was saved; compare it with the paper, re-scan it if pages are missing, and mark it checked to take it off the list. Each card shows its whole explanation, on as many lines as it needs. Retry OCR, keep both copies, or choose **Move this copy to Trash**. After **Retry OCR** the card stays until the new attempt ends, and the result is announced. If that attempt is interrupted, the card says it is taking longer than usual and will be tried again by itself. **Resolve all exact copies** asks first, then keeps every original and moves every listed copy to the Trash, where you can restore it. Ordinary uploads go straight to the Library.
 
 <img src="../qa-artifacts/5252d3e/inbox/mobile/failed-ocr.png" alt="Mobile Inbox showing a failed OCR document and retry action" width="260">
 
@@ -235,7 +272,7 @@ The **Inbox** shows exceptions only: failed OCR and exact copies that have not b
 
 In **Senders** and **Document types**, add a matching phrase to a name to file new and existing documents by title or OCR text. A longer matching phrase wins when more than one name matches; the same phrase cannot target two names of the same kind. The document details show when a value came from a phrase; changing or clearing it there keeps that manual decision on later reprocessing. Automatic tags also stay automatic when you edit an unrelated detail. Tag, sender, and type phrase edits recheck only documents they may affect, so new OCR work is not held behind a full archive pass.
 
-The document dialog shows the document's first page next to the form (above it on a phone, where **Show larger** expands it and **Open full size** opens the searchable PDF), so you can check the sender and date without leaving the dialog. **Create a tag** in the dialog adds a new tag and ticks it; **Save changes** keeps it on the document.
+The document dialog shows the document's first page next to the form (above it on a phone, where **Show larger** expands it and **Open full size** opens the searchable PDF), so you can check the sender and date without leaving the dialog. **Create a tag** in the dialog adds a new tag and ticks it; **Save changes** keeps it on the document. If the name you type into **Create a tag**, **Add a type** or **Add a sender** already exists (capitals do not matter), the existing one is chosen instead of a second one being made.
 
 Tags can be grouped under other tags. Create a nested tag from the **Under** picker or move an existing tag from its card. Filtering the Library by a parent finds documents tagged with any nested child, including deeper levels; documents tagged with both parent and child appear once. Agent grants that use a tag filter continue to require the exact granted tag.
 
@@ -257,12 +294,14 @@ Some limits apply:
 - **Similar spelling** compares up to 6 words against the first 20,000 words of a document, at 85% similarity. One wrong letter in a word of six letters or fewer is not tolerated.
 - **Every mode:** rules are evaluated before any database lock is taken.
 
-Existing documents are rechecked in the background when you add a rule.
+Existing documents are rechecked in the background when you add or delete a rule. A large archive is rechecked in short steps, so email, source imports, and backups are not held up meanwhile.
 
 ### Learned suggestions
 
 Ripiano learns from the senders, document types, and tags you set by hand, on your own server. It learns again every night, or when you press **Tags & filing → Learned suggestions → Learn now**.
 - **When it suggests:** only when it is at least 60% likely to be right. The probability is calibrated on documents the model had not seen.
+- **On a phone**, an open document with suggestions shows a short link above the preview (for example "3 filing suggestions · Go to them") that jumps straight to them.
+- **Suggestions from similar documents** list the words both documents share. The words come from the document text, and from the words you wrote into the title. Title words that are also in the upload's file name are ignored, for both these suggestions and the learned ones: this covers a title that is still the file name, the parts of a split scan (named after the scan, such as `scan batch (2/3)`), and a document whose file was replaced. The codes printed under separator and ASN barcodes are ignored too. The model stops using file-name words the next time it learns.
 - **Automatic filing is optional:** in **Tags & filing → Learned suggestions**, turn on **File new documents automatically when very confident**. It applies only after OCR on new documents. Each assignment needs at least 90% calibrated confidence, at least 95% measured precision and at least 20 tested suggestions among held-out predictions above that same 90% threshold for that field. It fills empty sender/type fields and adds at most three tags; manual choices, input rules, and removed tags stay in control. You can correct the result in the document dialog. With the option off, suggestions only appear in the dialog and need a tap.
 - **File an existing selection:** in **Library → Select documents → File with local model**, choose up to 100 documents and run the same confidence checks once. Documents with no confident new detail stay selected. This one-time action works even when automatic filing for future documents is off; it never changes manual sender/type choices or re-adds a removed tag.
 - **A wrong suggestion:** the **×** next to it ("Not right") rejects it for that document, on every device. A rejected tag counts as removed by hand, so rules, workflows, agents, and automatic filing do not add it either; a rejected sender or type is not suggested or filed automatically for that document again. The rejection is listed in the document's **Changes**. Adding the tag or choosing the sender yourself later still works. The learned model does not use rejections as training examples; it keeps learning only from how you file documents.
@@ -301,13 +340,13 @@ Every change a workflow makes (title, storage path, custom fields, sharing, tags
 
 **Unlocking PDFs:** a locked PDF cannot be read for text. Before text recognition, Ripiano tries the saved passwords of each matching "added" workflow, in order. The first one that works produces an unlocked copy, which is used for the searchable PDF, barcodes, and page splits. The original file is kept exactly as uploaded, still locked. Passwords are stored encrypted with the mailbox key (`RIPIANO_MAIL_KEY`, or one derived from the server secret) and are never shown again; the workflow shows only how many are saved. If no password works, the document is marked unreadable with a message saying so. Add the password to a workflow and choose **Retry OCR** on the document. Conditions are checked before text recognition, so a word condition can only match the title at that point.
 
-**Run history:** added and scheduled workflows act once per document, and every run is listed with what it changed.
+**Run history:** added and scheduled workflows act once per document; "updated" workflows run again on every matching change, while their notes, webhooks, and emails are still sent only once per document. Every run is listed with what it changed. A run whose every action was held back (for example a tag that limits another agent's access, or a tag you added by hand) is marked **Skipped**, not Applied.
 
 **Notifications:** webhooks and emails include the title, tags, sender, type, and a link, never the OCR text. An email attaches the original only when you tick the option, up to `RIPIANO_EMAIL_ATTACH_MAX_BYTES` (10 MB by default). Webhooks to private, loopback, or link-local addresses are refused unless `RIPIANO_WEBHOOK_ALLOW_PRIVATE=1`, for example for home automation on your LAN. Each webhook call has a 15-second limit. Notes, webhooks, and emails happen once per workflow and document, and "updated" workflows run only after title, date, sender, type, or tag changes. A completed follow-up is never reopened. A new scheduled workflow applies to documents that become due after it was created. Email needs `RIPIANO_SMTP_HOST`, `RIPIANO_SMTP_PORT`, `RIPIANO_SMTP_USER`, `RIPIANO_SMTP_PASSWORD`, `RIPIANO_SMTP_SECURITY` (`starttls`, `ssl`, or `none`), and `RIPIANO_SMTP_FROM`.
 
 ### Storage paths
 
-Under **Tags & filing → Storage paths**, define folder layouts such as `{correspondent}/{year}/{month}`. Choose one on a document, and the next NAS browse copy places it there instead of under its year.
+Under **Tags & filing → Storage paths**, define folder layouts such as `{correspondent}/{year}/{month}`. Each layout has a name and a **Folder template**; the hint under the form explains the `/` and `{placeholder}` syntax. Choose one on a document, and the next NAS browse copy places it there instead of under its year.
 - **Placeholders:** `{year}`, `{month}`, `{day}`, `{added_year}`, `{added_month}`, `{correspondent}`, `{document_type}`, `{title}`, `{asn}`, `{tag}`, and `{source}`.
 - **Safe names:** values are made into safe single folder names. Slashes and reserved names such as `CON` are replaced.
 - **Originals:** Ripiano's managed originals never move.
@@ -319,6 +358,8 @@ Under **Custom details**, create a text, number, date, or yes/no field once and 
 ## Working with a document
 
 ### Notes and change history
+
+If someone else (or you, in another tab or device) saves a document while you are editing it, your **Save changes** is not applied over theirs. Details only they changed are merged in; for a detail you both changed, the form shows the newer value with yours below it and a **Use my value** button. Check, then save again.
 
 The document panel keeps dated notes separate from follow-ups. Notes can be added or deleted, found through Library search (including `note:`), and retrieved in older pages when the history grows.
 
@@ -354,7 +395,9 @@ Move a completed document to **Trash** from its detail panel and restore it late
 
 ## Paper copies
 
-Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link.
+Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. A sticker code can be typed with or without its `R-` prefix (`R-MUD3PLDT`, `MUD3PLDT`); a location code typed in full (`L-…`) opens the location.
+
+Scanning or typing a paper copy's sticker (also from the label's QR address on a phone) shows a result card where you can move the copy to another location (choose it and press **Move**), mark it missing or found, print its sticker again, or open the document. Locations are listed in tree order, each box under its shelf.
 
 If a paper copy is missing, mark its sticker **Missing** from the document panel. Ripiano keeps the last known location, shows a warning when the sticker is scanned, and records the report in its history. Mark it **Found** before assigning a new location; the sticker identity stays the same. A paper copy's **History** lists each placement or move with its date, time, and the person who made it.
 
@@ -377,6 +420,8 @@ To give someone a document without an account, open **Share original** in its do
 - **Single document:** a document's **Share original** creates an expiring, revocable link to its original.
 - **Several documents:** in Library selection mode, **Share as one link** gives the selected originals (up to 50 documents, 200 MB) as one ZIP download. The link lasts 1–30 days and can be revoked, and each original is checksum-verified while the ZIP is built.
 - **New versions:** adding a new version of a document revokes the links and bundles that include it.
+- **Password changes:** changing your password under **Security**, or an admin resetting it under **People**, revokes all your share links and bundles at once, like your API tokens and agents (docs/DECISIONS.md D11). They are listed as revoked, marked "password changed"; create new links for anything you still want to share.
+- **Turned-off accounts:** turning an account off revokes all its share links and bundles at once (a visitor sees the same "Link not found" as for any unknown link). Turning the account on again does not revive them: the owner sees them as revoked, marked "account turned off", and creates new links if still needed.
 - **Email:** **Email this document** sends the original (checksum-verified) or the searchable PDF through the server's SMTP settings. It is off unless the operator sets `RIPIANO_DOCUMENT_EMAIL=1`; SMTP alone (for workflows) does not enable it. Each account can email up to 30 recipients per hour, replies go to the account's email address, and the send history is shown on the document.
 - **Bundle ZIPs:** each bundle's ZIP is built once in the background and deleted when the link ends. Moving a bundled document to Trash or adding a new version revokes the bundle, and restoring the document does not re-share it.
 
@@ -387,7 +432,8 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 - **What they get:** the document appears under their **Shared with me**. Viewers can read it, download it, and read its notes. Editors can also change the title, date, and follow-up, and add notes.
 - **What stays with you:** unshared filing, files, pages, versions, share links, paper copies, and Trash. Recipients with edit access can use only the tags, senders, and types you separately share with them; they cannot clear or replace a sender or type you kept private.
 - **Ending access:** removing a grant, removing someone from the group, turning the account off, or moving the document to Trash all end access immediately.
-- **Passwords and accounts:** a password reset ends that person's other sessions and disconnects their API tokens and agents. Turning an account off does the same, and turning it on again does not revive them. API tokens cannot manage people or groups.
+- **Password rules:** at least 12 characters, wherever a password is set (first-time setup, People, Security). Ripiano refuses a commonly used password, digits only, one or two characters repeated, a row of neighbouring keys or letters, and a password that is little more than the username. It says which rule applied.
+- **Passwords and accounts:** a password change or reset ends that person's other sessions, disconnects their API tokens and agents, and revokes their public share links and bundles for good. Turning an account off does the same, also revoking its public share links and bundles, and turning it on again does not revive any of them. API tokens cannot manage people or groups.
 - **Caching:** signed-in `/api/` answers and original downloads are sent with `Cache-Control: private, no-store`, so browsers and proxies do not keep copies.
 
 **Sharing tags, senders, types, and saved views:** each has a **Share** button (the people icon) that opens the same people-with-access panel as documents, for a person or a group:
@@ -406,14 +452,16 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 - **Background jobs**: your documents waiting for or undergoing text recognition, documents that could not be read, permanent deletions that are waiting or failed, the learning job for filing suggestions, and workflow runs that failed this week.
 
 **Background job controls:**
-- **Cancel** takes a *queued* document out of the processing queue. It stays in your archive, marked as not processed, and **Retry OCR** queues it again. A document already being processed cannot be stopped midway.
+- **Cancel** takes a queued or processing document out of processing. It stays in your archive, marked as not processed, and **Retry OCR** queues it again. You can cancel a document that is being processed at any time, for example when it seems stuck; whatever the worker was doing for it is discarded. The worker itself stays on that file until its current text recognition step ends (up to 55 minutes for a very large scan), so with the default single worker a **Retry OCR** or the next upload waits behind it.
+- **Stopped workers:** the Library row, the open document, the Overview, and a retried Inbox card show the same "taking longer than usual" note. While a document is processed, the worker reports every 30 seconds. If it stops reporting for 2 minutes (the worker was restarted, killed, or ran out of memory), the document is marked as stalled and you can **Retry OCR** or **Cancel** it. The scheduler checks every minute and puts it back in the queue once two checks in a row find it stalled, so about 3–4 minutes after the worker stopped; one late report (a clock change, a short database outage) is not counted. A document that stops its worker three times in a row is marked as failed instead of being retried again; **Retry OCR** starts that count afresh, and it is kept apart from failed text recognition. If the worker was alive after all, its late result is discarded: it cannot undo your Cancel or run workflows a second time. Processing again never creates duplicate parts of a barcode-split scan, and files left behind by a stopped run are removed when a worker starts and as soon as the stopped run is noticed (a few minutes). The every-minute check runs on the maintenance worker, so it is not held up by a long text recognition; during a long backup it waits for the backup to finish.
+- **No OCR worker running:** each worker reports every 30 seconds, even while it is busy with a long scan. When documents have been waiting for more than 2 minutes and the OCR worker has not reported for 2 minutes (it was stopped, killed, or ran out of memory), Background jobs and the Overview say so and show since when documents are waiting; start the `worker` container again and they are processed once each. Documents that could not be handed to the queue server (Valkey down) are reported as waiting for it, not as being processed. A waiting document is queued once: the every-minute check sends it again only if it never reached the queue server, or if the OCR queue is empty although it has been waiting for more than 5 minutes (the queue server lost it), so the queue count in the Overview stays at most one per waiting document however long the worker is stopped. The `worker` and `maintenance_worker` containers also have a light health check (the age of a file their heartbeat touches), so the NAS container list shows a worker that stopped reporting as unhealthy. In the Library a queued document shows **Waiting** and one being processed shows **Processing**; the Overview counts both, like Background jobs. The archive owner is also told on the Overview when the maintenance worker (backups and scheduled checks) is not running.
 - **Retry OCR**, **Retry** (permanent deletion), and **Retry** (learning) restart failed work.
 - Failed workflow runs are listed for information; workflows never retry a run by themselves.
 - Backups and NAS browse copies keep their own cancel and retry controls under **Backups**.
 
 ### Offline
 
-Without a connection Ripiano keeps what it already shows. Files you add while offline wait on this device and are sent automatically when the connection returns, without creating duplicates if an earlier attempt did arrive. If the device is online but Ripiano could not be reached, the waiting files are tried again after about 3, 10 and 30 seconds and then every minute; **Send now** tries at once. If you reload the app while offline, it shows who was last signed in and how many files are waiting, and it reconnects by itself. Signing out with files still waiting asks whether to keep them for the next sign-in on this device or discard them.
+Without a connection Ripiano keeps what it already shows. Files you add while offline wait on this device and are sent automatically when the connection returns, without creating duplicates if an earlier attempt did arrive. If the device is online but Ripiano could not be reached, the waiting files are tried again after about 3, 10 and 30 seconds and then every minute; **Send now** tries at once. If you reload the app while Ripiano cannot be reached, it says whether the device itself is offline or the device is online but the Ripiano server is not answering, shows who was last signed in and how many files are waiting, and it reconnects by itself. Signing out with files still waiting asks whether to keep them for the next sign-in on this device or discard them.
 
 ## Security
 
@@ -425,7 +473,7 @@ Open **Security**, confirm your password, and scan the QR code with any authenti
 - **Storage:** the authenticator secret is encrypted with the same key as mailbox passwords (`RIPIANO_MAIL_KEY`, or one derived from `RIPIANO_SECRET_KEY`). When rotating it, keep the old key listed after the new one in `RIPIANO_MAIL_KEY`.
 - **Agents:** agent tokens are separate and unaffected.
 - **Admin:** Django admin (`/admin/`) has no separate password form. Sign in to Ripiano first, then open it.
-- **Throttling:** failed sign-ins are limited per username and per client address.
+- **Throttling:** failed sign-ins are limited per username and per client address. The counters live in the queue server (Valkey); while it is unreachable, sign-in keeps working, each web process counts failures itself with the same limits, and the api log says `Sign-in throttle unavailable`.
 - **Lost phone, no recovery codes:** run `manage.py reset_two_factor <username>`.
 
 ### API tokens
@@ -433,13 +481,17 @@ Open **Security**, confirm your password, and scan the QR code with any authenti
 Under **Security → API tokens**, create a personal token for your scripts. It is shown once, and you choose an expiry of 7–365 days. Send it as `Authorization: Token rip_…` on `/api/` requests.
 - **Access:** the token acts with your access to read, upload, and file documents, and needs no CSRF token. To limit the damage of a leaked token, it cannot: sign in or change account security, other tokens, or agents; manage people or groups; share documents, tags, senders, types, or saved views with other people, or create public links; or send documents out of Ripiano or change what does (document email, mail accounts and rules, Sources, workflows, backups, semantic-search and Trash-retention settings). Those requests get 403 with an explanation; do them in the app.
 - **Revoking:** revoke a token at any time. Last use is shown next to each token.
+- **Editing from a stale copy:** every document carries an `edit_version`. Send it back on `PATCH /api/documents/<id>` as `base_version` in the body (or as an `If-Match` header). If a detail you are changing was changed by someone else in the meantime, the change is refused with 409, `code: "edit_conflict"`, the changed details in `conflicting_fields` and `changed_fields`, and the current `document`; details nobody else touched still save. Requests without it work as before.
 - **Reference:** `/api/schema.json` is OpenAPI 3.1 for every route. The 40 most-used operations (documents, upload, notes, tags, senders, types, saved views, sharing, workflows, sources, jobs, overview, tokens, and others) include request and response body schemas and are marked `x-ripiano-contract: v1`.
+- **Safe retries (`Idempotency-Key`):** send the header `Idempotency-Key: <any 1–64 characters without spaces, for example a UUID>` on a POST under `/api/`, and repeat the same key when you retry because no answer arrived. Within 10 minutes, the same key from the same person on the same path returns the first successful answer again (with `Idempotent-Replay: true`) instead of creating the note, link, agent, or backup twice. If the first request is still running, the retry waits up to 15 seconds for its answer, then answers 409. A request that was refused or failed keeps nothing, so the retry runs normally. The same key on another path answers 422; keys of different people never meet. Stored answers are encrypted and deleted after 10 minutes. The app sends the header by itself.
 - **Compatibility promise (API version 1):** for contract operations, fields may be added but existing fields never disappear or gain a new type (including `null`), and routes never disappear, without a new API version. `services/api/archive/test_api_contract.py` enforces this on every test run against the recorded `archive/api_contract_v1.json`; after an intended, compatible change, regenerate it with `RIPIANO_WRITE_CONTRACT=1 RIPIANO_DEBUG=1 .venv/bin/pytest -q archive/test_api_contract.py`.
 - **Agents:** MCP agents keep their own, more limited grants (see Agents and [Agent access](AGENT_ACCESS.md)).
 
 ## Backups and moving
 
-Scheduled or manual checksum-verified backups are written to the mounted backup volume; see [Backup and restore](BACKUP_RESTORE.md) for the layout, schedule, and clean-stack recovery.
+Scheduled or manual checksum-verified backups are written to the mounted backup volume. After **Back up now**, the screen shows that the backup is running and announces when it finishes, fails, or is cancelled; a second click while one is running starts nothing new.
+
+See [Backup and restore](BACKUP_RESTORE.md) for the layout, schedule, and clean-stack recovery.
 
 ### NAS browse copy
 
@@ -460,7 +512,7 @@ Scheduled snapshots (see Backups) remain the disaster-recovery path. This export
 
 ## Screenshots
 
-The screenshots come from the running development stack with fictional PDF documents in a separate demo archive. Mobile captures use browser emulation of the PWA; the Android client adds a native multi-page scanner. Many more desktop and mobile captures of individual test journeys (saved searches, bulk filing, Trash, share links, custom details, appearance themes, and others) are kept under [`qa-artifacts/`](../qa-artifacts/).
+The screenshots come from the running development stack with fictional PDF documents in a separate demo archive. Mobile captures use browser emulation of the PWA; the Android client adds a native multi-page scanner. The current README set and the scripts that regenerate it are in [`qa-artifacts/20261119-readme/`](../qa-artifacts/20261119-readme/README.md). Many more desktop and mobile captures of individual test journeys (saved searches, bulk filing, Trash, share links, custom details, appearance themes, and others) are kept under [`qa-artifacts/`](../qa-artifacts/).
 
 <img src="../qa-artifacts/20261111-showcase/desktop/add.png" alt="Desktop Add dialog with camera, photos, and files" width="640">
 
@@ -476,6 +528,7 @@ The screenshots come from the running development stack with fictional PDF docum
 - [Implementation plan](IMPLEMENTATION_PLAN.md): build order and verification gates.
 - [Quality judges](QUALITY_JUDGES.md): the 9.5 target, independent review rubric, and release blockers.
 - [Design system](DESIGN_SYSTEM.md): Ripiano colors, shared controls, focus behavior, and mobile density.
-- [Portainer deployment](../deploy/README.md): digest-pinned images, NAS volumes, HTTPS, and backup mount.
+- [NAS deployment](../deploy/README.md): digest-pinned images, NAS volumes, HTTPS, and backup mount.
+- [Android app](../apps/android/README.md), [contributing](../CONTRIBUTING.md), and [security policy](../SECURITY.md).
 
 The planning documents remain the implementation baseline. No Paperless source code is included in this repository.

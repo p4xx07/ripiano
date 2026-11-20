@@ -13,6 +13,7 @@ from archive import object_access_views, source_views, semantic_views, agent_vie
 
 urlpatterns = [
     path("healthz", views.health),
+    path("livez", views.liveness),
     path("api/setup", views.setup_owner),
     path("api/session", views.session),
     path("api/overview", stats_views.overview),

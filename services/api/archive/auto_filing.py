@@ -5,6 +5,7 @@ import logging
 from django.contrib.auth import get_user_model
 from django.db import transaction
 
+from .classification import file_name_words
 from .learning import AUTO_THRESHOLD, TEXT_CHARS, _load, predict
 from .models import AutoFilingPolicy, Correspondent, Document, DocumentTag, DocumentType, FilingModel, SuggestionDismissal, Tag, TagOverride
 
@@ -41,7 +42,7 @@ def apply_learned_filing(document_id, *, require_opt_in=True, expected_owner_id=
 
 def _apply_once(document_id, *, require_opt_in, expected_owner_id):
     snapshot = Document.objects.filter(pk=document_id).values(
-        "owner_id", "title", "extracted_text", "status", "trashed_at", "is_split_source",
+        "id", "owner_id", "title", "extracted_text", "status", "trashed_at", "is_split_source", "original_name", "split_parent__original_name",
     ).first()
     if (not snapshot or snapshot["status"] != Document.Status.READY or snapshot["trashed_at"] or snapshot["is_split_source"]
             or (expected_owner_id is not None and snapshot["owner_id"] != expected_owner_id)):
@@ -57,7 +58,8 @@ def _apply_once(document_id, *, require_opt_in, expected_owner_id):
         return 0
     try:
         model = _load(owner_id)
-        predictions = predict(Document(owner_id=owner_id), snapshot["title"], snapshot["extracted_text"][:TEXT_CHARS], model) if model else {}
+        predictions = predict(Document(owner_id=owner_id), snapshot["title"], snapshot["extracted_text"][:TEXT_CHARS], model,
+                              file_name_words([snapshot])[snapshot["id"]]) if model else {}
     except Exception:  # noqa: BLE001 - a damaged model must never prevent archive intake
         logger.exception("Local auto-filing prediction failed for %s", document_id)
         return 0

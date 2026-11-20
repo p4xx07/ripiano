@@ -33,7 +33,8 @@ def test_overview_counts_only_the_owners_visible_documents():
     client.force_login(owner)
     data = client.get("/api/overview").json()
     assert data["documents"] == {"total": 3, "ready": 1, "waiting": 1, "failed": 1, "needs_action": 1, "overdue": 1,
-                                 "duplicates": 1, "bytes": 3000, "untagged": 2}
+                                 "duplicates": 1, "warnings": 0, "bytes": 3000, "untagged": 2,
+                                 "pending": 1, "processing": 0}
     assert data["by_type"][0] == {"name": "No type", "count": 2}
     assert {row["name"] for row in data["top_tags"]} == {"Bills", "Home"}
     assert len(data["monthly"]) == 12 and sum(row["count"] for row in data["monthly"]) == 3

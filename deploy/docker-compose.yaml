@@ -1,0 +1,211 @@
+name: ripiano
+
+x-api-env: &api-env
+  RIPIANO_DEBUG: ${RIPIANO_DEBUG:-0}
+  RIPIANO_SECRET_KEY: ${RIPIANO_SECRET_KEY:?Set RIPIANO_SECRET_KEY}
+  RIPIANO_SETUP_KEY: ${RIPIANO_SETUP_KEY:?Set RIPIANO_SETUP_KEY}
+  RIPIANO_PUBLIC_ORIGIN: ${RIPIANO_PUBLIC_ORIGIN:?Set RIPIANO_PUBLIC_ORIGIN}
+  RIPIANO_ALLOWED_HOSTS: ${RIPIANO_ALLOWED_HOSTS:?Set RIPIANO_ALLOWED_HOSTS}
+  RIPIANO_DB_HOST: db
+  RIPIANO_DB_NAME: ripiano
+  RIPIANO_DB_USER: ripiano
+  # Required (see deploy/README.md); PostgreSQL refuses to start without it.
+  RIPIANO_DB_PASSWORD: ${RIPIANO_DB_PASSWORD}
+  RIPIANO_BROKER_URL: redis://broker:6379/0
+  RIPIANO_MEDIA_ROOT: /data
+  RIPIANO_BACKUP_ROOT: /backup
+  RIPIANO_BACKUP_HOUR: ${RIPIANO_BACKUP_HOUR:-2}
+  RIPIANO_BACKUP_MINUTE: ${RIPIANO_BACKUP_MINUTE:-0}
+  RIPIANO_BACKUP_RETENTION: ${RIPIANO_BACKUP_RETENTION:-7}
+  RIPIANO_BROWSE_RETENTION: ${RIPIANO_BROWSE_RETENTION:-2}
+  RIPIANO_BARCODES: ${RIPIANO_BARCODES:-1}
+  RIPIANO_BARCODE_SEPARATOR: ${RIPIANO_BARCODE_SEPARATOR:-PATCHT}
+  RIPIANO_BARCODE_ASN_PREFIX: ${RIPIANO_BARCODE_ASN_PREFIX:-ASN}
+  RIPIANO_BARCODE_TAG_PREFIX: ${RIPIANO_BARCODE_TAG_PREFIX:-TAG:}
+  RIPIANO_WEBHOOK_ALLOW_PRIVATE: ${RIPIANO_WEBHOOK_ALLOW_PRIVATE:-0}
+  RIPIANO_DOCUMENT_EMAIL: ${RIPIANO_DOCUMENT_EMAIL:-0}
+  RIPIANO_SMTP_HOST: ${RIPIANO_SMTP_HOST:-}
+  RIPIANO_SMTP_PORT: ${RIPIANO_SMTP_PORT:-587}
+  RIPIANO_SMTP_USER: ${RIPIANO_SMTP_USER:-}
+  RIPIANO_SMTP_PASSWORD: ${RIPIANO_SMTP_PASSWORD:-}
+  RIPIANO_SMTP_SECURITY: ${RIPIANO_SMTP_SECURITY:-starttls}
+  RIPIANO_SMTP_FROM: ${RIPIANO_SMTP_FROM:-}
+  RIPIANO_MAIL_KEY: ${RIPIANO_MAIL_KEY:-}
+  RIPIANO_MAIL_POLL_MINUTES: ${RIPIANO_MAIL_POLL_MINUTES:-5}
+  RIPIANO_GMAIL_OAUTH_CLIENT_ID: ${RIPIANO_GMAIL_OAUTH_CLIENT_ID:-}
+  RIPIANO_GMAIL_OAUTH_CLIENT_SECRET: ${RIPIANO_GMAIL_OAUTH_CLIENT_SECRET:-}
+  RIPIANO_OUTLOOK_OAUTH_CLIENT_ID: ${RIPIANO_OUTLOOK_OAUTH_CLIENT_ID:-}
+  RIPIANO_OUTLOOK_OAUTH_CLIENT_SECRET: ${RIPIANO_OUTLOOK_OAUTH_CLIENT_SECRET:-}
+
+x-api-base: &api-base
+  image: ${RIPIANO_API_IMAGE:?Set a published ghcr.io/p4xx07/ripiano-api image or digest}
+  environment: *api-env
+  volumes:
+    - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+  depends_on:
+    db:
+      condition: service_healthy
+    broker:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  db:
+    # Set RIPIANO_DB_IMAGE=pgvector/pgvector:pg17 (same PostgreSQL 17 data) only to use optional semantic search.
+    image: ${RIPIANO_DB_IMAGE:-postgres:17.6-bookworm}
+    environment:
+      POSTGRES_DB: ripiano
+      POSTGRES_USER: ripiano
+      POSTGRES_PASSWORD: ${RIPIANO_DB_PASSWORD}
+    volumes:
+      - ${RIPIANO_DB_PATH:-ripiano_postgres}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ripiano -d ripiano"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  broker:
+    image: valkey/valkey:8.1.3-alpine
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - broker_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  converter:
+    image: gotenberg/gotenberg:9.4.0-libreoffice@sha256:4f8700501877b7198e1e393061add6ead52f4b0b2f1e4972a404be95b751d9e9
+    environment:
+      API_BODY_LIMIT: 27MB
+      API_TIMEOUT: 180s
+      LIBREOFFICE_MAX_QUEUE_SIZE: 5
+    networks: [converter]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+  api:
+    <<: *api-base
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+      - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup:ro
+      # Folder sources (Sources -> Folder on the NAS): read-only here, used by Preview.
+      - ${RIPIANO_SOURCES_PATH:-ripiano_sources}:/sources:ro
+      # Consume folder: drop files here and they are imported (read-only here, used by Preview).
+      - ${RIPIANO_CONSUME_PATH:-ripiano_consume}:/consume:ro
+    command: ["sh", "-c", ".venv/bin/python manage.py migrate --noinput && exec .venv/bin/gunicorn ripiano.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 60"]
+    # /healthz answers 503 while the database or the queue server is down (/livez checks only the process).
+    # Compose never restarts a container for being unhealthy, and 15 failed checks (2.5 min) are needed first.
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+  worker:
+    <<: *api-base
+    environment:
+      <<: *api-env
+      RIPIANO_CONVERTER_URL: http://converter:3000
+    networks: [default, converter]
+    command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "celery"]
+    # Alive while the worker reports (its heartbeat touches the file every 30 s); a shell check, no Python start-up.
+    healthcheck:
+      test: ["CMD-SHELL", "test -n \"$$(find /tmp/ripiano-worker-alive -mmin -2 2>/dev/null)\""]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      api:
+        condition: service_healthy
+      converter:
+        condition: service_healthy
+  maintenance_worker:
+    <<: *api-base
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
+      - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup
+      # Folder sources: read-write so imported files can be moved or deleted when a source asks for it.
+      - ${RIPIANO_SOURCES_PATH:-ripiano_sources}:/sources
+      # Consume folder: read-write so imported files can be removed.
+      - ${RIPIANO_CONSUME_PATH:-ripiano_consume}:/consume
+    command: [".venv/bin/celery", "-A", "ripiano", "worker", "--loglevel=INFO", "--concurrency=1", "-Q", "maintenance"]
+    # Alive while the worker reports (its heartbeat touches the file every 30 s); a shell check, no Python start-up.
+    healthcheck:
+      test: ["CMD-SHELL", "test -n \"$$(find /tmp/ripiano-worker-alive -mmin -2 2>/dev/null)\""]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      api:
+        condition: service_healthy
+  scheduler:
+    <<: *api-base
+    command: [".venv/bin/celery", "-A", "ripiano", "beat", "--loglevel=INFO"]
+    depends_on:
+      api:
+        condition: service_healthy
+  mcp:
+    <<: *api-base
+    volumes:
+      - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data:ro
+    command: [".venv/bin/uvicorn", "mcp_asgi:app", "--host", "0.0.0.0", "--port", "8001"]
+    # One database query on its own connection, with a time limit (not reachable from outside).
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      api:
+        condition: service_healthy
+  # Optional NAS model for semantic search (turn it on in Agents -> Search by meaning).
+  # Installs its pinned packages into the models volume on first start; no published port.
+  embedder:
+    <<: *api-base
+    profiles: ["semantic"]
+    volumes:
+      - ripiano_models:/models
+    command: [".venv/bin/python", "manage.py", "semantic_embedder"]
+    environment:
+      <<: *api-env
+      RIPIANO_EMBEDDER_DIR: /models
+      RIPIANO_EMBEDDER_THREADS: ${RIPIANO_EMBEDDER_THREADS:-1}
+      UV_CACHE_DIR: /models/uv-cache
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    mem_limit: ${RIPIANO_EMBEDDER_MEMORY:-1500m}
+    cpus: ${RIPIANO_EMBEDDER_CPUS:-1.0}
+  web:
+    image: ${RIPIANO_WEB_IMAGE:?Set a published ghcr.io/p4xx07/ripiano-web image or digest}
+    environment:
+      # Reverse proxies allowed to report the client address (e.g. the Raspberry Pi gateway's LAN IP). Docker networks
+      # and localhost are always trusted. Needed so failed sign-ins are throttled per person, not for the whole proxy.
+      RIPIANO_TRUSTED_PROXIES: ${RIPIANO_TRUSTED_PROXIES:-}
+    ports:
+      - "${RIPIANO_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+      mcp:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  broker_data:
+  ripiano_models:
+  ripiano_sources:
+  ripiano_consume:
+  ripiano_media:
+  ripiano_postgres:
+  ripiano_backup:
+
+networks:
+  converter:
+    internal: true

@@ -2,7 +2,18 @@
 
 EXACT = {
     "Invalid credentials": "Credenziali non valide",
+    "A document's file disappeared from the media folder during the backup":
+        "Il file di un documento è sparito dalla cartella dei file durante il backup",
+    "This request is still being handled. Check whether it was saved before trying again":
+        "Questa richiesta è ancora in corso. Controlla se è stata salvata prima di riprovare",
+    "This Idempotency-Key was already used for a different request": "Questa Idempotency-Key è già stata usata per un'altra richiesta",
+    "Idempotency-Key must be 1 to 64 letters, digits, or symbols without spaces":
+        "Idempotency-Key deve avere da 1 a 64 lettere, cifre o simboli, senza spazi",
+    "Ripiano can't reach its database right now; try again in a moment": "Ripiano non riesce a raggiungere il suo database in questo momento; riprova tra poco",
+    "Ripiano ran into a problem with this request. Try again; the details are in the server log":
+        "Ripiano ha avuto un problema con questa richiesta. Riprova; i dettagli sono nel log del server",
     "This tag limits another agent's access; only a person can add or remove it": "Questa etichetta limita l'accesso di un altro agente; solo una persona può aggiungerla o rimuoverla",
+    "Text recognition failed again, so the file is probably damaged. Download the original and open it on your computer, then re-scan it or save it again as PDF and upload the new copy.": "Il riconoscimento del testo non è riuscito di nuovo, quindi il file è probabilmente danneggiato. Scarica l'originale e aprilo sul computer, poi scansionalo di nuovo o salvalo di nuovo come PDF e carica la nuova copia.",
     "Text recognition failed for this file. Choose Retry OCR. If it fails again, the file may be damaged: open it on your computer, and re-scan it or save it again as PDF before uploading.": "Il riconoscimento del testo non è riuscito per questo file. Scegli Riprova l'OCR. Se non riesce di nuovo, il file potrebbe essere danneggiato: aprilo sul computer e scansionalo di nuovo o salvalo di nuovo come PDF prima di caricarlo.",
     "This PDF is damaged, so some of its pages may be missing. Ripiano kept the original and made the pages it could read searchable. Compare it with the paper, then re-scan it or upload an undamaged copy.": "Questo PDF è danneggiato, quindi alcune pagine potrebbero mancare. Ripiano ha conservato l'originale e ha reso ricercabili le pagine che è riuscito a leggere. Confrontalo con il documento cartaceo, poi scansionalo di nuovo o carica una copia integra.",
     "This request could not be verified. Reload the page and try again.": "Non è stato possibile verificare questa richiesta. Ricarica la pagina e riprova.",
@@ -12,6 +23,9 @@ EXACT = {
     "This file could not be read as a PDF. It may be damaged, or it is not really a PDF.": "Impossibile leggere questo file come PDF. Potrebbe essere danneggiato, oppure non è davvero un PDF.",
     "This file could not be read as a JPEG or PNG image. It may be damaged, or it is not really an image.": "Impossibile leggere questo file come immagine JPEG o PNG. Potrebbe essere danneggiato, oppure non è davvero un'immagine.",
     "This image is too large to process (over 50 megapixels). Scan at a lower resolution or upload a PDF.": "Questa immagine è troppo grande da elaborare (oltre 50 megapixel). Acquisiscila a una risoluzione più bassa o carica un PDF.",
+    "Processing stopped unexpectedly several times (the worker restarted or ran out of memory). Choose Retry OCR to try again; if it keeps stopping, the file may be too large for the NAS.": "L'elaborazione si è interrotta più volte in modo imprevisto (il worker si è riavviato o ha esaurito la memoria). Scegli Riprova l'OCR per tentare di nuovo; se continua a interrompersi, il file potrebbe essere troppo grande per il NAS.",
+    "Someone else changed this document while you were editing it. Check the current details and save again.": "Qualcun altro ha modificato questo documento mentre lo stavi modificando. Controlla i dettagli attuali e salva di nuovo.",
+    "Invalid base_version": "base_version non valida",
     "Processing was cancelled. Choose Retry OCR to process it again.": "L'elaborazione è stata annullata. Scegli Riprova l'OCR per elaborarlo di nuovo.",
     "A backup is already queued or running": "Un backup è già in coda o in corso",
     "API tokens cannot send documents out of Ripiano or change mail, sources, workflows, or backups": "I token API non possono inviare documenti fuori da Ripiano né modificare posta, sorgenti, flussi di lavoro o backup",
@@ -24,6 +38,18 @@ EXACT = {
     "Your password is not correct": "La password non è corretta",
     "Use a new password of at least 12 characters": "Usa una nuova password di almeno 12 caratteri",
     "Use a password of at least 12 characters": "Usa una password di almeno 12 caratteri",
+    "Use a password of at most 128 characters": "Usa una password di al massimo 128 caratteri",
+    "Your password cannot be mostly your username.": "La password non può essere fatta quasi solo del tuo nome utente.",
+    "Your password cannot be a repeated character or a row of keys.": "La password non può essere un carattere ripetuto o una fila di tasti.",
+    "Only a queued or processing document can be cancelled": "Si può annullare solo un documento in coda o in elaborazione",
+    "This password is too close to the username. Choose a different one": "Questa password è troppo simile al nome utente. Scegline un'altra",
+    "This password is on the list of commonly used passwords. Choose one that is harder to guess":
+        "Questa password è nell'elenco delle password più usate. Scegline una più difficile da indovinare",
+    "A password of only digits is too easy to guess. Add letters or words": "Una password di sole cifre è troppo facile da indovinare. Aggiungi lettere o parole",
+    "This password repeats the same few characters. Choose one that is harder to guess":
+        "Questa password ripete gli stessi pochi caratteri. Scegline una più difficile da indovinare",
+    "This password is a row of neighbouring keys or letters. Choose one that is harder to guess":
+        "Questa password è una fila di tasti o lettere vicini. Scegline una più difficile da indovinare",
     "Username and a password of at least 12 characters are required": "Servono un nome utente e una password di almeno 12 caratteri",
     "That username is taken": "Questo nome utente è già in uso",
     "Invalid setup key": "Chiave di configurazione non valida",
@@ -372,6 +398,7 @@ EXACT = {
     "Office converter is unavailable; retry this document when it is running": "Il convertitore Office non è disponibile; riprova con questo documento quando sarà attivo",
     "Office converter returned an invalid PDF": "Il convertitore Office ha restituito un PDF non valido",
     "Only exact copies can be reviewed": "Si possono esaminare solo le copie identiche",
+    "Only documents with a processing warning can be reviewed": "Si possono esaminare solo i documenti con un avviso di elaborazione",
     "Only failed file cleanup can be retried": "Puoi riprovare solo una pulizia dei file non riuscita",
     "Only the owner or the note's author can remove it": "Solo il proprietario o l'autore della nota può rimuoverla",
     "Original checksum changed": "Il checksum dell'originale è cambiato",
@@ -629,6 +656,7 @@ VALUES = {
 DISPLAY = {
     "No type": "Nessun tipo",
     "Initial placement": "Prima collocazione",
+    "Sticker created": "Adesivo creato",
     "Move": "Spostamento",
     "Marked missing": "Segnalata come mancante",
     "Marked found": "Segnalata come ritrovata",
@@ -638,4 +666,56 @@ DISPLAY = {
     "Ripiano location {0}": "Ripiano posizione {0}",
     "Ripiano sticker {0}": "Ripiano adesivo {0}",
     "Ripiano tag {0}": "Ripiano etichetta {0}",
+}
+
+# Parts of a workflow run's detail (archive/workflows.py), stored in English and shown in the reader's language.
+# A detail joins several parts with ", " and "; "; names in {0} are user data and stay as written.
+RUN_DETAILS = {
+    "added tag {0}": "aggiunta l'etichetta {0}",
+    "removed tag {0}": "rimossa l'etichetta {0}",
+    "kept tag {0} (added by hand)": "mantenuta l'etichetta {0} (aggiunta a mano)",
+    "kept tag {0} (it limits another agent's access and an agent made the change)":
+        "mantenuta l'etichetta {0} (limita l'accesso di un altro agente e la modifica è stata fatta da un agente)",
+    "skipped tag {0} (it limits another agent's access and an agent made the change)":
+        "etichetta {0} non aggiunta (limita l'accesso di un altro agente e la modifica è stata fatta da un agente)",
+    "set sender {0}": "impostato il mittente {0}",
+    "set type {0}": "impostato il tipo {0}",
+    "set storage path {0}": "impostato il percorso di archiviazione {0}",
+    "set title {0}": "impostato il titolo {0}",
+    "set field {0} to yes": "impostato il campo {0} a sì",
+    "set field {0} to no": "impostato il campo {0} a no",
+    "set field {0} to {1}": "impostato il campo {0} a {1}",
+    "skipped field {0} (the saved value no longer fits its type)": "campo {0} saltato (il valore salvato non è più adatto al suo tipo)",
+    "marked as needing action": "segnato come da gestire",
+    "added a note": "aggiunta una nota",
+    "queued webhook": "webhook in coda",
+    "skipped sharing (an agent made the change; share the document yourself if you want to)":
+        "condivisione non eseguita (la modifica è di un agente; condividi tu il documento, se vuoi)",
+    "skipped webhook (an agent made the change)": "webhook non inviato (la modifica è di un agente)",
+    "skipped email (an agent made the change)": "email non inviata (la modifica è di un agente)",
+    "queued email": "email in coda",
+    "shared with {0} (view)": "condiviso con {0} (visualizzazione)",
+    "shared with {0} (edit)": "condiviso con {0} (modifica dei dettagli)",
+    "shared with {0} ({1})": "condiviso con {0} ({1})",
+    "could not share with {0} (sharing limit reached)": "impossibile condividere con {0} (limite di condivisione raggiunto)",
+    "removed the PDF password for the searchable copy (the original stays locked)":
+        "rimossa la password del PDF per la copia ricercabile (l'originale resta protetto)",
+    "conditions matched; nothing needed changing": "condizioni soddisfatte; non c'era nulla da cambiare",
+    "This workflow could not be applied to this document. It will not retry automatically.":
+        "Non è stato possibile applicare questo flusso di lavoro a questo documento. Non verrà ritentato automaticamente.",
+    "notification could not be prepared": "impossibile preparare la notifica",
+    "webhook delivered": "webhook consegnato",
+    "webhook refused ({0})": "webhook rifiutato ({0})",
+    "webhook could not be delivered": "impossibile consegnare il webhook",
+    "webhook address could not be found": "impossibile trovare l'indirizzo del webhook",
+    "webhook refused: it points to a private network address (see RIPIANO_WEBHOOK_ALLOW_PRIVATE)":
+        "webhook rifiutato: punta a un indirizzo di rete privata (vedi RIPIANO_WEBHOOK_ALLOW_PRIVATE)",
+    "email not sent: no mail server is configured": "email non inviata: nessun server di posta configurato",
+    "email could not be sent": "impossibile inviare l'email",
+    "email sent to {0} recipient": "email inviata a {0} destinatario",
+    "email sent to {0} recipients": "email inviata a {0} destinatari",
+    "email sent to {0} recipient without the file (over {1} MB)": "email inviata a {0} destinatario senza il file (oltre {1} MB)",
+    "email sent to {0} recipients without the file (over {1} MB)": "email inviata a {0} destinatari senza il file (oltre {1} MB)",
+    "email sent to {0} recipient without the file (it could not be read)": "email inviata a {0} destinatario senza il file (non è stato possibile leggerlo)",
+    "email sent to {0} recipients without the file (it could not be read)": "email inviata a {0} destinatari senza il file (non è stato possibile leggerlo)",
 }

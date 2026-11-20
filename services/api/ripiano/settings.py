@@ -34,11 +34,14 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "archive.cache_headers.PrivateApiCacheMiddleware",
     "archive.api_language.ApiLanguageMiddleware",
+    "archive.cache_headers.ApiNotFoundMiddleware",
+    "archive.cache_headers.ApiErrorMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "archive.api_tokens.ApiTokenMiddleware",
+    "archive.idempotency.IdempotencyMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -70,9 +73,11 @@ else:
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 12}},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    {"NAME": "archive.password_rules.ContainsUsernameValidator"},
+    {"NAME": "archive.password_rules.GuessablePatternValidator"},
 ]
 REST_FRAMEWORK = {"DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"]}
 
@@ -101,7 +106,9 @@ CELERY_BROKER_URL = os.environ.get("RIPIANO_BROKER_URL", "redis://localhost:6379
 # Shared cache (sign-in throttling) in the same Valkey as the queue when the stack provides it.
 if os.environ.get("RIPIANO_BROKER_URL"):
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache",
-                          "LOCATION": os.environ["RIPIANO_BROKER_URL"].rsplit("/", 1)[0] + "/1", "KEY_PREFIX": "ripiano"}}
+                          "LOCATION": os.environ["RIPIANO_BROKER_URL"].rsplit("/", 1)[0] + "/1", "KEY_PREFIX": "ripiano",
+                          # Fail fast when Valkey is down: sign-in throttling then fails open (archive/throttle.py).
+                          "OPTIONS": {"socket_connect_timeout": 2, "socket_timeout": 2}}}
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 3600
@@ -109,6 +116,8 @@ CELERY_TIMEZONE = "Europe/Rome"
 CELERY_TASK_DEFAULT_QUEUE = "celery"
 CELERY_TASK_ROUTES = {
     "archive.tasks.reclassify_owner": {"queue": "maintenance"},
+    # Stall detection and the cleanup after a stopped run must not wait behind the text recognition they watch.
+    "archive.tasks.reconcile_pending_documents": {"queue": "maintenance"},
     "archive.tasks.train_filing_model": {"queue": "maintenance"},
     "archive.tasks.train_filing_models": {"queue": "maintenance"},
     "archive.tasks.reclassify_filing_candidates": {"queue": "maintenance"},
@@ -116,6 +125,9 @@ CELERY_TASK_ROUTES = {
     "archive.tasks.backup_archive": {"queue": "maintenance"},
     "archive.tasks.build_browse_export": {"queue": "maintenance"},
     "archive.tasks.reconcile_browse_exports": {"queue": "maintenance"},
+    # Was missing: every 5 minutes it landed in the OCR queue, waiting behind scans or piling up while the OCR worker
+    # was stopped (round 11 fix check).
+    "archive.tasks.reconcile_backup_runs": {"queue": "maintenance"},
     "archive.tasks.purge_document": {"queue": "maintenance"},
     "archive.tasks.reconcile_purge_jobs": {"queue": "maintenance"},
     "archive.tasks.purge_expired_trash": {"queue": "maintenance"},

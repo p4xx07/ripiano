@@ -173,12 +173,22 @@ def location_detail(request, location_id):
     return JsonResponse({"deleted": True})
 
 
+def _code_filter(typed, prefix):
+    """Match a sticker code as printed, or typed without its "R-" / "L-" prefix or the hyphen ("MUD3PLDT", "RMUD3PLDT")."""
+    typed = typed.strip()
+    bare = typed.replace("-", "").replace(" ", "")
+    choices = Q(sticker_code__iexact=typed) | Q(sticker_code__iexact=prefix + bare)
+    if bare[:1].casefold() == prefix[0].casefold():
+        choices |= Q(sticker_code__iexact=prefix + bare[1:])
+    return choices
+
+
 @require_http_methods(["GET"])
 def location_lookup(request, sticker_code):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    location = Location.objects.filter(sticker_code__iexact=sticker_code, owner=request.user).select_related("parent__parent").first()
+    location = Location.objects.filter(_code_filter(sticker_code, "L-"), owner=request.user).select_related("parent__parent").first()
     if location is None:
         return JsonResponse({"error": "Location sticker not found"}, status=404)
     ids = _descendant_ids(request.user, location.id)
@@ -316,6 +326,8 @@ def document_copies(request, document_id):
                 copy = PhysicalCopy.objects.create(document=document, sticker_code=code, location=location)
                 if location:
                     Movement.objects.create(physical_copy=copy, kind=Movement.Kind.PLACEMENT, to_location=location, moved_by=request.user, note="Initial placement")
+                else:
+                    Movement.objects.create(physical_copy=copy, kind=Movement.Kind.CREATED, moved_by=request.user, note="Sticker created")
             return JsonResponse(copy_json(copy), status=201)
         except IntegrityError:
             continue
@@ -401,7 +413,7 @@ def sticker_lookup(request, sticker_code):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    copy = PhysicalCopy.objects.filter(sticker_code__iexact=sticker_code, document__owner=request.user).select_related("document", "location__parent__parent").first()
+    copy = PhysicalCopy.objects.filter(_code_filter(sticker_code, "R-"), document__owner=request.user).select_related("document", "location__parent__parent").first()
     if copy is None:
         return JsonResponse({"error": "Sticker not found"}, status=404)
     if copy.document.trashed_at:

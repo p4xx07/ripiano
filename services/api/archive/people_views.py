@@ -8,7 +8,6 @@ import json
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
@@ -68,13 +67,9 @@ def _group_json(group, admin):
 
 
 def _password_error(password, user=None):
-    if not isinstance(password, str) or len(password) < 12:
-        return "Use a password of at least 12 characters"
-    try:
-        validate_password(password, user)
-    except ValidationError as exc:
-        return " ".join(exc.messages)
-    return None
+    from .password_rules import password_problem
+
+    return password_problem(password, user)
 
 
 @require_http_methods(["GET", "POST"])
@@ -109,7 +104,8 @@ def people(request):
         User.username_validator(username)
     except ValidationError:
         return JsonResponse({"error": "Use letters, numbers, and @ . + - _ in the username"}, status=400)
-    candidate = User(username=username)
+    # The name counts too: "Annamaria-Rossi" is no password for Annamaria Rossi.
+    candidate = User(username=username, first_name=str(body.get("name", "")).strip()[:150])
     error = _password_error(body.get("password"), candidate)
     if error:
         return JsonResponse({"error": error}, status=400)
@@ -132,15 +128,27 @@ def people(request):
 
 def _end_access(user):
     """Turning an account off ends everything it signed in with, for good: its sessions, API tokens,
-    and agent grants. Turning it back on revives none of them (judge 3 round 5, M2)."""
+    and agent grants. Turning it back on revives none of them (judge 3 round 5, M2).
+
+    Its public share links and share bundles end too, marked with the reason, and stay ended when the account
+    is turned back on: the owner creates new links if they still want to share (docs/DECISIONS.md D9)."""
     from django.contrib.sessions.models import Session
     from django.utils import timezone
 
-    from .models import AgentGrant, ApiToken
+    from .models import AgentGrant, ApiToken, ShareBundle, ShareLink
 
     now = timezone.now()
     ApiToken.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=now)
-    AgentGrant.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now)
+    AgentGrant.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="account_off")
+    ShareLink.objects.filter(owner=user, revoked_at__isnull=True).update(revoked_at=now, revoked_reason="account_off")
+    bundles = list(ShareBundle.objects.filter(owner=user, revoked_at__isnull=True))
+    ShareBundle.objects.filter(pk__in=[item.pk for item in bundles]).update(revoked_at=now, revoked_reason="account_off")
+    if bundles:
+        from django.db import transaction
+
+        from .bundle_views import remove_bundle_files
+
+        transaction.on_commit(lambda: remove_bundle_files(bundles))  # their ZIPs go at once, not at the next sweep
     user_id = str(user.pk)
     for session in Session.objects.filter(expire_date__gt=now).iterator():
         if str(session.get_decoded().get("_auth_user_id")) == user_id:
@@ -178,7 +186,9 @@ def person_detail(request, person_id):
         admins = list(User.objects.select_for_update().filter(is_superuser=True, is_active=True).values_list("pk", flat=True))
         if user.is_superuser and not body["is_active"] and not [pk for pk in admins if pk != user.pk]:
             return JsonResponse({"error": "Keep at least one active admin"}, status=400)
-        if user.is_active and not body["is_active"]:
+        if user.is_active != body["is_active"]:
+            # Off: end everything now. Back on: also end anything left over from an account turned off elsewhere
+            # (Django admin, a shell, or before this check existed), so nothing from before is revived (D9).
             _end_access(user)
         user.is_active = body["is_active"]
         fields.append("is_active")

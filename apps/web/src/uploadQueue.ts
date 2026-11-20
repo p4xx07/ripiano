@@ -27,6 +27,7 @@ function open(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => request.result.createObjectStore(STORE, { keyPath: "id" });
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error("blocked"));
   });
 }
 
@@ -45,14 +46,28 @@ async function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) 
   }
 }
 
-/** Keep a file for a later retry. Returns false when the browser cannot store it (private mode, quota). */
-export async function keep(owner: string, file: File, scanId: string = newScanId()): Promise<boolean> {
+/** An ID for a queue entry. The caller can make it first, to mark the entry as "being sent" before it exists. */
+export function newEntryId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/** How long storing a file may take before the upload goes ahead without it. A browser whose storage never answers
+ *  (blocked, broken profile) must not stop the upload from starting. */
+const KEEP_TIME_LIMIT = 3000;
+
+/** Keep a file on this device: before it is sent (so a reload or a closed tab mid-request does not lose it) and for
+ *  a later retry. Returns the entry's ID, or null when the browser cannot store it (private mode, quota, no answer
+ *  in time). A store that finishes after the time limit leaves an entry that is sent later with the same scan ID,
+ *  which the server recognises. */
+export async function keep(owner: string, file: File, scanId: string = newScanId(), id: string = newEntryId()): Promise<string | null> {
+  let timer = 0;
+  const stored = run("readwrite", (store) => store.put({ id, owner, name: file.name, type: file.type, blob: file, addedAt: Date.now(), scanId } satisfies PendingUpload))
+    .then(() => id, () => null);
+  const gaveUp = new Promise<null>((resolve) => { timer = window.setTimeout(() => resolve(null), KEEP_TIME_LIMIT); });
   try {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    await run("readwrite", (store) => store.put({ id, owner, name: file.name, type: file.type, blob: file, addedAt: Date.now(), scanId } satisfies PendingUpload));
-    return true;
-  } catch {
-    return false;
+    return await Promise.race([stored, gaveUp]);
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
@@ -73,9 +88,10 @@ export async function forget(id: string): Promise<void> {
   }
 }
 
-/** Network failures, a temporarily unavailable server, and an ended session keep the file for its owner. */
-export function isRetryable(status: number) {
-  return status === 0 || status === 401 || status === 502 || status === 503 || status === 504;
+/** Network failures, a temporarily unavailable server, an ended session, and a failed CSRF check (the cookie was
+ *  cleared; signing in again or reloading gives a fresh one) keep the file for its owner. Any other 403 is a refusal. */
+export function isRetryable(status: number, csrfFailed = false) {
+  return status === 0 || status === 401 || status === 502 || status === 503 || status === 504 || (status === 403 && csrfFailed);
 }
 
 /** Only a refusal of the file itself removes it from the queue; anything else (signed out, throttled, server error) keeps it. */

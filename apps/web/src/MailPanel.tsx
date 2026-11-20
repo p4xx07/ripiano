@@ -385,9 +385,10 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
             </div>
           </div>
           {data?.recent.length ? (
-            <div className="agent-events">
+            // A list, so it gets the activity-row layout (the same unstyled-<div> bug as Workflows, round-7 judge 3 M1).
+            <ul className="agent-events" aria-label={m.recentMail}>
               {data.recent.map((item) => (
-                <div key={item.id}>
+                <li key={item.id}>
                   <span>{item.rule} · {item.sender || item.account}</span>
                   <strong>{item.subject || m.noSubject}</strong>
                   <small>
@@ -395,9 +396,9 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
                       : item.status === "no_match" ? item.detail || m.nothingToImport : item.detail || m.skipped}
                     {" · "}{new Date(item.processed_at).toLocaleString()}
                   </small>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           ) : <p className="agent-empty-activity">{m.noMail}</p>}
         </section>
 

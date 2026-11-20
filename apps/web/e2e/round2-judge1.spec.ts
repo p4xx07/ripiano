@@ -168,9 +168,9 @@ test("a tag can be created from the document dialog and a wrong suggestion dismi
   const tag = `Inline ${Date.now()} ${testInfo.project.name}`;
 
   // Simulate a learned suggestion the owner disagrees with (the server finds none for a fresh document).
-  const tags = (await (await page.request.get("/api/tags")).json()).tags as { id: string; name: string }[];
-  const onDocument = new Set(((await (await page.request.get(`/api/documents/${id}`)).json()).tags as { id: string }[]).map((item) => item.id));
-  const wrong = tags.find((item) => !onDocument.has(item.id));
+  // The tag is this test's own: an arbitrary existing tag can be deleted by a spec running in parallel.
+  const csrf = { "X-CSRFToken": (await page.context().cookies()).find((cookie) => cookie.name === "csrftoken")?.value ?? "" };
+  const wrong = await (await page.request.post("/api/tags", { headers: csrf, data: { name: `Wrong ${Date.now()} ${testInfo.project.name}` } })).json() as { id: string; name: string };
   if (wrong) {
     await page.route(`**/api/documents/${id}/filing-suggestions`, (route) => route.fulfill({
       contentType: "application/json",
@@ -206,4 +206,5 @@ test("a tag can be created from the document dialog and a wrong suggestion dismi
     await expect(page.getByRole("dialog", { name }).getByRole("button", { name: "Save changes" })).toBeVisible();
     await expect(page.getByRole("dialog", { name }).getByRole("button", { name: `Add tag: ${wrong.name}`, exact: true })).toHaveCount(0);
   }
+  await page.request.delete(`/api/tags/${wrong.id}`, { headers: { ...csrf, Referer: page.url() } });
 });

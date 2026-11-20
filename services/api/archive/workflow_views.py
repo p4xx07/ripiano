@@ -103,9 +103,14 @@ def _share_with(owner, values):
     return result
 
 
-def _run_json(run):
+NOT_MATCHED = "This document does not match the workflow’s conditions."
+
+
+def _run_json(run, request=None):
+    from .api_language import run_detail
+
     return {"id": str(run.id), "workflow": run.workflow.name, "document": {"id": str(run.document_id), "title": run.document.title},
-            "trigger": run.trigger, "status": run.status, "detail": run.detail, "created_at": run.created_at.isoformat()}
+            "trigger": run.trigger, "status": run.status, "held_back": run.held_back, "detail": run_detail(request, run.detail), "created_at": run.created_at.isoformat()}
 
 
 def _owned(model, owner, value, label):
@@ -238,7 +243,7 @@ def workflows(request):
     if request.method == "GET":
         items = Workflow.objects.filter(owner=request.user).prefetch_related("add_tags", "remove_tags")
         runs = WorkflowRun.objects.filter(workflow__owner=request.user).select_related("workflow", "document")[:50]
-        return JsonResponse({"workflows": [_workflow_json(item) for item in items], "runs": [_run_json(run) for run in runs]})
+        return JsonResponse({"workflows": [_workflow_json(item) for item in items], "runs": [_run_json(run, request) for run in runs]})
     body = _body(request)
     if body is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -285,7 +290,10 @@ def workflow_run_now(request, workflow_id):
         document = None
     if item is None or document is None:
         return JsonResponse({"error": "Workflow or document not found"}, status=404)
-    run = run_workflow(item, document, Workflow.Trigger.UPDATED)
+    # Run now is the owner's explicit choice for this document: nothing is held back for an agent-set value.
+    run = run_workflow(item, document, Workflow.Trigger.UPDATED, confirmed=True)
     if run is None:
-        return JsonResponse({"matched": False, "detail": "This document does not match the workflow’s conditions."})
-    return JsonResponse({"matched": True, "run": _run_json(run)})
+        from .api_language import to_italian, wants_italian
+
+        return JsonResponse({"matched": False, "detail": to_italian(NOT_MATCHED) if wants_italian(request) else NOT_MATCHED})
+    return JsonResponse({"matched": True, "run": _run_json(run, request)})

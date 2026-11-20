@@ -3,13 +3,15 @@
 import logging
 import re
 from collections import Counter
+from pathlib import PurePath
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 from django.db.models.functions import Substr
 
-from .models import ClassificationRule, Document, DocumentTag, FilingRule, SuggestionDismissal, TagOverride
+from .models import ClassificationRule, Document, DocumentTag, DocumentVersion, FilingRule, SuggestionDismissal, TagOverride
 
 
 logger = logging.getLogger(__name__)
@@ -21,8 +23,41 @@ STOPWORDS = frozenset(
 )
 
 
-def _terms(value):
+def _words_of(value):
     return {term for term in re.findall(r"[^\W_]{4,}", value.casefold()) if not term.isdecimal() and term not in STOPWORDS}
+
+
+def _terms(value):
+    """The content words of a text. The codes printed under control barcodes are scanner artefacts, not content."""
+    terms = _words_of(value)
+    prefix = "".join(re.findall(r"[^\W_]+", settings.RIPIANO_BARCODE_ASN_PREFIX.casefold()))
+    artefacts = _words_of(settings.RIPIANO_BARCODE_SEPARATOR)
+    return {term for term in terms if term not in artefacts and not (prefix and term.startswith(prefix) and term[len(prefix):].isdecimal())}
+
+
+def file_name_words(rows):
+    """{document id: the words of every file name behind the document}.
+
+    rows are dicts with "id", "original_name" and "split_parent__original_name". A title starts out as the
+    upload's file name; a part split from a scan is titled after the scan ("scan batch (2/3)") while its own
+    file is "scan batch-2.pdf"; and a replaced file leaves the old name in the title. So the names counted
+    are the document's own, those of its earlier versions, and that of the scan it was split from.
+    """
+    words = {row["id"]: _words_of(PurePath(row["original_name"] or "").stem) | _words_of(PurePath(row.get("split_parent__original_name") or "").stem)
+             for row in rows}
+    for document_id, name in DocumentVersion.objects.filter(document_id__in=list(words)).values_list("document_id", "original_name"):
+        words[document_id] |= _words_of(PurePath(name).stem)
+    return words
+
+
+def _evidence(title, text, upload_words=frozenset()):
+    """The words that say what a document is about: its text, and the words of its title that someone wrote.
+
+    Title words that are also in the upload's file name ("scan mobile batch 3", or "scan mobile batch (1/2)"
+    for a part of a split scan) describe the upload, not the document, so they neither support a suggestion
+    nor appear among the reasons shown for it. The same words still count when the document text has them.
+    """
+    return (_terms(title) - upload_words) | _terms(text)
 
 
 def filing_suggestions(document):
@@ -34,8 +69,13 @@ def filing_suggestions(document):
     if document.status != Document.Status.READY or document.trashed_at:
         return {"tags": [], "correspondents": [], "document_types": []}
     text_start = document.text_start if hasattr(document, "text_start") else document.extracted_text[:1800]
-    target = _terms(document.title + " " + text_start)
-    if len(target) < 2:
+    own = Document.objects.filter(pk=document.pk).values("id", "original_name", "split_parent__original_name").first()
+    if own is None:
+        return {"tags": [], "correspondents": [], "document_types": []}
+    # A document with almost no words (a blank scan, a photo without text) gets no suggestions: say so before
+    # loading any example. Excluding more file-name words below can only shrink this set further.
+    own_names = _words_of(PurePath(own["original_name"] or "").stem) | _words_of(PurePath(own["split_parent__original_name"] or "").stem)
+    if len(_evidence(document.title, text_start, own_names)) < 2:
         return {"tags": [], "correspondents": [], "document_types": []}
     rows = list(
         Document.objects.filter(owner_id=document.owner_id, status=Document.Status.READY, trashed_at__isnull=True, is_split_source=False)
@@ -47,7 +87,7 @@ def filing_suggestions(document):
         )
         .order_by("-created_at", "-id")[:300]
         .annotate(text_start=Substr("extracted_text", 1, 1800))
-        .values("id", "title", "text_start", "correspondent_id", "correspondent__name", "correspondent_origin", "document_type_id", "document_type__name", "document_type_origin")
+        .values("id", "title", "original_name", "split_parent__original_name", "text_start", "correspondent_id", "correspondent__name", "correspondent_origin", "document_type_id", "document_type__name", "document_type_origin")
     )
     ids = [row["id"] for row in rows]
     tags_by_document = {}
@@ -63,7 +103,11 @@ def filing_suggestions(document):
             dismissed["correspondents"].add(str(correspondent_id))
         if document_type_id:
             dismissed["document_types"].add(str(document_type_id))
-    sources = [_terms(row["title"] + " " + row["text_start"]) for row in rows]
+    upload_words = file_name_words([own, *rows])
+    target = _evidence(document.title, text_start, upload_words[document.pk])
+    if len(target) < 2:
+        return {"tags": [], "correspondents": [], "document_types": []}
+    sources = [_evidence(row["title"], row["text_start"], upload_words[row["id"]]) for row in rows]
     # Words in many examples (letterhead, scanner boilerplate) do not tell documents apart.
     frequency = Counter(term for terms in sources for term in terms)
     common = {term for term, count in frequency.items() if count > max(4, len(rows) // 4)}
@@ -101,11 +145,11 @@ def filing_suggestions(document):
         ranked = sorted(values.values(), key=lambda item: (-item["similarity"], item["name"], item["id"]))
         cutoff = ranked[0]["similarity"] * 0.8 if ranked else 1
         result[kind] = [item for item in ranked if item["similarity"] >= cutoff][:limits[kind]]
-    _add_learned(document, result, existing | suppressed, limits, dismissed)
+    _add_learned(document, result, existing | suppressed, limits, dismissed, upload_words[document.pk])
     return result
 
 
-def _add_learned(document, result, skip_tags, limits, dismissed=None):
+def _add_learned(document, result, skip_tags, limits, dismissed=None, upload_words=frozenset()):
     """Merge calibrated predictions from the person's learned model, if they trained one."""
     from .learning import TEXT_CHARS, _load, predict
     from .models import Correspondent, DocumentType, Tag
@@ -116,7 +160,7 @@ def _add_learned(document, result, skip_tags, limits, dismissed=None):
             return
         # The same text length as training, so the probabilities stay calibrated.
         text = Document.objects.filter(pk=document.pk).annotate(start=Substr("extracted_text", 1, TEXT_CHARS)).values_list("start", flat=True).first() or ""
-        predictions = predict(document, document.title, text, model)
+        predictions = predict(document, document.title, text, model, upload_words)
     except Exception:  # noqa: BLE001 - a broken model must never hide the document
         logger.exception("Learned filing model failed for %s", document.pk)
         return
@@ -269,7 +313,7 @@ def apply_rules(document):
             return 0
         live_tag_rules = set(ClassificationRule.objects.filter(owner_id=document.owner_id, enabled=True).values_list("id", flat=True))
         live_filing_rules = set(FilingRule.objects.filter(owner_id=document.owner_id, enabled=True).values_list("id", flat=True))
-        matching = [rule.tag for rule in ClassificationRule.objects.filter(pk__in=[rule.pk for rule in tag_rules if rule.pk in live_tag_rules]).select_related("tag")]
+        matching = [rule.tag_id for rule in tag_rules if rule.pk in live_tag_rules]
         filing_matches = {}
         for rule in filing_rules:
             if rule.pk not in live_filing_rules:
@@ -281,11 +325,15 @@ def apply_rules(document):
 
         before = history.snapshot(locked)
         suppressed = set(TagOverride.objects.filter(document=locked).values_list("tag_id", flat=True))
-        DocumentTag.objects.filter(document=locked, origin=DocumentTag.Origin.RULE).delete()
-        for tag in matching:
-            if tag.id in suppressed:
-                continue
-            DocumentTag.objects.get_or_create(document=locked, tag=tag, defaults={"origin": DocumentTag.Origin.RULE})
+        # Change only the links that differ: a recheck of thousands of documents mostly finds nothing to do.
+        wanted = set(matching) - suppressed
+        linked = dict(DocumentTag.objects.filter(document=locked).values_list("tag_id", "origin"))
+        stale = [tag_id for tag_id, origin in linked.items() if origin == DocumentTag.Origin.RULE and tag_id not in wanted]
+        if stale:
+            DocumentTag.objects.filter(document=locked, origin=DocumentTag.Origin.RULE, tag_id__in=stale).delete()
+        DocumentTag.objects.bulk_create(
+            DocumentTag(document=locked, tag_id=tag_id, origin=DocumentTag.Origin.RULE) for tag_id in sorted(wanted - linked.keys())
+        )
         changes = []
         for kind, field in ((FilingRule.Kind.CORRESPONDENT, "correspondent"), (FilingRule.Kind.DOCUMENT_TYPE, "document_type")):
             origin_field = f"{field}_origin"

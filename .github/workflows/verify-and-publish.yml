@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Validate Portainer stack
+      - name: Validate pull-only stack
         env:
           RIPIANO_API_IMAGE: ghcr.io/p4xx07/ripiano-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           RIPIANO_WEB_IMAGE: ghcr.io/p4xx07/ripiano-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb

@@ -4,13 +4,13 @@ Decisions agreed with the project owner that are not yet fully implemented. Read
 
 Status keys: **Agreed** (decided, not started), **In progress**, **Done** (link the commit).
 
-## Status snapshot — 2026-11-18
+## Status snapshot — 2026-11-22
 
-- Branch `codex/initial-implementation` (draft PR #1), baseline `d8724ff` before the current judge follow-up. The five items in "Remaining work that needs no further decision" are implemented; their rows and individual decision statuses below are the source of truth. This snapshot does not claim R4 parity or a release score.
+- `main` contains merge `618e7f8` and pre-release tag `v0.1.0-rc.1`. Round 12 on candidate `71315f4` scored 9.18, 9.31 and 9.20 (mean 9.23), with every dimension at least 9.0. The 9.5 target in [QUALITY_JUDGES.md](QUALITY_JUDGES.md) has **not** been met; the merge and tag do not establish a final release score. The five items in "Remaining work that needs no further decision" are implemented; their individual statuses below are the source of truth.
 - Sources are configured in the app: S3-compatible storage, WebDAV, NAS folders, the built-in consume folder, Google Drive, OneDrive, Dropbox, and Telegram. Cloud connections and Telegram still need real-account validation; the consume folder needs deployment validation on the NAS.
 - Semantic search is optional and off by default. Plain-language Library searches now merge keyword and meaning hits into one ranking when semantic search is on; field searches and other sorts stay keyword-based. The NAS embedder's measured memory cost is about 780 MB with its model loaded, so the owner must opt in.
-- The latest slices after `bbe32e3` added Sources and cloud drives, optional semantic search, object sharing, API v1 body contracts, full English/Italian screen coverage, keyboard shortcuts, and an accessibility pass. Claude's round-three Judge 2 and Judge 3 reports score 8.48 and 8.67 on `d8724ff`; Judge 1's report is missing. The follow-up fixes and independent scoped reviews are described in [HANDOFF_2026-11-18.md](HANDOFF_2026-11-18.md).
-- Release gates remain: three fresh judges on one candidate, clean-stack restore with locations and revoked grants, row-by-row R4 parity verification, and the owner-side checks in D7. Do not merge into `main` until [QUALITY_JUDGES.md](QUALITY_JUDGES.md) is satisfied.
+- Round 12 reports and a clean-stack restore drill are in `.omo/evidence/`. The round-13 follow-up on `codex/initial-implementation` (`5afee4e`) addresses the two medium findings: stopped OCR is explained in the Library and document, and email-header boilerplate no longer supplies filing suggestions. See [HANDOFF_2026-11-22.md](HANDOFF_2026-11-22.md) for verification and remaining findings.
+- Release gates remain: three fresh judges on one committed candidate scoring at least 9.5, row-by-row R4 parity verification, and the owner-side checks in D7. The existing clean-stack restore was on the round-12 candidate; it is not evidence for a later build.
 
 ## D1 — AI goes through MCP only (2026-11-17) — Agreed
 
@@ -116,6 +116,7 @@ The owner wants external storage to work like Synology Hyper Backup destinations
 - Published images: once the judges reach an acceptable score, merge to `main`, create a **pre-release**, let the GitHub workflow build the images, and test those images. Do not merge or tag before that.
 - Rounds so far (weighted mean of three judges): round 1 on `901d491` 7.12; round 2 on `f2b9416` 7.29. Reports are in `.omo/evidence/judge-*-report.md`.
 - Round 3 on `d8724ff` has two reports so far: Judge 2 scored 8.48 and Judge 3 scored 8.67. Judge 1's report is absent, so there is no three-judge round score. Follow-up fixes in the working tree need a fresh candidate run; the earlier scores do not transfer.
+- Later status: round 12 on `71315f4` scored 9.23 mean. Merge `618e7f8` and tag `v0.1.0-rc.1` were created despite the 9.5 threshold above; treat them as a pre-release checkpoint, not proof that the quality gate passed. The round-13 fixes require their own three-judge score if the 9.5 claim is to be made.
 
 ## D8 — Search index languages (2026-11-18) — Agreed
 

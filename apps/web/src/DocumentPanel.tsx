@@ -128,11 +128,13 @@ import PagesPanel from "./PagesPanel";
 import SimilarPanel from "./SimilarPanel";
 import EmailDocumentPanel from "./EmailDocumentPanel";
 import DocumentPreview from "./DocumentPreview";
+import { ProcessingProblem, type ProcessingHealth } from "./JobsPanel";
 import { useMessages } from "./i18n";
 import messages from "./locales/DocumentPanel";
 
 export default function DocumentPanel({
   initial,
+  isOwner,
   onClose,
   onSaved,
   onOpenLocations,
@@ -141,6 +143,7 @@ export default function DocumentPanel({
   restoredDraft,
 }: {
   initial: Document;
+  isOwner: boolean;
   /** Edits not saved before the session ended: shown again in the form, not saved until the person presses Save. */
   restoredDraft?: DocumentDraft | null;
   onClose: () => void;
@@ -334,17 +337,22 @@ export default function DocumentPanel({
     return () => { active = false; window.clearInterval(timer); };
   }, [current.id, current.status]);
 
-  // "Processing" whose worker stopped (flagged by /api/jobs after a couple of minutes): Retry OCR works again, and the
-  // dialog says calmly what is going on instead of "being prepared" (round-9 judge 1 H1).
+  // Pending and processing documents use /api/jobs to explain worker/queue trouble; interrupted
+  // processing also enables Retry OCR (round-9 judge 1 H1).
   const [stalled, setStalled] = useState(false);
+  const [processingHealth, setProcessingHealth] = useState<ProcessingHealth | null>(null);
   useEffect(() => {
     setStalled(false);
-    if (current.status !== "processing") return;
+    setProcessingHealth(null);
+    if (current.status !== "pending" && current.status !== "processing") return;
     let active = true;
     const check = () => {
       if (window.document.hidden) return; // nobody is looking; the next visible tick asks again
-      void request<{ documents_waiting: { items: { id: string; stalled?: boolean; can_retry?: boolean }[] } }>("/api/jobs").then((jobs) => {
-        if (active) setStalled(jobs.documents_waiting.items.some((item) => item.id === current.id && item.stalled && item.can_retry));
+      void request<{ processing?: ProcessingHealth; documents_waiting: { items: { id: string; stalled?: boolean; can_retry?: boolean }[] } }>("/api/jobs").then((jobs) => {
+        if (active) {
+          setProcessingHealth(jobs.processing ?? null);
+          setStalled(jobs.documents_waiting.items.some((item) => item.id === current.id && item.stalled && item.can_retry));
+        }
       }).catch(() => {});
     };
     check();
@@ -1329,6 +1337,7 @@ export default function DocumentPanel({
             <RotateCw size={16} /> {current.status === "failed" ? m.retryOcr : m.runOcrAgain}
           </Button>
           {(current.status === "pending" || current.status === "processing") && <p id="detail-ocr-preparing" className="detail-processing" aria-live="polite">{stalled ? m.ocrStalled : m.ocrPreparing}</p>}
+          <ProcessingProblem health={processingHealth} isOwner={isOwner} />
           {current.status === "failed" && current.error && <p className="inline-error">{current.error}</p>}
         </div>
         {!current.is_split_source && (

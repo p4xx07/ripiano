@@ -14,9 +14,9 @@
 
 ## What it does
 
-- **Scan or upload**: phone camera, photos, PDFs, Office files, and emails; the text is recognised automatically.
+- **Scan or upload**: phone camera, photos, PDFs, Office files, and emails; the text is recognised automatically. If text recognition is stopped, the Library and document view explain why the file is waiting.
 - **Find anything fast**: search the words inside every document, or filter by sender, tag, type, or date.
-- **Filed for you**: tags, senders, and document types are suggested and filled in from your own past choices.
+- **Filed for you**: tags, senders, and document types are suggested and filled in from your own past choices. Email suggestions compare the message and sender, excluding recipient addresses and header labels that recur across unrelated mail.
 - **Paper originals**: a QR sticker on each paper copy tells you which shelf or box it is in. Scan it with the phone camera (in Ripiano where the browser can read QR codes, or with the phone's camera app).
 - **Works on your phone**: install it from the browser on iPhone or Android; an Android app adds a document scanner.
 - **Family accounts**: everyone gets a private archive, and you can share single documents or send a link that expires.

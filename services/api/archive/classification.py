@@ -15,6 +15,7 @@ from .models import ClassificationRule, Document, DocumentTag, DocumentVersion, 
 
 
 logger = logging.getLogger(__name__)
+EMAIL_MIMES = frozenset({"message/rfc822", "application/vnd.ms-outlook"})
 
 # Common English/Italian filler words are not evidence that two documents match.
 STOPWORDS = frozenset(
@@ -50,14 +51,60 @@ def file_name_words(rows):
     return words
 
 
-def _evidence(title, text, upload_words=frozenset()):
+def _email_text(text):
+    """Discard transport headers and addresses from a rendered email before comparing its content.
+
+    The original and searchable OCR stay intact. LibreOffice may put a header label and its value on
+    separate lines, so remove recipient lines as well as addresses anywhere in the first OCR excerpt.
+    """
+    lines = text.splitlines()
+    cleaned = []
+    next_value = None
+    in_headers = True
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if next_value:
+            if not stripped:
+                continue
+            if next_value in {"from", "subject"}:
+                cleaned.append(line)
+            if next_value == "subject":
+                in_headers = False
+            next_value = None
+            continue
+        if not in_headers or index >= 16:
+            cleaned.append(line)
+            continue
+        header = re.match(r"^(from|to|cc|bcc|date|subject|attachments)(?:\s*:\s*|\s+)(.*)$", stripped, re.IGNORECASE)
+        if not header:
+            header = re.match(r"^(from|to|cc|bcc|date|subject|attachments)$", stripped, re.IGNORECASE)
+        if header:
+            name = header.group(1).casefold()
+            value = header.group(2) if header.lastindex == 2 else ""
+            if name in {"to", "cc", "bcc", "date", "attachments"}:
+                next_value = name if not value else None
+                continue
+            if not value:
+                # A table converted to PDF can place the value on the following line.
+                next_value = name
+                continue
+            cleaned.append(value)
+            if name == "subject":
+                in_headers = False
+        else:
+            cleaned.append(line)
+    without_addresses = re.sub(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", " ", "\n".join(cleaned))
+    return without_addresses
+
+
+def _evidence(title, text, upload_words=frozenset(), *, is_email=False):
     """The words that say what a document is about: its text, and the words of its title that someone wrote.
 
     Title words that are also in the upload's file name ("scan mobile batch 3", or "scan mobile batch (1/2)"
     for a part of a split scan) describe the upload, not the document, so they neither support a suggestion
     nor appear among the reasons shown for it. The same words still count when the document text has them.
     """
-    return (_terms(title) - upload_words) | _terms(text)
+    return (_terms(title) - upload_words) | _terms(_email_text(text) if is_email else text)
 
 
 def filing_suggestions(document):
@@ -69,13 +116,13 @@ def filing_suggestions(document):
     if document.status != Document.Status.READY or document.trashed_at:
         return {"tags": [], "correspondents": [], "document_types": []}
     text_start = document.text_start if hasattr(document, "text_start") else document.extracted_text[:1800]
-    own = Document.objects.filter(pk=document.pk).values("id", "original_name", "split_parent__original_name").first()
+    own = Document.objects.filter(pk=document.pk).values("id", "original_name", "original_mime", "split_parent__original_name").first()
     if own is None:
         return {"tags": [], "correspondents": [], "document_types": []}
     # A document with almost no words (a blank scan, a photo without text) gets no suggestions: say so before
     # loading any example. Excluding more file-name words below can only shrink this set further.
     own_names = _words_of(PurePath(own["original_name"] or "").stem) | _words_of(PurePath(own["split_parent__original_name"] or "").stem)
-    if len(_evidence(document.title, text_start, own_names)) < 2:
+    if len(_evidence(document.title, text_start, own_names, is_email=own["original_mime"] in EMAIL_MIMES)) < 2:
         return {"tags": [], "correspondents": [], "document_types": []}
     rows = list(
         Document.objects.filter(owner_id=document.owner_id, status=Document.Status.READY, trashed_at__isnull=True, is_split_source=False)
@@ -87,7 +134,7 @@ def filing_suggestions(document):
         )
         .order_by("-created_at", "-id")[:300]
         .annotate(text_start=Substr("extracted_text", 1, 1800))
-        .values("id", "title", "original_name", "split_parent__original_name", "text_start", "correspondent_id", "correspondent__name", "correspondent_origin", "document_type_id", "document_type__name", "document_type_origin")
+        .values("id", "title", "original_name", "original_mime", "split_parent__original_name", "text_start", "correspondent_id", "correspondent__name", "correspondent_origin", "document_type_id", "document_type__name", "document_type_origin")
     )
     ids = [row["id"] for row in rows]
     tags_by_document = {}
@@ -104,10 +151,10 @@ def filing_suggestions(document):
         if document_type_id:
             dismissed["document_types"].add(str(document_type_id))
     upload_words = file_name_words([own, *rows])
-    target = _evidence(document.title, text_start, upload_words[document.pk])
+    target = _evidence(document.title, text_start, upload_words[document.pk], is_email=own["original_mime"] in EMAIL_MIMES)
     if len(target) < 2:
         return {"tags": [], "correspondents": [], "document_types": []}
-    sources = [_evidence(row["title"], row["text_start"], upload_words[row["id"]]) for row in rows]
+    sources = [_evidence(row["title"], row["text_start"], upload_words[row["id"]], is_email=row["original_mime"] in EMAIL_MIMES) for row in rows]
     # Words in many examples (letterhead, scanner boilerplate) do not tell documents apart.
     frequency = Counter(term for terms in sources for term in terms)
     common = {term for term, count in frequency.items() if count > max(4, len(rows) // 4)}

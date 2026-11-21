@@ -182,6 +182,42 @@ def test_filing_suggestions_ignore_common_filler_words():
 
 
 @pytest.mark.django_db
+def test_filing_suggestions_ignore_email_recipient_and_header_labels_but_keep_message_content():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    source = ready_document(owner, "From\n\nCondominio Via Roma <info@condominio.test>\nTo\n\nfamiglia@example.test\nDate\n10 November 2026\nSubject\n\nAvviso riunione\n\nRiunione assemblea condominio domani")
+    # LibreOffice's real email PDF puts each label and value on one line, separated by spaces.
+    unrelated = ready_document(owner, "From      Comune di Esempio <tributi@comune.example>\n\nTo        famiglia@example.test\n\nDate      10 November 2026\n\nSubject Avviso TARI 2026 lampone\n\nTributo imposta tassa comunale")
+    related = ready_document(owner, "From: Condominio Via Roma <info@condominio.test>\nTo: famiglia@example.test\nSubject: Riunione assemblea condominio\n\nRiunione assemblea condominio questa sera")
+    for document, name in ((source, "meeting.eml"), (unrelated, "tax.eml"), (related, "meeting-two.msg")):
+        document.original_name = name
+        document.original_mime = "application/vnd.ms-outlook" if name.endswith(".msg") else "message/rfc822"
+        document.title = name
+        document.save(update_fields=["original_name", "original_mime", "title"])
+    tag = Tag.objects.create(owner=owner, name="Condominium")
+    DocumentTag.objects.create(document=source, tag=tag, origin=DocumentTag.Origin.MANUAL)
+    sender = Correspondent.objects.create(owner=owner, name="Condominio Via Roma")
+    kind = DocumentType.objects.create(owner=owner, name="Meeting notice")
+    source.correspondent = sender
+    source.correspondent_origin = Document.FilingOrigin.MANUAL
+    source.document_type = kind
+    source.document_type_origin = Document.FilingOrigin.MANUAL
+    source.save(update_fields=["correspondent", "correspondent_origin", "document_type", "document_type_origin"])
+    client = Client()
+    client.force_login(owner)
+    # Without email-header filtering the shared recipient and labels cross the suggestion threshold.
+    with patch("archive.classification._email_text", side_effect=lambda text: text):
+        old = client.get(f"/api/documents/{unrelated.id}/filing-suggestions").json()
+        assert [item["name"] for item in old["tags"]] == ["Condominium"]
+        assert [item["name"] for item in old["correspondents"]] == ["Condominio Via Roma"]
+        assert [item["name"] for item in old["document_types"]] == ["Meeting notice"]
+    assert client.get(f"/api/documents/{unrelated.id}/filing-suggestions").json() == {"tags": [], "correspondents": [], "document_types": []}
+    matched = client.get(f"/api/documents/{related.id}/filing-suggestions").json()["tags"]
+    assert [item["name"] for item in matched] == ["Condominium"]
+    assert {"riunione", "assemblea", "condominio"}.issubset(set(matched[0]["shared_terms"]))
+    assert "example" not in matched[0]["shared_terms"]
+
+
+@pytest.mark.django_db
 def test_filing_suggestions_ignore_words_common_to_many_examples():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     target = ready_document(owner, "Scanner header archive copy stamp target notice")

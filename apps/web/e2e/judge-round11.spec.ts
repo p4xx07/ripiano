@@ -549,6 +549,40 @@ test("judge 3 L7: in the Library a queued document says Waiting, one being proce
   await expect(page.locator(".document-row").filter({ hasText: "r11-processing-row" }).locator(".status")).toHaveText("Processing");
 });
 
+test("round 12: the Library and pending document explain when text recognition has stopped", async ({ page }) => {
+  test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
+  await signIn(page);
+  await mockWorkerStatus(page, "worker_not_running", false);
+  const waiting = fakeDocument({ id: WAIT_IDS[1], title: "r12-waiting-document", status: "pending", archive_available: false });
+  await page.route((url) => url.pathname === "/api/documents" && !url.searchParams.get("view"), (route: Route) => route.request().method() === "GET"
+    ? route.fulfill({ json: { documents: [waiting], next_cursor: null, counts: { total: 1, ready: 0, waiting: 1 }, suggestion: null } }) : route.fallback());
+  await page.route(exact(`/api/documents/${WAIT_IDS[1]}`), (route: Route) => route.fulfill({ json: waiting }));
+  await page.goto("/");
+  await expect(page.locator(".processing-problem")).toContainText("text recognition is not running");
+  await page.goto(`/?document=${WAIT_IDS[1]}`);
+  await expect(page.getByRole("dialog").locator(".processing-problem")).toContainText("text recognition is not running");
+});
+
+test("round 12: a member sees a translated instruction to ask the owner about stopped processing", async ({ page }) => {
+  test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
+  await signIn(page, true);
+  await mockWorkerStatus(page, "worker_not_running", false);
+  await page.route(exact("/api/session"), async (route: Route) => {
+    const response = await route.fetch();
+    return route.fulfill({ response, json: { ...(await response.json()), owner: false } });
+  });
+  const waiting = fakeDocument({ id: WAIT_IDS[1], title: "r12-in-attesa", status: "pending", archive_available: false });
+  await page.route((url) => url.pathname === "/api/documents" && !url.searchParams.get("view"), (route: Route) => route.request().method() === "GET"
+    ? route.fulfill({ json: { documents: [waiting], next_cursor: null, counts: { total: 1, ready: 0, waiting: 1 }, suggestion: null } }) : route.fallback());
+  await page.route(exact(`/api/documents/${WAIT_IDS[1]}`), (route: Route) => route.fulfill({ json: waiting }));
+  await page.goto("/");
+  await expect(page.locator(".processing-problem")).toContainText("Chiedi al proprietario dell'archivio di riavviarlo");
+  await expect(page.locator(".processing-problem")).not.toContainText("container");
+  await page.goto(`/?document=${WAIT_IDS[1]}`);
+  await expect(page.getByRole("dialog").locator(".processing-problem")).toContainText("Chiedi al proprietario dell'archivio di riavviarlo");
+  await expect(page.getByRole("dialog").locator(".processing-problem")).not.toContainText("container");
+});
+
 test("independent review L2: someone who is not the owner is asked to tell the owner, not to start a container", async ({ page }) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
   await signIn(page);

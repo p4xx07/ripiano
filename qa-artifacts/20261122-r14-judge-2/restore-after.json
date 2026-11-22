@@ -1,0 +1,107 @@
+{
+  "count": {
+    "total": 32,
+    "ready": 32,
+    "waiting": 0
+  },
+  "main": {
+    "id": "7916960a-bd5f-4654-a25d-1ddb999a166a",
+    "sha256": "4d64026e2eea82094e40bf7d9c5e674eac4d5caee487e3470eb3234b37c0b61c",
+    "tags": [
+      {
+        "id": "44a4564e-6520-47f2-b41e-2559ae5a54a4",
+        "name": "J2 scoped 3fc8d4cf",
+        "color": "#5d8b66",
+        "origin": "manual"
+      }
+    ]
+  },
+  "email": {
+    "id": "118b77f8-8aa6-49cd-a324-a2fb73bbe124",
+    "sha256": "921d4537b141dddd4c0f20c246deada56317b3ca97db9da9345270fbebe95a95"
+  },
+  "paper": {
+    "id": "c4589b6b-b41e-40df-a78e-dcd75b7fecd0",
+    "physical_copies": [
+      {
+        "id": "9d08d482-7f36-46a7-9343-511f17114b4c",
+        "document_id": "c4589b6b-b41e-40df-a78e-dcd75b7fecd0",
+        "sticker_code": "R-GYRPTEEP",
+        "location_id": "5767f2f0-6f42-4dbf-8a0a-e65fcc055f84",
+        "location_path": [
+          "Shelf 1795303116735 mobile"
+        ],
+        "missing_at": null,
+        "created_at": "2026-11-21T23:18:37.774387+00:00"
+      }
+    ]
+  },
+  "locations": {
+    "locations": [
+      {
+        "id": "3c3c583f-04b0-4c55-bd4e-70a5a84ae842",
+        "name": "Judge shelf 1795303069135",
+        "sticker_code": "L-DSX2MMNM",
+        "parent_id": null,
+        "path": [
+          "Judge shelf 1795303069135"
+        ],
+        "description": ""
+      },
+      {
+        "id": "d6dfc1b3-a5ed-4e84-9fd6-e3337e3cf181",
+        "name": "Judge shelf 1795303100960",
+        "sticker_code": "L-HJQ6RWU5",
+        "parent_id": null,
+        "path": [
+          "Judge shelf 1795303100960"
+        ],
+        "description": ""
+      },
+      {
+        "id": "696de7e6-04c9-4087-b69f-67ab2b3b17de",
+        "name": "Shelf 1795303084906 desktop",
+        "sticker_code": "L-ZPSDZPEL",
+        "parent_id": null,
+        "path": [
+          "Shelf 1795303084906 desktop"
+        ],
+        "description": ""
+      },
+      {
+        "id": "5767f2f0-6f42-4dbf-8a0a-e65fcc055f84",
+        "name": "Shelf 1795303116735 mobile",
+        "sticker_code": "L-M9EAQTHQ",
+        "parent_id": null,
+        "path": [
+          "Shelf 1795303116735 mobile"
+        ],
+        "description": ""
+      }
+    ]
+  },
+  "j2_agents": [
+    {
+      "name": "J2 cloud verified 643d17",
+      "revoked": true,
+      "scopes": [
+        "documents:search"
+      ]
+    },
+    {
+      "name": "J2 local 2099cb",
+      "revoked": false,
+      "scopes": [
+        "documents:search",
+        "documents:text"
+      ]
+    },
+    {
+      "name": "J2 cloud a535a6",
+      "revoked": true,
+      "scopes": [
+        "documents:search"
+      ]
+    }
+  ]
+}

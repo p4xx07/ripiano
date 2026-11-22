@@ -6,11 +6,11 @@ Status keys: **Agreed** (decided, not started), **In progress**, **Done** (link 
 
 ## Status snapshot — 2026-11-22
 
-- `main` contains merge `618e7f8` and pre-release tag `v0.1.0-rc.1`. Round 12 on candidate `71315f4` scored 9.18, 9.31 and 9.20 (mean 9.23), with every dimension at least 9.0. The 9.5 target in [QUALITY_JUDGES.md](QUALITY_JUDGES.md) has **not** been met; the merge and tag do not establish a final release score. The five items in "Remaining work that needs no further decision" are implemented; their individual statuses below are the source of truth.
+- `main` contains merge `618e7f8` and pre-release tag `v0.1.0-rc.1`. Round 14 on branch candidate `8a1ab1a` scored 9.410, 9.375 and 9.465 (mean **9.42**), up from round 12's 9.23. Every dimension is at least 9.0, but the 9.5 target in [QUALITY_JUDGES.md](QUALITY_JUDGES.md) has **not** been met. The merge and tag do not establish a final release score. The five items in "Remaining work that needs no further decision" are implemented; their individual statuses below are the source of truth.
 - Sources are configured in the app: S3-compatible storage, WebDAV, NAS folders, the built-in consume folder, Google Drive, OneDrive, Dropbox, and Telegram. Cloud connections and Telegram still need real-account validation; the consume folder needs deployment validation on the NAS.
 - Semantic search is optional and off by default. Plain-language Library searches now merge keyword and meaning hits into one ranking when semantic search is on; field searches and other sorts stay keyword-based. The NAS embedder's measured memory cost is about 780 MB with its model loaded, so the owner must opt in.
-- Round 12 reports and a clean-stack restore drill are in `.omo/evidence/`. The round-13 follow-up on `codex/initial-implementation` (`5afee4e`) addresses the two medium findings: stopped OCR is explained in the Library and document, and email-header boilerplate no longer supplies filing suggestions. See [HANDOFF_2026-11-22.md](HANDOFF_2026-11-22.md) for verification and remaining findings.
-- Release gates remain: three fresh judges on one committed candidate scoring at least 9.5, row-by-row R4 parity verification, and the owner-side checks in D7. The existing clean-stack restore was on the round-12 candidate; it is not evidence for a later build.
+- Round 14 reports and clean-stack restore drills are in `.omo/evidence/`. The round-13 follow-up (`5afee4e`) addressed owner-facing stopped OCR guidance and email-header boilerplate suggestions. Round 14 found a further medium gap: members opening shared pending documents do not see the stopped-worker explanation. See [round14-summary.md](../.omo/evidence/round14-summary.md) and [HANDOFF_2026-11-22.md](HANDOFF_2026-11-22.md).
+- Release gates remain: a fresh three-judge mean of at least 9.5 with no unresolved severe finding, row-by-row R4 parity verification, and the owner-side checks in D7. Round 14 did demonstrate clean-stack restore on the branch candidate.
 
 ## D1 — AI goes through MCP only (2026-11-17) — Agreed
 
@@ -116,7 +116,7 @@ The owner wants external storage to work like Synology Hyper Backup destinations
 - Published images: once the judges reach an acceptable score, merge to `main`, create a **pre-release**, let the GitHub workflow build the images, and test those images. Do not merge or tag before that.
 - Rounds so far (weighted mean of three judges): round 1 on `901d491` 7.12; round 2 on `f2b9416` 7.29. Reports are in `.omo/evidence/judge-*-report.md`.
 - Round 3 on `d8724ff` has two reports so far: Judge 2 scored 8.48 and Judge 3 scored 8.67. Judge 1's report is absent, so there is no three-judge round score. Follow-up fixes in the working tree need a fresh candidate run; the earlier scores do not transfer.
-- Later status: round 12 on `71315f4` scored 9.23 mean. Merge `618e7f8` and tag `v0.1.0-rc.1` were created despite the 9.5 threshold above; treat them as a pre-release checkpoint, not proof that the quality gate passed. The round-13 fixes require their own three-judge score if the 9.5 claim is to be made.
+- Later status: round 12 on `71315f4` scored 9.23 mean. Merge `618e7f8` and tag `v0.1.0-rc.1` were created despite the 9.5 threshold above; treat them as a pre-release checkpoint, not proof that the quality gate passed. Round 14 on `8a1ab1a` scored 9.42 mean after the round-13 fixes; its open medium finding and sub-9.5 score require another candidate and round. See [round14-summary.md](../.omo/evidence/round14-summary.md).
 
 ## D8 — Search index languages (2026-11-18) — Agreed
 

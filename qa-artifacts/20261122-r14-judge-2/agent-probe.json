@@ -1,0 +1,135 @@
+{
+  "cloud": {
+    "grant_id": "c18c0dcd-10a4-4e3c-92c3-ff23a0cdf3e6",
+    "scopes": [
+      "documents:search"
+    ],
+    "filter_tag_id": "44a4564e-6520-47f2-b41e-2559ae5a54a4",
+    "tools": [
+      "search_documents"
+    ],
+    "search": {
+      "documents": [],
+      "next_offset": null
+    },
+    "text": {
+      "error": "'CallToolResult' object has no attribute 'isError'"
+    }
+  },
+  "local": {
+    "grant_id": "97c78dd6-6422-4ce4-860e-37ea358fb523",
+    "scopes": [
+      "documents:search",
+      "documents:text"
+    ],
+    "filter_tag_id": null,
+    "tools": [
+      "search_documents",
+      "get_document_text"
+    ],
+    "search": {
+      "document_count": 11,
+      "contains_filtered_document": true
+    },
+    "text": {
+      "error": "'CallToolResult' object has no attribute 'isError'"
+    },
+    "text_verified": {
+      "is_error": false,
+      "contains_9473": true
+    }
+  },
+  "events": {
+    "status": 200,
+    "actions": [
+      [
+        "J2 local 2099cb",
+        "get_document_text",
+        "ok"
+      ],
+      [
+        "J2 local 2099cb",
+        "search_documents",
+        "ok"
+      ],
+      [
+        "J2 cloud a535a6",
+        "get_document_text",
+        "denied"
+      ],
+      [
+        "J2 cloud a535a6",
+        "search_documents",
+        "ok"
+      ],
+      [
+        "J2 cloud a535a6",
+        "search_documents",
+        "ok"
+      ]
+    ]
+  },
+  "revoke": {
+    "status": 200,
+    "response": {
+      "revoked": true
+    }
+  },
+  "revoked_client": "unhandled errors in a TaskGroup (1 sub-exception)",
+  "cloud_verified": {
+    "tools": [
+      "search_documents"
+    ],
+    "visible_ids": [
+      "7916960a-bd5f-4654-a25d-1ddb999a166a"
+    ],
+    "text_denied": true,
+    "text_response": {
+      "error": "Tool is not permitted for this agent"
+    },
+    "revoke_http": 200,
+    "after_revoke_http": 401
+  },
+  "events_after": [
+    [
+      "J2 local 2099cb",
+      "get_document_text",
+      "ok"
+    ],
+    [
+      "J2 cloud verified 643d17",
+      "get_document_text",
+      "denied"
+    ],
+    [
+      "J2 cloud verified 643d17",
+      "search_documents",
+      "ok"
+    ],
+    [
+      "J2 local 2099cb",
+      "get_document_text",
+      "ok"
+    ],
+    [
+      "J2 local 2099cb",
+      "search_documents",
+      "ok"
+    ],
+    [
+      "J2 cloud a535a6",
+      "get_document_text",
+      "denied"
+    ],
+    [
+      "J2 cloud a535a6",
+      "search_documents",
+      "ok"
+    ],
+    [
+      "J2 cloud a535a6",
+      "search_documents",
+      "ok"
+    ]
+  ]
+}

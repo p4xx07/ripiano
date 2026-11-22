@@ -583,6 +583,28 @@ test("round 12: a member sees a translated instruction to ask the owner about st
   await expect(page.getByRole("dialog").locator(".processing-problem")).not.toContainText("container");
 });
 
+test("round 14: a shared pending document tells the reader when text recognition is stopped", async ({ page }, testInfo) => {
+  test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
+  await signIn(page);
+  const shared = fakeDocument({ id: WAIT_IDS[0], title: "Shared waiting letter", access: "view", shared_by: "Alice", shared_by_id: 42,
+    status: "pending", archive_available: false });
+  const health = { ...processingHealth("worker_not_running", false), pending: 1, processing: 0 };
+  await page.route((url) => url.pathname === "/api/documents" && url.searchParams.get("view") === "shared", (route: Route) =>
+    route.fulfill({ json: { documents: [shared], next_cursor: null } }));
+  await page.route(exact(`/api/documents/${shared.id}`), (route: Route) => route.fulfill({ json: { ...shared, processing: health } }));
+  await page.route(exact(`/api/documents/${shared.id}/notes`), (route: Route) => route.fulfill({ json: { notes: [], next_offset: null } }));
+  await page.route(exact(`/api/documents/${shared.id}/history`), (route: Route) => route.fulfill({ json: { events: [], next_offset: null } }));
+  await page.goto("/shared");
+  await page.getByRole("button", { name: "Shared waiting letter" }).click();
+  const dialog = page.getByRole("dialog", { name: "Shared waiting letter" });
+  await expect(dialog.getByText("Waiting for text recognition. The document will become searchable automatically.")).toBeVisible();
+  await expect(dialog.locator(".processing-problem")).toContainText("Ask the archive owner to start it again");
+  await expect(dialog.locator(".processing-problem")).not.toContainText("container");
+  await expect(dialog.getByRole("link", { name: "Download original" })).toBeVisible();
+  await expect(dialog.locator(".inline-error")).toHaveCount(0);
+  await dialog.screenshot({ path: testInfo.outputPath("shared-worker-stopped.png") });
+});
+
 test("independent review L2: someone who is not the owner is asked to tell the owner, not to start a container", async ({ page }) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
   await signIn(page);

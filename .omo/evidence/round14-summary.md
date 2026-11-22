@@ -20,4 +20,8 @@ Candidate: `8a1ab1a82ab11186441656415d73e396f4b7a0e3` on `codex/initial-implemen
 - The three judges demonstrated live upload/OCR/search, stopped-worker recovery, scoped MCP access and revocation, and clean-stack snapshot restore. Judge 2 also ran **458 passed, 17 skipped** API tests, **45 passed, 5 skipped** selected browser cases, web typecheck/build, migration/system checks, and Compose validation. The earlier full browser run (**407 passed, 49 skipped**) was on `5afee4e`; the candidate differs from that commit only in documentation/evidence and AGENTS.md, so it is supporting application-code evidence, but no fresh full browser suite ran in round 14.
 - Row-by-row R4 parity verification and a complete independent security review remain open. The D7 real-device, provider, and NAS checks remain outside local judging and are not claimed as passed.
 
-**Disposition:** the 9.5 gate is **not met**; the medium finding is unresolved. Keep PR #3 in draft and do not merge or assign a release score of 9.5. Fix the shared pending-document status, verify it on desktop/mobile with a stopped worker, and run a new three-judge round on the resulting committed candidate.
+**Disposition at scoring time:** the 9.5 rubric target was **not met**, and the medium finding was open. PR #3 stayed in draft. The owner’s later decision and focused fix are recorded below; the numeric result is unchanged.
+
+## Post-round owner decision — 22 November 2026
+
+The owner accepted the 9.42 score as sufficient to begin personal testing, asked for the shared pending-document status defect to be fixed and committed, and explicitly requested no further judge round. The score above is still the score of `8a1ab1a`; it is not a score for the follow-up code. Focused verification of the fix is recorded in [round14-shared-status-fix.md](round14-shared-status-fix.md).

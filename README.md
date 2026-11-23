@@ -26,6 +26,8 @@
 - **Private and backed up**: everything stays on your server, with two-step sign-in and scheduled, checked backups.
 - **AI if you want it**: give an AI assistant limited, revocable access; Ripiano never sends your files to a paid AI service.
 
+Original file bytes are synced before an upload completes. If a mounted filesystem rejects directory sync, Ripiano retries, completes the upload, and records a durability warning in server logs. Other storage I/O errors still fail the upload.
+
 English and Italian interface. Full list: [user guide](docs/USER_GUIDE.md#features-at-a-glance) and [feature parity with Paperless-ngx](docs/FEATURE_PARITY.md).
 
 ## Install

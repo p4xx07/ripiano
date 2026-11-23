@@ -14,7 +14,7 @@
 
 ## What it does
 
-- **Scan or upload**: phone camera, photos, PDFs, Office files, and emails; the text is recognised automatically. If text recognition is stopped, the Library and document view explain why the file is waiting; people opening a shared waiting document see the same problem and are asked to contact its owner.
+- **Scan or upload**: phone camera, photos, PDFs, Office files, and emails; the text is recognised automatically. The document opens with a short filing summary, task and paper actions; manual fields and portable exports stay one tap away. If text recognition is stopped, the Library and document view explain why the file is waiting; people opening a shared waiting document see the same problem and are asked to contact its owner.
 - **Find anything fast**: search the words inside every document, or filter by sender, tag, type, or date.
 - **Filing help**: matching rules and optional, locally learned automatic filing can add tags, senders, and document types. The learned automatic mode starts off; OCR search works before you configure any filing. Email suggestions ignore recurring recipient and header noise.
 - **Personal dashboard**: pin up to six live saved searches for bills, tickets, house papers, or anything else; see counts and recent matches, and optionally open the dashboard first on that device.

@@ -81,6 +81,7 @@ async function openFake(page: Page) {
   await page.goto(`/?document=${FAKE_ID}`);
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { level: 2 })).toBeVisible();
+  if (await dialog.locator(".detail-advanced-toggle").count()) await dialog.locator(".detail-advanced-toggle").click();
   return dialog;
 }
 

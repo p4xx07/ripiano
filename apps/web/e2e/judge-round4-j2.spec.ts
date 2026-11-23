@@ -159,6 +159,7 @@ test("the ASN field is named briefly and described by its hint", async ({ page }
   const name = `r4-asn-${Date.now()}-${testInfo.project.name}`;
   await uploadReady(page, name);
   await page.getByRole("button", { name, exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "More filing options" }).click();
   const field = page.getByRole("dialog").getByRole("textbox", { name: "Archive number (ASN)", exact: true });
   await expect(field).toBeVisible();
   await expect(field).toHaveAccessibleDescription(/your own running number/);

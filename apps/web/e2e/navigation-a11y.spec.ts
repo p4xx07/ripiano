@@ -139,6 +139,7 @@ test("the document dialog is named by its document and keeps focus when adding a
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("heading", { level: 2, name })).toBeVisible();
 
+  await dialog.getByRole("button", { name: "More filing options" }).click();
   await dialog.getByRole("button", { name: "Add a sender" }).click();
   const newSender = dialog.getByRole("textbox", { name: "New sender name" });
   await expect(newSender).toBeFocused();

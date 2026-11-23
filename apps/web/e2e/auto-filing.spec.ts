@@ -76,6 +76,7 @@ test("matching phrases file a new document without an Inbox step", async ({ page
   await expect(row).toContainText(`Type: ${typeName}`);
   await row.getByRole("button", { name: documentName, exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
+  await dialog.getByRole("button", { name: "More filing options" }).click();
   await expect(dialog.getByLabel("From")).toContainText(senderName);
   await expect(dialog.getByLabel("Document type")).toContainText(typeName);
   await expect(dialog.getByText("Added by matching phrase · change it if needed")).toHaveCount(2);

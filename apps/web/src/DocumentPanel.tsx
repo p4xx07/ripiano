@@ -181,6 +181,10 @@ export default function DocumentPanel({
   const [actionStatus, setActionStatus] = useState(start.actionStatus as Document["action_status"]);
   const [actionDueDate, setActionDueDate] = useState(start.actionDueDate);
   const [actionNote, setActionNote] = useState(start.actionNote);
+  const [showTaskEditor, setShowTaskEditor] = useState(Boolean(restoredDraft));
+  const [showAdvanced, setShowAdvanced] = useState(Boolean(restoredDraft));
+  const paperSectionRef = useRef<HTMLDivElement>(null);
+  const newCopySelectRef = useRef<HTMLSelectElement>(null);
   const [selected, setSelected] = useState<string[]>(
     restored?.tags ?? initial.tags.map((tag) => tag.id),
   );
@@ -583,6 +587,8 @@ export default function DocumentPanel({
     onSaved(server);
     setConflicts(merged.conflicts);
     setSaveConflict(true);
+    setShowTaskEditor(true);
+    setShowAdvanced(true);
     setConflictStatus("");
     setConflictFocus((count) => count + 1);
   }
@@ -838,7 +844,7 @@ export default function DocumentPanel({
       return;
     }
     // Keep focus in the suggestions (or on the field below once the last one is gone).
-    requestAnimationFrame(() => (document.querySelector<HTMLElement>(".filing-suggestions .suggestion-accept") ?? document.getElementById(kind === "tag" ? "detail-add-tag" : kind === "sender" ? "detail-correspondent" : "detail-document-type"))?.focus());
+    requestAnimationFrame(() => (document.querySelector<HTMLElement>(".filing-suggestions .suggestion-accept") ?? document.querySelector<HTMLElement>(".detail-advanced-toggle"))?.focus());
   }
   async function acceptSuggestion(kind: "tag" | "sender" | "type", item: FilingSuggestion) {
     if (busy) return;
@@ -856,7 +862,8 @@ export default function DocumentPanel({
       if (kind === "type") setDocumentTypeId(updated.document_type?.id ?? "");
       onSaved(updated);
       setSuggestionStatus(m.suggestionSaved(kind, item.name));
-      requestAnimationFrame(() => document.getElementById(fieldId)?.focus());
+      setShowAdvanced(true);
+      focusSoon(fieldId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.saveSuggestionError);
     } finally {
@@ -1125,12 +1132,6 @@ export default function DocumentPanel({
               required
             />
           </Field>
-          {/* The long hint is a description, not part of the field's name (round-4 judge L6). */}
-          <label className="detail-label">
-            <span id="detail-asn-label">{m.asn}</span><small id="detail-asn-hint">{m.asnHint}</small>
-            <input inputMode="numeric" pattern="[0-9]*" maxLength={9} value={asn} onChange={(event) => setAsn(event.target.value)}
-              aria-labelledby="detail-asn-label" aria-describedby="detail-asn-hint" />
-          </label>
           <Field label={m.documentDate} hint={m.optional} className="detail-label">
             <input
               type="date"
@@ -1138,6 +1139,24 @@ export default function DocumentPanel({
               onChange={(event) => setDate(event.target.value)}
             />
           </Field>
+          <p className="detail-filing-summary"><strong>{m.filingSummary}</strong> {[
+            correspondentId && (correspondents.find((item) => item.id === correspondentId)?.name ?? current.correspondent?.name),
+            documentTypeId && (documentTypes.find((item) => item.id === documentTypeId)?.name ?? current.document_type?.name),
+            ...selected.map((id) => availableById.get(id)?.name ?? current.tags.find((item) => item.id === id)?.name ?? ""),
+          ].filter(Boolean).join(" · ") || (current.status === "ready" ? m.noFilingDetails : current.status === "failed" ? m.filingNeedsAttention : m.filingPending)}</p>
+          <div className="detail-quick-actions">
+            <button type="button" className="text-action" onClick={() => {
+              if (actionStatus === "none") setActionStatus("open");
+              setShowTaskEditor(true);
+              focusSoon("detail-action-status");
+            }}>{actionStatus === "none" ? m.addTask : m.editTask}</button>
+            <span>{actionStatus === "open" ? m.taskSummary(actionNote, actionDueDate) : actionStatus === "done" ? m.taskDone : ""}</span>
+            <button type="button" className="text-action" onClick={() => {
+              paperSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+              requestAnimationFrame(() => (copies.length ? paperSectionRef.current : newCopySelectRef.current)?.focus({ preventScroll: true }));
+            }}>{copies.length ? m.viewPaperCopy : m.keepPaperCopy}</button>
+            <span>{copies.length ? m.paperSummary(copies[0].sticker_code, copies[0].location_path.join(" / "), copies.length) : m.digitalOnlyBrief}</span>
+          </div>
           {visibleSuggestions && (
             <section id="filing-suggestions" tabIndex={-1} className="filing-suggestions" aria-labelledby="filing-suggestions-heading">
               <h3 id="filing-suggestions-heading">{m.suggestionsHeading}</h3>
@@ -1183,6 +1202,31 @@ export default function DocumentPanel({
             <p className="filing-suggestions-hint">{m.suggestionsLater}</p>
           )}
           {suggestionStatus && <p className="visually-hidden" role="status">{suggestionStatus}</p>}
+          {showTaskEditor && <div className="detail-task-editor">
+          <Field label={m.followUp} hint={m.optional} className="detail-label">
+            <select id="detail-action-status" value={actionStatus} onChange={(event) => setActionStatus(event.target.value as Document["action_status"])}>
+              <option value="none">{m.nothingToDo}</option>
+              <option value="open">{m.needsAction}</option>
+              <option value="done">{m.completed}</option>
+            </select>
+          </Field>
+          {actionStatus === "open" && <>
+            <Field label={m.dueDate} hint={m.optional} className="detail-label">
+              <input type="date" value={actionDueDate} onChange={(event) => setActionDueDate(event.target.value)} />
+            </Field>
+            <Field label={m.whatNeedsDoing} hint={m.optional} className="detail-label">
+              <input value={actionNote} onChange={(event) => setActionNote(event.target.value)} maxLength={500} placeholder={m.actionPlaceholder} />
+            </Field>
+          </>}
+          </div>}
+          <button type="button" className="detail-advanced-toggle" aria-expanded={showAdvanced} aria-controls="detail-advanced-fields" onClick={() => setShowAdvanced((value) => !value)}>{m.moreOptions}</button>
+          {showAdvanced && <div id="detail-advanced-fields" className="detail-advanced-fields">
+          {/* The long hint is a description, not part of the field's name (round-4 judge L6). */}
+          <label className="detail-label">
+            <span id="detail-asn-label">{m.asn}</span><small id="detail-asn-hint">{m.asnHint}</small>
+            <input inputMode="numeric" pattern="[0-9]*" maxLength={9} value={asn} onChange={(event) => setAsn(event.target.value)}
+              aria-labelledby="detail-asn-label" aria-describedby="detail-asn-hint" />
+          </label>
           <Field label={m.from} hint={current.correspondent_origin === "rule" ? m.originRule : current.correspondent_origin === "source" ? m.originSource : current.correspondent_origin === "model" ? m.originModel : current.correspondent_origin === "learned" ? m.originLearned : m.senderHint} className="detail-label">
             <select id="detail-correspondent" value={correspondentId} onChange={(event) => setCorrespondentId(event.target.value)}>
               <option value="">{m.noSender}</option>
@@ -1217,21 +1261,6 @@ export default function DocumentPanel({
               </select>
             </Field>
           )}
-          <Field label={m.followUp} hint={m.optional} className="detail-label">
-            <select value={actionStatus} onChange={(event) => setActionStatus(event.target.value as Document["action_status"])}>
-              <option value="none">{m.nothingToDo}</option>
-              <option value="open">{m.needsAction}</option>
-              <option value="done">{m.completed}</option>
-            </select>
-          </Field>
-          {actionStatus === "open" && <>
-            <Field label={m.dueDate} hint={m.optional} className="detail-label">
-              <input type="date" value={actionDueDate} onChange={(event) => setActionDueDate(event.target.value)} />
-            </Field>
-            <Field label={m.whatNeedsDoing} hint={m.optional} className="detail-label">
-              <input value={actionNote} onChange={(event) => setActionNote(event.target.value)} maxLength={500} placeholder={m.actionPlaceholder} />
-            </Field>
-          </>}
           <div className="detail-label">
             {m.tags} <small>{current.tags.some((tag) => tag.origin === "learned") ? m.tagsLearned : m.tagsHint}</small>
           </div>
@@ -1277,9 +1306,10 @@ export default function DocumentPanel({
               <button type="button" aria-label={m.cancelNewTag} onClick={() => { setCreatingTag(false); focusSoon("detail-add-tag"); }}><X size={16} /></button>
             </div>
           ) : <button type="button" id="detail-add-tag" className="text-action" onClick={() => setCreatingTag(true)}><Plus size={15} /> {m.addATag}</button>}
-          <Button ref={saveButtonRef} className="detail-save" pending={busy}>
+          </div>}
+          {(dirty || busy) && <Button ref={saveButtonRef} className="detail-save" pending={busy}>
             <Save size={17} /> {busy ? m.saving : m.saveChanges}
-          </Button>
+          </Button>}
         </form>
         <CustomFieldsPanel documentId={current.id} onChanged={() => { onSaved(current); setCurrent((value) => ({ ...value })); }} />
         <section className="detail-notes" aria-labelledby="document-notes-heading">
@@ -1315,12 +1345,16 @@ export default function DocumentPanel({
             <FileText size={17} /> {m.files}
           </h3>
           {reprocessNotice && <p className="bulk-notice" role="status">{reprocessNotice}</p>}
-          <a href={`/api/documents/${current.id}/original`}>
-            <ArrowDownToLine size={17} /> {m.downloadOriginal}
-          </a>
-          <a href={`/api/documents/${current.id}/export`}>
-            <ArrowDownToLine size={17} /> {m.exportZip}
-          </a>
+          <details className="detail-file-options">
+            <summary>{m.originalAndExport}</summary>
+            <p>{m.originalAndExportHint}</p>
+            <a href={`/api/documents/${current.id}/original`}>
+              <ArrowDownToLine size={17} /> {m.downloadOriginal}
+            </a>
+            <a href={`/api/documents/${current.id}/export`}>
+              <ArrowDownToLine size={17} /> {m.exportZip}
+            </a>
+          </details>
           {current.archive_available && (
             <a
               href={`/api/documents/${current.id}/archive`}
@@ -1355,7 +1389,7 @@ export default function DocumentPanel({
         <DocumentAccessPanel documentId={current.id} />
         <ShareLinksPanel documentId={current.id} />
         <EmailDocumentPanel documentId={current.id} searchableReady={current.archive_available} />
-        <div className="detail-files physical-copies">
+        <div ref={paperSectionRef} tabIndex={-1} className="detail-files physical-copies">
           <h3>
             <MapPin size={17} /> {m.paperCopies}
           </h3>
@@ -1434,6 +1468,7 @@ export default function DocumentPanel({
           <div className="new-copy">
             <select
               aria-label={m.newCopyLocation}
+              ref={newCopySelectRef}
               value={newLocation}
               onChange={(event) => setNewLocation(event.target.value)}
             >

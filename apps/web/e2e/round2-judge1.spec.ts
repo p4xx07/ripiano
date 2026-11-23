@@ -186,6 +186,7 @@ test("a tag can be created from the document dialog and a wrong suggestion dismi
     await expect(dialog.getByRole("button", { name: `Add tag: ${wrong.name}`, exact: true })).toHaveCount(0);
   }
 
+  await dialog.getByRole("button", { name: "More filing options" }).click();
   await dialog.getByRole("button", { name: "Create a tag" }).click();
   await dialog.getByRole("textbox", { name: "New tag name" }).fill(tag);
   await dialog.getByRole("button", { name: "Create tag", exact: true }).click();
@@ -203,7 +204,7 @@ test("a tag can be created from the document dialog and a wrong suggestion dismi
     const fresh = await (await page.request.get(`/api/documents/${id}/filing-suggestions`)).json();
     expect(fresh.tags.map((item: { id: string }) => item.id)).not.toContain(wrong.id);
     await page.getByRole("button", { name, exact: true }).click();
-    await expect(page.getByRole("dialog", { name }).getByRole("button", { name: "Save changes" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name }).getByRole("button", { name: "Save changes" })).toHaveCount(0); // no pending edits
     await expect(page.getByRole("dialog", { name }).getByRole("button", { name: `Add tag: ${wrong.name}`, exact: true })).toHaveCount(0);
   }
   await page.request.delete(`/api/tags/${wrong.id}`, { headers: { ...csrf, Referer: page.url() } });

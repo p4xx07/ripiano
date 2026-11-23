@@ -298,7 +298,7 @@ Existing documents are rechecked in the background when you add or delete a rule
 
 ### Learned suggestions
 
-For a new archive, upload first: OCR makes every document searchable without any tag or field. **Title** is the findable name; **document date** is detected when possible; **sender**, **type**, and **tags** are optional ways to group or filter. **ASN** is only for numbering a physical paper copy; **follow-up** is only for a task with a due date. You may leave these fields untouched. For recurring bills, make an Email rule that matches the sender or subject and assigns a Bills tag and type; this works immediately without waiting for the learned model.
+For a new archive, upload first: OCR makes every document searchable without any tag or field. The document panel starts with the title, detected document date, a short filing summary, and small **Add task** / **Keep paper copy** actions. **Save changes** appears only after you edit something. **More filing options** opens manual sender, type, tags, storage path and the legacy ASN field; you can leave them untouched. ASN is a separate number used by barcode scans, not a paper-copy sticker. **Add task** opens the follow-up status, optional due date and note; the saved task appears in **Needs action**. **Keep paper copy** takes you to the paper section to create or print a sticker. For recurring bills, make an Email rule that matches the sender or subject and assigns a Bills tag and type; this works immediately without waiting for the learned model.
 
 
 Ripiano learns from the senders, document types, and tags you set by hand, on your own server. It learns again every night, or when you press **Tags & filing → Learned suggestions → Learn now**.
@@ -391,7 +391,7 @@ Document exports include every older version. Only permanent deletion removes ve
 
 ### Export
 
-Under **Files**, **Download original** gets exactly the uploaded file. **Export document ZIP** is for moving one document with its metadata or keeping a portable copy; it includes the preserved original, the searchable PDF and OCR text when available, and a readable `manifest.json` with tags, notes, related documents, and paper-copy history. Each file has a SHA-256 checksum in the manifest. In the Library, select up to 20 documents and open **Export selected** to download one collection ZIP. Its root manifest identifies each document and gives checksums for files in stable ID-based folders. To move the whole archive, see `export_archive` and `import_archive` in [Move to a new server](#move-to-a-new-server).
+Under **Files → Original and export files**, **Download original** gets exactly the uploaded file. **Export document ZIP** is for moving one document with its metadata or keeping a portable copy; it includes the preserved original, the searchable PDF and OCR text when available, and a readable `manifest.json` with tags, notes, related documents, and paper-copy history. Each file has a SHA-256 checksum in the manifest. In the Library, select up to 20 documents and open **Export selected** to download one collection ZIP. Its root manifest identifies each document and gives checksums for files in stable ID-based folders. To move the whole archive, see `export_archive` and `import_archive` in [Move to a new server](#move-to-a-new-server).
 
 ### Trash
 

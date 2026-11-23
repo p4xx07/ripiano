@@ -53,6 +53,7 @@ test("one-tap filing suggestions use a manually filed example", async ({ page },
   const sourceId = await upload(source);
   await page.getByRole("button", { name: source, exact: true }).click();
   let dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
+  await dialog.getByRole("button", { name: "More filing options" }).click();
   await dialog.getByRole("checkbox", { name: tag }).check();
   await dialog.getByRole("button", { name: "Add a sender" }).click();
   await dialog.getByRole("textbox", { name: "New sender name" }).fill(sender);

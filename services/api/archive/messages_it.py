@@ -1,6 +1,12 @@
 """Reviewed Italian API errors. Unlisted messages remain in English until translated."""
 
 EXACT = {
+    "Choose a name; printed prefixes cannot be changed": "Scegli un nome; i prefissi già stampati non possono essere cambiati",
+    "Choose a paper category": "Scegli una categoria cartacea",
+    "Paper category not found": "Categoria cartacea non trovata",
+    "This paper prefix is already in use": "Questo prefisso cartaceo è già in uso",
+    "Use a category name of at most 100 characters": "Usa un nome di categoria di al massimo 100 caratteri",
+    "Use a unique 3–5 letter uppercase paper prefix": "Usa un prefisso cartaceo unico di 3–5 lettere maiuscole",
     "Invalid credentials": "Credenziali non valide",
     "A document's file disappeared from the media folder during the backup":
         "Il file di un documento è sparito dalla cartella dei file durante il backup",

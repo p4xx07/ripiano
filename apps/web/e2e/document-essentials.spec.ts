@@ -42,7 +42,7 @@ test("document opens with essentials and keeps manual filing available", async (
   await dialog.getByRole("button", { name: "More filing options" }).click();
   await expect(dialog.getByLabel("From")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Keep paper copy" }).click();
-  await expect(dialog.getByLabel("Location for the new paper copy")).toBeFocused();
+  await expect(dialog.getByLabel("Paper category")).toBeFocused();
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await expect(dialog).toBeHidden();
   const saved = await (await page.request.get(`/api/documents/${id}`)).json();

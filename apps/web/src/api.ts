@@ -99,10 +99,14 @@ export type Location = {
   description: string;
 };
 
+export type PaperCategory = { id: string; prefix: string; name: string };
+
 export type PhysicalCopy = {
   id: string;
   document_id: string;
   sticker_code: string;
+  category_prefix?: string | null;
+  category_name?: string | null;
   location_id: string | null;
   location_path: string[];
   missing_at: string | null;

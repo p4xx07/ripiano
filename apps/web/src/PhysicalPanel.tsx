@@ -1,6 +1,6 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Boxes, Camera, MapPin, Pencil, Plus, Printer, ScanLine, Trash2, X } from "lucide-react";
-import { ApiError, byLocationPath, Location, PhysicalCopy, request } from "./api";
+import { ApiError, byLocationPath, Location, PaperCategory, PhysicalCopy, request } from "./api";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/PhysicalPanel";
@@ -8,7 +8,7 @@ import StickerCamera, { useCameraQrSupport } from "./StickerCamera";
 
 /**
  * What a scanner or a phone QR app puts in the box: the bare code ("r-abcd1234 "), or the address the printed
- * label's QR holds (http(s)://<any host>/?sticker=R-… or /?location=L-…, possibly with a path) (round-7 judge 1 M1).
+ * label's QR holds (http(s)://<any host>/?sticker=MED-00042 or /?location=L-…, possibly with a path) (round-7 judge 1 M1).
  */
 export function stickerCodeFrom(value: string): string {
   const text = value.trim();
@@ -47,6 +47,12 @@ export default function PhysicalPanel({
 }) {
   const m = useMessages(messages);
   const [locations, setLocations] = useState<Location[]>([]);
+  const [categories, setCategories] = useState<PaperCategory[]>([]);
+  const [categoryPrefix, setCategoryPrefix] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [editCategoryName, setEditCategoryName] = useState("");
+  const [categoryBusy, setCategoryBusy] = useState(false);
   const [name, setName] = useState("");
   const [parent, setParent] = useState("");
   const [code, setCode] = useState(initialSticker || initialLocation);
@@ -105,6 +111,54 @@ export default function PhysicalPanel({
   useEffect(() => {
     void load();
   }, [load]);
+  const loadCategories = useCallback(async () => {
+    try {
+      setCategories((await request<{ categories: PaperCategory[] }>("/api/paper-categories")).categories);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.categoryLoadError);
+    }
+  }, [m]);
+  useEffect(() => { void loadCategories(); }, [loadCategories]);
+
+  async function addCategory(event: FormEvent) {
+    event.preventDefault();
+    if (categoryBusy) return;
+    setCategoryBusy(true);
+    setError("");
+    try {
+      const created = await request<PaperCategory>("/api/paper-categories", {
+        method: "POST", body: JSON.stringify({ prefix: categoryPrefix.trim().toUpperCase(), name: categoryName.trim() }),
+      });
+      setCategoryPrefix("");
+      setCategoryName("");
+      setNotice(m.categoryAdded(created.prefix));
+      await loadCategories();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.categorySaveError);
+    } finally {
+      setCategoryBusy(false);
+    }
+  }
+
+  async function renameCategory(event: FormEvent, category: PaperCategory) {
+    event.preventDefault();
+    if (categoryBusy) return;
+    if (editCategoryName.trim() === category.name) { setEditingCategory(null); return; }
+    setCategoryBusy(true);
+    setError("");
+    try {
+      await request(`/api/paper-categories/${category.id}`, {
+        method: "PATCH", body: JSON.stringify({ name: editCategoryName.trim() }),
+      });
+      setEditingCategory(null);
+      setNotice(m.categoryRenamed(category.prefix));
+      await loadCategories();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.categorySaveError);
+    } finally {
+      setCategoryBusy(false);
+    }
+  }
   useEffect(() => {
     if (initialLocation || initialSticker) void findSticker(initialLocation || initialSticker);
   }, [initialSticker, initialLocation]);
@@ -592,6 +646,31 @@ export default function PhysicalPanel({
           <div className="tag-tip">
             {m.tip}
           </div>
+          <details className="paper-category-settings">
+            <summary>{m.categoriesHeading}</summary>
+            <p>{m.categoriesIntro}</p>
+            <ul className="paper-category-list">
+              {categories.map((category) => <li key={category.id}>
+                <strong>{category.prefix}</strong>
+                {editingCategory === category.id ? (
+                  <form onSubmit={(event) => void renameCategory(event, category)}>
+                    <input aria-label={m.categoryNameFor(category.prefix)} value={editCategoryName} maxLength={100} required onChange={(event) => setEditCategoryName(event.target.value)} />
+                    <Button disabled={categoryBusy}>{m.save}</Button>
+                    <Button type="button" variant="secondary" onClick={() => setEditingCategory(null)}>{m.cancel}</Button>
+                  </form>
+                ) : <><span>{category.name}</span><button type="button" className="text-action" onClick={() => { setEditingCategory(category.id); setEditCategoryName(category.name); }}>{m.edit}</button></>}
+              </li>)}
+            </ul>
+            <form onSubmit={(event) => void addCategory(event)}>
+              <label>{m.categoryPrefix}
+                <input value={categoryPrefix} onChange={(event) => setCategoryPrefix(event.target.value.toUpperCase().replace(/[^A-Z]/g, ""))} minLength={3} maxLength={5} pattern="[A-Z]{3,5}" placeholder={m.categoryPrefixPlaceholder} required />
+              </label>
+              <label>{m.categoryName}
+                <input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} maxLength={100} placeholder={m.categoryNamePlaceholder} required />
+              </label>
+              <Button disabled={categoryBusy}><Plus size={16} /> {m.addCategory}</Button>
+            </form>
+          </details>
         </section>
       </div>
     </>

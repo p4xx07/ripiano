@@ -130,6 +130,8 @@ urlpatterns = [
     path("api/filing-rules/<uuid:rule_id>", metadata_views.filing_rule_detail),
     path("api/rules", metadata_views.rules),
     path("api/rules/<uuid:rule_id>", metadata_views.rule_detail),
+    path("api/paper-categories", physical_views.paper_categories),
+    path("api/paper-categories/<uuid:category_id>", physical_views.paper_category_detail),
     path("api/locations", physical_views.locations),
     path("api/locations/lookup/<str:sticker_code>", physical_views.location_lookup),
     path("api/locations/<uuid:location_id>", physical_views.location_detail),

@@ -20,7 +20,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { ApiError, asSentence, byLocationPath, Document, DocumentNote, hasOpenWarning, FilingItem, FilingSuggestion, FilingSuggestions, formatDateTime, Location, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
+import { ApiError, asSentence, byLocationPath, Document, DocumentNote, hasOpenWarning, FilingItem, FilingSuggestion, FilingSuggestions, formatDateTime, Location, PaperCategory, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 
@@ -197,6 +197,9 @@ export default function DocumentPanel({
   const [locations, setLocations] = useState<Location[]>([]);
   const [copies, setCopies] = useState<PhysicalCopy[]>(initial.physical_copies);
   const [newLocation, setNewLocation] = useState("");
+  const [paperCategories, setPaperCategories] = useState<PaperCategory[]>([]);
+  const [newCategory, setNewCategory] = useState("VAR");
+  const newCategorySelectRef = useRef<HTMLSelectElement>(null);
   const [moveChoices, setMoveChoices] = useState<Record<string, string>>({});
   const [histories, setHistories] = useState<
     Record<string, { from: string[]; to: string[]; note: string; at: string; by?: string }[]>
@@ -307,6 +310,11 @@ export default function DocumentPanel({
       .catch(() => { if (active) setSuggestions(null); });
     return () => { active = false; };
   }, [current.id, current.status]);
+  useEffect(() => {
+    request<{ categories: PaperCategory[] }>("/api/paper-categories")
+      .then((result) => setPaperCategories(result.categories))
+      .catch((cause) => setError(cause instanceof Error ? cause.message : m.loadFilingError));
+  }, []);
   useEffect(() => {
     request<{ locations: Location[] }>("/api/locations")
       .then((result) => setLocations(byLocationPath(result.locations)))
@@ -736,7 +744,7 @@ export default function DocumentPanel({
     try {
       const created = await request<PhysicalCopy>(`/api/documents/${current.id}/copies`, {
         method: "POST",
-        body: JSON.stringify({ location_id: newLocation || null }),
+        body: JSON.stringify({ location_id: newLocation || null, category_prefix: newCategory }),
       });
       await refreshCopies();
       setNewLocation("");
@@ -1153,7 +1161,7 @@ export default function DocumentPanel({
             <span>{actionStatus === "open" ? m.taskSummary(actionNote, actionDueDate) : actionStatus === "done" ? m.taskDone : ""}</span>
             <button type="button" className="text-action" onClick={() => {
               paperSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-              requestAnimationFrame(() => (copies.length ? paperSectionRef.current : newCopySelectRef.current)?.focus({ preventScroll: true }));
+              requestAnimationFrame(() => (copies.length ? paperSectionRef.current : newCategorySelectRef.current)?.focus({ preventScroll: true }));
             }}>{copies.length ? m.viewPaperCopy : m.keepPaperCopy}</button>
             <span>{copies.length ? m.paperSummary(copies[0].sticker_code, copies[0].location_path.join(" / "), copies.length) : m.digitalOnlyBrief}</span>
           </div>
@@ -1465,8 +1473,16 @@ export default function DocumentPanel({
               )}
             </div>
           ))}
-          <div className="new-copy">
-            <select
+          <details className="additional-paper-copy" open={copies.length === 0 || undefined}>
+            {copies.length > 0 && <summary>{m.addAnotherCopy}</summary>}
+            <div className="new-copy">
+              <label className="detail-label">{m.paperCategory} <small>{m.paperCategoryHint}</small>
+                <select ref={newCategorySelectRef} value={newCategory} onChange={(event) => setNewCategory(event.target.value)}>
+                  {paperCategories.map((category) => <option key={category.id} value={category.prefix}>{category.prefix} · {category.name}</option>)}
+                </select>
+              </label>
+              <label className="detail-label">{m.paperLocation}
+              <select
               aria-label={m.newCopyLocation}
               ref={newCopySelectRef}
               value={newLocation}
@@ -1478,16 +1494,19 @@ export default function DocumentPanel({
                   {location.path.join(" / ")}
                 </option>
               ))}
-            </select>
+              </select>
+              </label>
             <Button
               type="button"
               variant="secondary"
               pending={busy}
+              disabled={!paperCategories.length}
               onClick={() => void createCopy()}
             >
               <Plus size={16} /> {m.createSticker}
             </Button>
-          </div>
+            </div>
+          </details>
           {!locations.length && (
             <button className="text-action" onClick={() => leave(onOpenLocations)}>
               {m.createLocationFirst} <Plus size={15} />

@@ -401,7 +401,9 @@ Move a completed document to **Trash** from its detail panel and restore it late
 
 ## Paper copies
 
-Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. A sticker code can be typed with or without its `R-` prefix (`R-MUD3PLDT`, `MUD3PLDT`); a location code typed in full (`L-…`) opens the location.
+If you keep the paper, open its document and choose **Keep paper copy**. Pick a broad, lasting topic and optionally a location. Ripiano allocates a code such as `MED-00042` and prints a QR label for the copy. Digital-only documents receive no code. Each topic has its own sequence; a deleted label number is not reused. The initial topics are `MED` (medical), `HOM` (home), `FIN` (finance and taxes), `AUT` (vehicles), `PER` (personal), `EVT` (events and travel), and `VAR` (other). The default is `VAR` until you choose a category. Tags and locations can change without changing the printed code. Another physical copy is available under an advanced action and gets a different code.
+
+You can add or rename paper categories under **Paper archive → Paper categories**. Prefixes must be 3–5 uppercase letters and cannot be changed after creation because labels may already be printed. Codes are unique within one person's archive, so two people can both have `MED-00001`. Find a copy by scanning its QR or typing `MED-00042`, `MED00042`, or `med-42`. Existing random `R-…` stickers still work with or without `R-`, and a location code typed in full (`L-…`) opens the location. ASN remains an advanced archive/barcode field for older scan workflows; entering one does not register a paper copy. Choosing a category is currently manual; automatic suggestions from filing rules and replacement-label aliases are planned.
 
 Scanning or typing a paper copy's sticker (also from the label's QR address on a phone) shows a result card where you can move the copy to another location (choose it and press **Move**), mark it missing or found, print its sticker again, or open the document. Locations are listed in tree order, each box under its shelf.
 

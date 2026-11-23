@@ -1,12 +1,11 @@
 import io
 import json
 import re
-import secrets
 from uuid import UUID
 
 import segno
 from django.conf import settings
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.db.models import Count, Q
 from django.db.models.deletion import ProtectedError
 from django.http import HttpResponse, JsonResponse
@@ -15,9 +14,22 @@ from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 
 from .api_language import display, wants_italian
-from .models import Document, Location, Movement, PhysicalCopy
+from .models import Document, Location, Movement, PaperCategory, PhysicalCopy
 
-STICKER_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+DEFAULT_PAPER_CATEGORIES = (
+    ("MED", "Medical"), ("HOM", "Home"), ("FIN", "Finance and taxes"),
+    ("AUT", "Vehicles"), ("PER", "Personal"), ("EVT", "Events and travel"), ("VAR", "Other"),
+)
+
+
+def _ensure_paper_categories(owner):
+    for prefix, name in DEFAULT_PAPER_CATEGORIES:
+        PaperCategory.objects.get_or_create(owner=owner, prefix=prefix, defaults={"name": name})
+
+
+def paper_category_json(category):
+    return {"id": str(category.id), "prefix": category.prefix, "name": category.name}
+
 
 
 def _body(request):
@@ -55,6 +67,8 @@ def copy_json(copy):
     return {
         "id": str(copy.id), "document_id": str(copy.document_id),
         "sticker_code": copy.sticker_code,
+        "category_prefix": copy.paper_category.prefix if copy.paper_category_id else None,
+        "category_name": copy.paper_category.name if copy.paper_category_id else None,
         "location_id": str(copy.location_id) if copy.location_id else None,
         "location_path": location_path(copy.location),
         "missing_at": copy.missing_at.isoformat() if copy.missing_at else None,
@@ -100,6 +114,47 @@ def locations(request):
         return JsonResponse({"error": "Location already exists here"}, status=409)
     location = Location.objects.create(owner=request.user, name=name.strip(), description=description.strip(), parent=parent)
     return JsonResponse(location_json(location), status=201)
+
+
+@require_http_methods(["GET", "POST"])
+def paper_categories(request):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    if request.method == "GET":
+        _ensure_paper_categories(request.user)
+        return JsonResponse({"categories": [paper_category_json(item) for item in PaperCategory.objects.filter(owner=request.user)]})
+    body = _body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    prefix = body.get("prefix")
+    name = body.get("name")
+    if not isinstance(prefix, str) or not re.fullmatch(r"[A-Z]{3,5}", prefix) or prefix in {"ASN", "TAG"}:
+        return JsonResponse({"error": "Use a unique 3–5 letter uppercase paper prefix"}, status=400)
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 100:
+        return JsonResponse({"error": "Use a category name of at most 100 characters"}, status=400)
+    _ensure_paper_categories(request.user)
+    category, created = PaperCategory.objects.get_or_create(owner=request.user, prefix=prefix, defaults={"name": name.strip()})
+    if not created:
+        return JsonResponse({"error": "This paper prefix is already in use"}, status=409)
+    return JsonResponse(paper_category_json(category), status=201)
+
+
+@require_http_methods(["PATCH"])
+def paper_category_detail(request, category_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    category = PaperCategory.objects.filter(pk=category_id, owner=request.user).first()
+    if category is None:
+        return JsonResponse({"error": "Paper category not found"}, status=404)
+    body = _body(request)
+    name = body.get("name") if body is not None else None
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 100 or "prefix" in body:
+        return JsonResponse({"error": "Choose a name; printed prefixes cannot be changed"}, status=400)
+    category.name = name.strip()
+    category.save(update_fields=["name"])
+    return JsonResponse(paper_category_json(category))
 
 
 def _descendant_ids(owner, root_id):
@@ -183,6 +238,16 @@ def _code_filter(typed, prefix):
     return choices
 
 
+def _paper_code_filter(typed):
+    """Accept old R stickers and MED-00042, MED00042 or MED-42 on the owner's archive."""
+    choices = _code_filter(typed, "R-")
+    normalized = re.sub(r"[\s-]", "", typed).upper()
+    match = re.fullmatch(r"([A-Z]{3,5})([0-9]{1,18})", normalized)
+    if match:
+        choices |= Q(sticker_code__iexact=f"{match[1]}-{int(match[2]):05d}")
+    return choices
+
+
 @require_http_methods(["GET"])
 def location_lookup(request, sticker_code):
     unauthorized = _unauthorized(request)
@@ -197,11 +262,11 @@ def location_lookup(request, sticker_code):
         total=Count("id", filter=Q(missing_at__isnull=True)),
         missing_count=Count("id", filter=Q(missing_at__isnull=False)),
     )
-    present = copies.filter(missing_at__isnull=True).select_related("document", "location__parent__parent").order_by("sticker_code")
-    missing = copies.filter(missing_at__isnull=False).select_related("document", "location__parent__parent").order_by("sticker_code")
+    present = copies.filter(missing_at__isnull=True).select_related("document", "paper_category", "location__parent__parent").order_by("sticker_code")
+    missing = copies.filter(missing_at__isnull=False).select_related("document", "paper_category", "location__parent__parent").order_by("sticker_code")
     cursor = request.GET.get("cursor", "")
     missing_cursor = request.GET.get("missing_cursor", "")
-    if any(value and not re.fullmatch(r"R-[A-Z0-9]{8}", value) for value in (cursor, missing_cursor)):
+    if any(value and not re.fullmatch(r"(?:R-[A-Z0-9]{8}|[A-Z]{3,5}-[0-9]{5,})", value) for value in (cursor, missing_cursor)):
         return JsonResponse({"error": "Invalid container page cursor"}, status=400)
     if cursor:
         present = present.filter(sticker_code__gt=cursor)
@@ -312,26 +377,36 @@ def document_copies(request, document_id):
     if document is None:
         return JsonResponse({"error": "Document not found"}, status=404)
     if request.method == "GET":
-        return JsonResponse({"copies": [copy_json(copy) for copy in document.physical_copies.select_related("location__parent__parent")]})
+        return JsonResponse({"copies": [copy_json(copy) for copy in document.physical_copies.select_related("paper_category", "location__parent__parent")]})
     body = _body(request)
     if body is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
     location = _location(request.user, body.get("location_id"))
     if body.get("location_id") and location is None:
         return JsonResponse({"error": "Location not found"}, status=400)
-    for _ in range(5):
-        code = "R-" + "".join(secrets.choice(STICKER_ALPHABET) for _ in range(8))
-        try:
-            with transaction.atomic():
-                copy = PhysicalCopy.objects.create(document=document, sticker_code=code, location=location)
-                if location:
-                    Movement.objects.create(physical_copy=copy, kind=Movement.Kind.PLACEMENT, to_location=location, moved_by=request.user, note="Initial placement")
-                else:
-                    Movement.objects.create(physical_copy=copy, kind=Movement.Kind.CREATED, moved_by=request.user, note="Sticker created")
-            return JsonResponse(copy_json(copy), status=201)
-        except IntegrityError:
-            continue
-    return JsonResponse({"error": "Could not allocate a sticker code"}, status=503)
+    _ensure_paper_categories(request.user)
+    prefix = body.get("category_prefix", "VAR")
+    if not isinstance(prefix, str):
+        return JsonResponse({"error": "Choose a paper category"}, status=400)
+    category = PaperCategory.objects.select_for_update().filter(owner=request.user, prefix=prefix).first()
+    if category is None:
+        return JsonResponse({"error": "Paper category not found"}, status=400)
+    # One row lock serializes allocations for this owner's category. A deleted label never resets its counter.
+    for _ in range(100):
+        number = category.next_number
+        code = f"{category.prefix}-{number:05d}"
+        category.next_number = number + 1
+        category.save(update_fields=["next_number"])
+        if not PhysicalCopy.objects.filter(document__owner=request.user, sticker_code__iexact=code).exists():
+            break
+    else:
+        return JsonResponse({"error": "Could not allocate a sticker code"}, status=503)
+    copy = PhysicalCopy.objects.create(document=document, sticker_code=code, paper_category=category, paper_number=number, location=location)
+    if location:
+        Movement.objects.create(physical_copy=copy, kind=Movement.Kind.PLACEMENT, to_location=location, moved_by=request.user, note="Initial placement")
+    else:
+        Movement.objects.create(physical_copy=copy, kind=Movement.Kind.CREATED, moved_by=request.user, note="Sticker created")
+    return JsonResponse(copy_json(copy), status=201)
 
 
 @require_http_methods(["PATCH"])
@@ -413,7 +488,7 @@ def sticker_lookup(request, sticker_code):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    copy = PhysicalCopy.objects.filter(_code_filter(sticker_code, "R-"), document__owner=request.user).select_related("document", "location__parent__parent").first()
+    copy = PhysicalCopy.objects.filter(_paper_code_filter(sticker_code), document__owner=request.user).select_related("document", "paper_category", "location__parent__parent").first()
     if copy is None:
         return JsonResponse({"error": "Sticker not found"}, status=404)
     if copy.document.trashed_at:
@@ -426,7 +501,7 @@ def printable_label(request, copy_id):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    copy = PhysicalCopy.objects.filter(pk=copy_id, document__owner=request.user, document__trashed_at__isnull=True).select_related("document", "location__parent__parent").first()
+    copy = PhysicalCopy.objects.filter(pk=copy_id, document__owner=request.user, document__trashed_at__isnull=True).select_related("document", "paper_category", "location__parent__parent").first()
     if copy is None:
         return JsonResponse({"error": "Physical copy not found"}, status=404)
     address = f"{settings.PUBLIC_ORIGIN.rstrip('/')}/?sticker={copy.sticker_code}"
@@ -434,7 +509,8 @@ def printable_label(request, copy_id):
     output = io.BytesIO()
     qr.save(output, kind="svg", scale=3, border=2, dark="#183e32")
     svg = output.getvalue().decode("utf-8")
-    html = _label_html(display(request, "Ripiano sticker {0}", copy.sticker_code), "ripiano", svg, copy.document.title, copy.sticker_code,
+    brand = "ripiano" + (f" · {copy.paper_category.name}" if copy.paper_category_id else "")
+    html = _label_html(display(request, "Ripiano sticker {0}", copy.sticker_code), brand, svg, copy.document.title, copy.sticker_code,
                        location_path(copy.location) or [display(request, "Location not assigned")], lang="it" if wants_italian(request) else "en")
     response = HttpResponse(html, content_type="text/html; charset=utf-8")
     response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"

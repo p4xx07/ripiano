@@ -23,7 +23,18 @@ test("a shelf label finds paper copies inside a nested box", async ({ page }, te
   const parent = `Shelf ${Date.now()} ${testInfo.project.name}`;
   const box = `Box ${Date.now()} ${testInfo.project.name}`;
   const name = `box-label-${Date.now()}-${testInfo.project.name}`;
+  const categoryPrefix = `Q${Array.from({ length: 4 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join("")}`;
   await navigate(page, "Paper archive");
+  await page.getByText("Paper categories", { exact: true }).click();
+  await page.getByLabel("New prefix (3–5 letters)").fill(categoryPrefix);
+  await page.getByLabel("Category name", { exact: true }).fill("Keepsakes");
+  await page.getByRole("button", { name: "Add category" }).click();
+  const categoryRow = page.locator(".paper-category-list li").filter({ hasText: categoryPrefix });
+  await expect(categoryRow).toContainText("Keepsakes");
+  await categoryRow.getByRole("button", { name: "Edit" }).click();
+  await categoryRow.getByRole("textbox", { name: `Name for ${categoryPrefix}` }).fill("Memories");
+  await categoryRow.getByRole("button", { name: "Save" }).click();
+  await expect(categoryRow).toContainText("Memories");
   await page.getByPlaceholder("e.g. Filing cabinet").fill(parent);
   await page.getByRole("button", { name: "Add location" }).click();
   await expect(page.locator(".location-path").filter({ hasText: parent })).toBeVisible();
@@ -52,9 +63,12 @@ test("a shelf label finds paper copies inside a nested box", async ({ page }, te
   await page.getByRole("textbox", { name: "Search documents" }).fill(`title:${name}`);
   await page.getByRole("button", { name, exact: true }).click();
   const detail = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
-  await detail.locator(".new-copy select").selectOption({ label: `${parent} / ${box}` });
+  await detail.getByRole("combobox", { name: "Paper category" }).selectOption(categoryPrefix);
+  await detail.getByRole("combobox", { name: "Location for the new paper copy" }).selectOption({ label: `${parent} / ${box}` });
   await detail.getByRole("button", { name: "Create sticker" }).click();
   await expect(detail.locator(".copy-card")).toContainText(`${parent} / ${box}`);
+  const copyCode = (await detail.locator(".copy-card strong").first().textContent())?.trim();
+  expect(copyCode).toBe(`${categoryPrefix}-00001`);
 
   await page.goto(`/?location=${shelf.sticker_code}`);
   const result = page.locator(".location-result");

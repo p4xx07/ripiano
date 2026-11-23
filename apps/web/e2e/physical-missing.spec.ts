@@ -38,7 +38,7 @@ test("a missing paper copy keeps its sticker and last known location", async ({ 
   await page.getByRole("textbox", { name: "Search documents" }).fill(`title:${name}`);
   await page.getByRole("button", { name, exact: true }).click();
   let detail = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
-  await detail.locator(".new-copy select").selectOption({ label: location });
+  await detail.getByRole("combobox", { name: "Location for the new paper copy" }).selectOption({ label: location });
   await detail.getByRole("button", { name: "Create sticker" }).click();
   const card = detail.locator(".copy-card").first();
   const code = (await card.locator("strong").textContent())!.trim();

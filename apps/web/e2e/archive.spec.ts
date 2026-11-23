@@ -96,16 +96,14 @@ test("capture, find, tag, and locate a paper copy", async ({
   await expect(
     page.getByRole("dialog").filter({ hasText: "Keep it in place." }),
   ).toBeVisible();
-  await page.locator(".new-copy select").selectOption({ label: locationName });
+  await page.getByRole("combobox", { name: "Location for the new paper copy" }).selectOption({ label: locationName });
   await page.getByRole("button", { name: "Create sticker" }).click();
-  await expect(
-    page.getByRole("button", { name: "Save changes" }),
-  ).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
   const code = (await page
     .locator(".copy-card strong")
     .first()
     .textContent())!.trim();
-  expect(code).toMatch(/^R-[A-Z2-9]{8}$/);
+  expect(code).toMatch(/^VAR-[0-9]{5,}$/);
   await page.screenshot({
     path: testInfo.outputPath("paper-copy.png"),
     fullPage: true,

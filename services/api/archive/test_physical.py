@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 from django.utils import timezone
 
-from archive.models import Document, Location, Movement, PaperCategory, PhysicalCopy
+from archive.models import Document, Location, Movement, PaperCategory, PaperStickerAlias, PhysicalCopy
 
 
 @pytest.mark.django_db
@@ -144,6 +144,65 @@ def test_deleted_paper_code_is_not_reused():
     PhysicalCopy.objects.filter(pk=created["id"]).delete()
     later = client.post(f"/api/documents/{document.id}/copies", json.dumps({"category_prefix": "PER"}), content_type="application/json").json()
     assert created["sticker_code"] == "PER-00001" and later["sticker_code"] == "PER-00002"
+
+
+@pytest.mark.django_db
+def test_replacing_paper_label_keeps_old_qr_as_owner_scoped_alias():
+    owner = get_user_model().objects.create_user("owner", password="test-password-1")
+    other = get_user_model().objects.create_user("other", password="test-password-2")
+    document = Document.objects.create(owner=owner, title="Medical record", original_name="record.pdf", original_path="originals/record.pdf",
+                                       original_mime="application/pdf", original_sha256="a" * 64, original_size=1)
+    client = Client()
+    client.force_login(owner)
+    first = client.post(f"/api/documents/{document.id}/copies", json.dumps({"category_prefix": "MED"}), content_type="application/json").json()
+    assert client.post(f"/api/copies/{first['id']}/replace-label", json.dumps({"category_prefix": "NOPE"}), content_type="application/json").status_code == 400
+    replaced = client.post(f"/api/copies/{first['id']}/replace-label", json.dumps({"category_prefix": "HOM"}), content_type="application/json")
+    assert replaced.status_code == 200
+    assert replaced.json()["previous_code"] == "MED-00001"
+    assert replaced.json()["copy"]["sticker_code"] == "HOM-00001"
+    assert str(PaperStickerAlias.objects.get(owner=owner, code="MED-00001").physical_copy_id) == first["id"]
+    for typed in ("MED-00001", "med-1", "MED00001"):
+        result = client.get(f"/api/stickers/{typed}")
+        assert result.status_code == 200
+        assert result.json()["copy"]["sticker_code"] == "HOM-00001"
+        assert result.json()["replaced_label"] == "MED-00001"
+    assert client.get("/api/stickers/HOM-00001").json()["replaced_label"] is None
+    with patch("archive.physical_views.segno.make_qr", wraps=segno.make_qr) as make_qr:
+        assert client.get(f"/api/copies/{first['id']}/label").status_code == 200
+    assert make_qr.call_args.args[0].endswith("/?sticker=HOM-00001")
+    next_med = client.post(f"/api/documents/{document.id}/copies", json.dumps({"category_prefix": "MED"}), content_type="application/json")
+    assert next_med.json()["sticker_code"] == "MED-00002"
+    legacy = PhysicalCopy.objects.create(document=document, sticker_code="R-OLDCODE")
+    assert client.post(f"/api/copies/{legacy.id}/replace-label", json.dumps({"category_prefix": "FIN"}), content_type="application/json").json()["copy"]["sticker_code"] == "FIN-00001"
+    assert client.get("/api/stickers/R-OLDCODE").json()["copy"]["sticker_code"] == "FIN-00001"
+    client.force_login(other)
+    assert client.get("/api/stickers/MED-00001").status_code == 404
+    assert client.post(f"/api/copies/{first['id']}/replace-label", json.dumps({"category_prefix": "HOM"}), content_type="application/json").status_code == 404
+    client.force_login(owner)
+    PhysicalCopy.objects.filter(pk=first["id"]).delete()
+    assert client.get("/api/stickers/MED-00001").status_code == 404
+    assert not PaperStickerAlias.objects.filter(owner=owner, code="MED-00001").exists()
+
+
+@pytest.mark.django_db
+def test_bare_sequential_code_takes_priority_over_legacy_r_code():
+    owner = get_user_model().objects.create_user("owner", password="test-password-1")
+    legacy_document = Document.objects.create(owner=owner, title="Old", original_name="old.pdf", original_path="originals/old.pdf",
+                                              original_mime="application/pdf", original_sha256="a" * 64, original_size=1)
+    new_document = Document.objects.create(owner=owner, title="New", original_name="new.pdf", original_path="originals/new.pdf",
+                                           original_mime="application/pdf", original_sha256="b" * 64, original_size=1)
+    PhysicalCopy.objects.create(document=legacy_document, sticker_code="R-MED22222")
+    PaperCategory.objects.create(owner=owner, prefix="MED", name="Medical", next_number=22222)
+    client = Client()
+    client.force_login(owner)
+    new_copy = client.post(f"/api/documents/{new_document.id}/copies", json.dumps({"category_prefix": "MED"}), content_type="application/json").json()
+    assert new_copy["sticker_code"] == "MED-22222"
+    assert client.get("/api/stickers/MED22222").json()["document"]["id"] == str(new_document.id)
+    assert client.get("/api/stickers/R-MED22222").json()["document"]["id"] == str(legacy_document.id)
+    replaced = client.post(f"/api/copies/{new_copy['id']}/replace-label", json.dumps({"category_prefix": "HOM"}), content_type="application/json")
+    assert replaced.status_code == 200
+    found = client.get("/api/stickers/MED22222").json()
+    assert found["document"]["id"] == str(new_document.id) and found["replaced_label"] == "MED-22222"
 
 
 @pytest.mark.django_db

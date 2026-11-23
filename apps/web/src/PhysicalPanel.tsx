@@ -22,7 +22,7 @@ export function stickerCodeFrom(value: string): string {
   return code.trim().toUpperCase();
 }
 
-type Lookup = { copy: PhysicalCopy; document: { id: string; title: string } };
+type Lookup = { copy: PhysicalCopy; document: { id: string; title: string }; replaced_label?: string | null };
 type LocationLookup = {
   location: Location;
   copies: Lookup[];
@@ -464,6 +464,7 @@ export default function PhysicalPanel({
             <section ref={foundRef} className="sticker-result" aria-labelledby="sticker-result-title">
               <div className="sticker-code">{found.copy.sticker_code}</div>
               <h3 id="sticker-result-title">{found.document.title}</h3>
+              {found.replaced_label && <p className="sticker-result-hint">{m.replacedSticker(found.replaced_label, found.copy.sticker_code)}</p>}
               {found.copy.missing_at && <p className="copy-missing-label">{m.copyMissing}</p>}
               <p>
                 <MapPin size={16} />{" "}

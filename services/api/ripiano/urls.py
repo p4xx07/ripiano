@@ -140,6 +140,7 @@ urlpatterns = [
     path("api/copies/<uuid:copy_id>", physical_views.copy_detail),
     path("api/copies/<uuid:copy_id>/status", physical_views.copy_status),
     path("api/copies/<uuid:copy_id>/history", physical_views.copy_history),
+    path("api/copies/<uuid:copy_id>/replace-label", physical_views.replace_copy_label),
     path("api/copies/<uuid:copy_id>/label", physical_views.printable_label),
     path("api/stickers/<str:sticker_code>", physical_views.sticker_lookup),
     path("api/agents", agent_views.grants),

@@ -93,6 +93,7 @@ export default defineMessages({
   addCategory: "Add category",
   categoryAdded: (prefix: string) => `Added paper category ${prefix}.`,
   categoryRenamed: (prefix: string) => `Renamed paper category ${prefix}.`,
+  replacedSticker: (oldCode: string, newCode: string) => `${oldCode} is an older label for this copy. Its current code is ${newCode}; print a new label when convenient.`,
 }, {
   loadError: "Impossibile caricare le posizioni",
   stickerNotFound: "Adesivo non trovato",
@@ -186,4 +187,5 @@ export default defineMessages({
   addCategory: "Aggiungi categoria",
   categoryAdded: (prefix: string) => `Categoria cartacea ${prefix} aggiunta.`,
   categoryRenamed: (prefix: string) => `Categoria cartacea ${prefix} rinominata.`,
+  replacedSticker: (oldCode: string, newCode: string) => `${oldCode} è una vecchia etichetta di questa copia. Il codice attuale è ${newCode}; stampa una nuova etichetta quando puoi.`,
 });

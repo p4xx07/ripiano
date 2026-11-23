@@ -199,6 +199,7 @@ export default function DocumentPanel({
   const [newLocation, setNewLocation] = useState("");
   const [paperCategories, setPaperCategories] = useState<PaperCategory[]>([]);
   const [newCategory, setNewCategory] = useState("VAR");
+  const [replacementCategories, setReplacementCategories] = useState<Record<string, string>>({});
   const newCategorySelectRef = useRef<HTMLSelectElement>(null);
   const [moveChoices, setMoveChoices] = useState<Record<string, string>>({});
   const [histories, setHistories] = useState<
@@ -754,6 +755,26 @@ export default function DocumentPanel({
       setError(
         cause instanceof Error ? cause.message : m.createStickerError,
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function replaceCopyLabel(copy: PhysicalCopy) {
+    if (busy) return;
+    const prefix = replacementCategories[copy.id] ?? copy.category_prefix ?? "VAR";
+    if (!window.confirm(m.confirmReplaceLabel(copy.sticker_code, prefix))) return;
+    setBusy(true);
+    setError("");
+    setCopyNotice("");
+    try {
+      const result = await request<{ copy: PhysicalCopy; previous_code: string }>(`/api/copies/${copy.id}/replace-label`, {
+        method: "POST", body: JSON.stringify({ category_prefix: prefix }),
+      });
+      await refreshCopies();
+      setCopyNotice(m.labelReplaced(result.previous_code, result.copy.sticker_code));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.replaceLabelError);
     } finally {
       setBusy(false);
     }
@@ -1459,6 +1480,17 @@ export default function DocumentPanel({
                 </Button>
               </div>
               {copy.missing_at && <p className="copy-missing-hint">{m.markFoundFirst}</p>}
+              <details className="replace-paper-label">
+                <summary>{m.replaceLabelAdvanced}</summary>
+                <p>{m.replaceLabelHint}</p>
+                <label className="detail-label">{m.paperCategory}
+                  <select aria-label={m.replacementCategoryFor(copy.sticker_code)} value={replacementCategories[copy.id] ?? copy.category_prefix ?? "VAR"}
+                    onChange={(event) => setReplacementCategories((current) => ({ ...current, [copy.id]: event.target.value }))}>
+                    {paperCategories.map((category) => <option key={category.id} value={category.prefix}>{category.prefix} · {category.name}</option>)}
+                  </select>
+                </label>
+                <Button type="button" variant="secondary" pending={busy} disabled={!paperCategories.length} onClick={() => void replaceCopyLabel(copy)}>{m.replaceLabel}</Button>
+              </details>
               {histories[copy.id] && (
                 <ol className="copy-history" aria-label={m.historyOf(copy.sticker_code)}>
                   {histories[copy.id].map((move, index) => (

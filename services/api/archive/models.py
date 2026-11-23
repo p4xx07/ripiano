@@ -482,6 +482,18 @@ class PhysicalCopy(models.Model):
         ]
 
 
+class PaperStickerAlias(models.Model):
+    """A retired printed code that still finds the same physical copy after relabelling."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="paper_sticker_aliases")
+    physical_copy = models.ForeignKey(PhysicalCopy, on_delete=models.CASCADE, related_name="sticker_aliases")
+    code = models.CharField(max_length=32)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["owner", "code"], name="unique_paper_sticker_alias_per_owner")]
+
+
 class Movement(models.Model):
     class Kind(models.TextChoices):
         # A sticker made without a location still gets a first history entry (judge 1 round 8, L2).

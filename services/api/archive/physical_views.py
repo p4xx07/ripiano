@@ -14,7 +14,7 @@ from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
 
 from .api_language import display, wants_italian
-from .models import Document, Location, Movement, PaperCategory, PhysicalCopy
+from .models import Document, Location, Movement, PaperCategory, PaperStickerAlias, PhysicalCopy
 
 DEFAULT_PAPER_CATEGORIES = (
     ("MED", "Medical"), ("HOM", "Home"), ("FIN", "Finance and taxes"),
@@ -228,24 +228,28 @@ def location_detail(request, location_id):
     return JsonResponse({"deleted": True})
 
 
-def _code_filter(typed, prefix):
+def _code_filter(typed, prefix, field="sticker_code"):
     """Match a sticker code as printed, or typed without its "R-" / "L-" prefix or the hyphen ("MUD3PLDT", "RMUD3PLDT")."""
     typed = typed.strip()
     bare = typed.replace("-", "").replace(" ", "")
-    choices = Q(sticker_code__iexact=typed) | Q(sticker_code__iexact=prefix + bare)
+    choices = Q(**{f"{field}__iexact": typed}) | Q(**{f"{field}__iexact": prefix + bare})
     if bare[:1].casefold() == prefix[0].casefold():
-        choices |= Q(sticker_code__iexact=prefix + bare[1:])
+        choices |= Q(**{f"{field}__iexact": prefix + bare[1:]})
     return choices
 
 
-def _paper_code_filter(typed):
-    """Accept old R stickers and MED-00042, MED00042 or MED-42 on the owner's archive."""
-    choices = _code_filter(typed, "R-")
-    normalized = re.sub(r"[\s-]", "", typed).upper()
-    match = re.fullmatch(r"([A-Z]{3,5})([0-9]{1,18})", normalized)
+def _paper_code_candidates(typed):
+    """Try the printed/current format first; a bare MED number must not resolve to R-MED… by accident."""
+    text = typed.strip().upper()
+    bare = re.sub(r"[\s-]", "", text)
+    choices = [text]
+    match = re.fullmatch(r"([A-Z]{3,5})([0-9]{1,18})", bare)
     if match:
-        choices |= Q(sticker_code__iexact=f"{match[1]}-{int(match[2]):05d}")
-    return choices
+        choices.append(f"{match[1]}-{int(match[2]):05d}")
+    choices.append("R-" + bare)
+    if bare.startswith("R"):
+        choices.append("R-" + bare[1:])
+    return list(dict.fromkeys(choices))
 
 
 @require_http_methods(["GET"])
@@ -391,22 +395,57 @@ def document_copies(request, document_id):
     category = PaperCategory.objects.select_for_update().filter(owner=request.user, prefix=prefix).first()
     if category is None:
         return JsonResponse({"error": "Paper category not found"}, status=400)
-    # One row lock serializes allocations for this owner's category. A deleted label never resets its counter.
-    for _ in range(100):
-        number = category.next_number
-        code = f"{category.prefix}-{number:05d}"
-        category.next_number = number + 1
-        category.save(update_fields=["next_number"])
-        if not PhysicalCopy.objects.filter(document__owner=request.user, sticker_code__iexact=code).exists():
-            break
-    else:
+    allocated = _allocate_paper_code(request.user, category)
+    if allocated is None:
         return JsonResponse({"error": "Could not allocate a sticker code"}, status=503)
+    number, code = allocated
     copy = PhysicalCopy.objects.create(document=document, sticker_code=code, paper_category=category, paper_number=number, location=location)
     if location:
         Movement.objects.create(physical_copy=copy, kind=Movement.Kind.PLACEMENT, to_location=location, moved_by=request.user, note="Initial placement")
     else:
         Movement.objects.create(physical_copy=copy, kind=Movement.Kind.CREATED, moved_by=request.user, note="Sticker created")
     return JsonResponse(copy_json(copy), status=201)
+
+
+def _allocate_paper_code(owner, category):
+    """Call inside a transaction holding the category row lock. Never reuse retired codes."""
+    for _ in range(100):
+        number = category.next_number
+        code = f"{category.prefix}-{number:05d}"
+        category.next_number = number + 1
+        category.save(update_fields=["next_number"])
+        if (not PhysicalCopy.objects.filter(document__owner=owner, sticker_code__iexact=code).exists()
+                and not PaperStickerAlias.objects.filter(owner=owner, code__iexact=code).exists()):
+            return number, code
+    return None
+
+
+@transaction.atomic
+@require_http_methods(["POST"])
+def replace_copy_label(request, copy_id):
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    body = _body(request)
+    if body is None or not isinstance(body.get("category_prefix"), str):
+        return JsonResponse({"error": "Choose a paper category"}, status=400)
+    copy = _locked_copy(request.user, copy_id)
+    if copy is None:
+        return JsonResponse({"error": "Physical copy not found"}, status=404)
+    category = PaperCategory.objects.select_for_update().filter(owner=request.user, prefix=body["category_prefix"]).first()
+    if category is None:
+        return JsonResponse({"error": "Paper category not found"}, status=400)
+    allocated = _allocate_paper_code(request.user, category)
+    if allocated is None:
+        return JsonResponse({"error": "Could not allocate a sticker code"}, status=503)
+    number, code = allocated
+    previous_code = copy.sticker_code
+    PaperStickerAlias.objects.create(owner=request.user, physical_copy=copy, code=previous_code)
+    copy.sticker_code = code
+    copy.paper_category = category
+    copy.paper_number = number
+    copy.save(update_fields=["sticker_code", "paper_category", "paper_number"])
+    return JsonResponse({"copy": copy_json(copy), "previous_code": previous_code})
 
 
 @require_http_methods(["PATCH"])
@@ -488,12 +527,20 @@ def sticker_lookup(request, sticker_code):
     unauthorized = _unauthorized(request)
     if unauthorized:
         return unauthorized
-    copy = PhysicalCopy.objects.filter(_paper_code_filter(sticker_code), document__owner=request.user).select_related("document", "paper_category", "location__parent__parent").first()
+    copy, alias_code = None, None
+    for candidate in _paper_code_candidates(sticker_code):
+        copy = PhysicalCopy.objects.filter(sticker_code__iexact=candidate, document__owner=request.user).select_related("document", "paper_category", "location__parent__parent").first()
+        if copy is not None:
+            break
+        alias = PaperStickerAlias.objects.filter(code__iexact=candidate, owner=request.user).select_related("physical_copy__document", "physical_copy__paper_category", "physical_copy__location__parent__parent").first()
+        if alias is not None:
+            copy, alias_code = alias.physical_copy, alias.code
+            break
     if copy is None:
         return JsonResponse({"error": "Sticker not found"}, status=404)
     if copy.document.trashed_at:
         return JsonResponse({"error": "This sticker belongs to a document in Trash. Restore the document to use it again."}, status=410)
-    return JsonResponse({"copy": copy_json(copy), "document": {"id": str(copy.document_id), "title": copy.document.title}})
+    return JsonResponse({"copy": copy_json(copy), "document": {"id": str(copy.document_id), "title": copy.document.title}, "replaced_label": alias_code})
 
 
 @require_http_methods(["GET"])

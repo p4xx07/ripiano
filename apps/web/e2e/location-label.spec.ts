@@ -69,6 +69,16 @@ test("a shelf label finds paper copies inside a nested box", async ({ page }, te
   await expect(detail.locator(".copy-card")).toContainText(`${parent} / ${box}`);
   const copyCode = (await detail.locator(".copy-card strong").first().textContent())?.trim();
   expect(copyCode).toBe(`${categoryPrefix}-00001`);
+  await detail.getByText("Replace label (advanced)").click();
+  await detail.getByRole("combobox", { name: `New paper category for ${copyCode}` }).selectOption("MED");
+  page.once("dialog", (dialog) => dialog.accept());
+  await detail.getByRole("button", { name: "Replace label", exact: true }).click();
+  await expect(detail.getByRole("status").filter({ hasText: "Label changed" })).toBeVisible();
+  const currentCode = (await detail.locator(".copy-card strong").first().textContent())?.trim();
+  expect(currentCode).toMatch(/^MED-[0-9]{5,}$/);
+  await page.goto(`/?sticker=${copyCode}`);
+  await expect(page.locator(".sticker-result")).toContainText(`${copyCode} is an older label for this copy`);
+  await expect(page.locator(".sticker-result .sticker-code")).toHaveText(currentCode!);
 
   await page.goto(`/?location=${shelf.sticker_code}`);
   const result = page.locator(".location-result");

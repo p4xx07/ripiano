@@ -18,7 +18,7 @@
 - **Find anything fast**: search the words inside every document, or filter by sender, tag, type, or date.
 - **Filing help**: matching rules and optional, locally learned automatic filing can add tags, senders, and document types. The learned automatic mode starts off; OCR search works before you configure any filing. Email suggestions ignore recurring recipient and header noise.
 - **Personal dashboard**: pin up to six live saved searches for bills, tickets, house papers, or anything else; see counts and recent matches, and optionally open the dashboard first on that device.
-- **Paper originals**: keep a paper copy only when useful; choose a broad topic and Ripiano gives it a sequential code such as `MED-00042`. Its QR label finds the document and current shelf or box. Add or rename paper categories in the Paper archive; old `R-…` and location labels still scan.
+- **Paper originals**: keep a paper copy only when useful; choose a broad topic and Ripiano gives it a sequential code such as `MED-00042`. Its QR label finds the document and current shelf or box. Add or rename paper categories in the Paper archive; if you replace a mistaken label, the old QR still finds the copy. Old `R-…` and location labels still scan.
 - **Works on your phone**: install it from the browser on iPhone or Android; an Android app adds a document scanner.
 - **Family accounts**: everyone gets a private archive, and you can share single documents or send a link that expires.
 - **Automatic imports**: optionally pull in files from email, a NAS folder, cloud storage, or a Telegram bot.

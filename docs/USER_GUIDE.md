@@ -313,7 +313,7 @@ Ripiano learns from the senders, document types, and tags you set by hand, on yo
 
 ### Workflows
 
-Open **Workflows** to automate routine filing. A workflow runs:
+Open **Workflows** to automate routine filing. The page starts with recipes and your existing workflows; choose a recipe or **Start a blank workflow** to open the full-width editor. It shows a live sentence describing the rule, groups optional conditions in columns, and keeps Save visible while you scroll. On a phone it uses the whole screen width. A workflow runs:
 - when a document is added (after its first processing);
 - when you change a document;
 - or each morning for documents a chosen number of days after their added date, document date, or follow-up due date.

@@ -22,6 +22,7 @@
 - **Works on your phone**: install it from the browser on iPhone or Android; an Android app adds a document scanner.
 - **Family accounts**: everyone gets a private archive, and you can share single documents or send a link that expires.
 - **Automatic imports**: optionally pull in files from email, a NAS folder, cloud storage, or a Telegram bot.
+- **Readable workflows**: choose a recipe, then configure it in a full-width editor with a live plain-language summary; optional conditions and specialist actions remain available.
 - **Private and backed up**: everything stays on your server, with two-step sign-in and scheduled, checked backups.
 - **AI if you want it**: give an AI assistant limited, revocable access; Ripiano never sends your files to a paid AI service.
 

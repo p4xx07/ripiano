@@ -5684,3 +5684,74 @@ button:disabled {
 .dashboard-collection-head .icon-button:hover { background: var(--color-surface); color: var(--color-heading); }
 .dashboard-collection li button { color: var(--color-primary); text-decoration: underline; }
 .dashboard-collection li button:hover { color: var(--color-primary-hover); }
+
+/* Workflows use the page width instead of the 340px agent sidebar. */
+.workflow-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+  margin-top: var(--space-6);
+}
+.workflow-editor-area { width: 100%; }
+.workflow-editor-area > .tag-create-card { width: 100%; }
+.workflow-editor-area > .tag-create-card:not(.workflow-editor) .mail-oauth {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.workflow-editor-area > .tag-create-card:not(.workflow-editor) .mail-oauth .button { flex: 0 1 auto; }
+.workflow-editor { max-width: 1080px; margin-inline: auto; }
+.workflow-live-summary {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-soft);
+  background: var(--color-surface-tint);
+  color: var(--color-heading) !important;
+}
+.workflow-editor form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-6);
+}
+.workflow-editor form > .mail-row,
+.workflow-editor form > fieldset,
+.workflow-editor form > .workflow-save-row { grid-column: 1 / -1; }
+.workflow-editor form > .mail-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.workflow-editor fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-6);
+  padding: var(--space-4) 0 0 !important;
+  border-top: 1px solid var(--color-border) !important;
+}
+.workflow-editor fieldset legend { padding-right: var(--space-3); }
+.workflow-editor .workflow-source-list,
+.workflow-editor .workflow-actions > .workflow-choices,
+.workflow-editor .workflow-actions > .workflow-remove,
+.workflow-editor .workflow-actions > .workflow-unlock { grid-column: 1 / -1; }
+.workflow-editor .workflow-source-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0 var(--space-3);
+}
+.workflow-editor .workflow-source-list > span { grid-column: 1 / -1; }
+.workflow-editor .workflow-title-help { align-self: end; }
+.workflow-editor .workflow-title-help small { display: block; margin-top: var(--space-2); color: var(--color-muted); }
+.workflow-editor .workflow-save-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+@media (max-width: 700px) {
+  .workflow-editor { padding: var(--space-4); }
+  .workflow-editor form,
+  .workflow-editor fieldset,
+  .workflow-editor form > .mail-row { grid-template-columns: minmax(0, 1fr); }
+  .workflow-editor .workflow-source-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workflow-editor .workflow-save-row { padding-bottom: max(var(--space-3), env(safe-area-inset-bottom)); }
+}

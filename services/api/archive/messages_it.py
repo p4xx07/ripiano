@@ -234,6 +234,8 @@ EXACT = {
     "A managed original changed during the NAS browse copy": "Un originale gestito è cambiato durante la copia di consultazione sul NAS",
     "A rule with this text and matching already exists": "Esiste già una regola con questo testo e questa corrispondenza",
     "A saved search with this name already exists": "Esiste già una ricerca salvata con questo nome",
+    "Dashboard pin must be true or false": "L’opzione per fissare la ricerca nella dashboard deve essere vera o falsa",
+    "Dashboard can show at most 6 saved searches": "La dashboard può mostrare al massimo 6 ricerche salvate",
     "A selected document is already in Trash": "Uno dei documenti selezionati è già nel Cestino",
     "A selected document is not in Trash": "Uno dei documenti selezionati non è nel Cestino",
     "A selected document was not found": "Uno dei documenti selezionati non è stato trovato",

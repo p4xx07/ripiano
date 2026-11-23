@@ -298,6 +298,9 @@ Existing documents are rechecked in the background when you add or delete a rule
 
 ### Learned suggestions
 
+For a new archive, upload first: OCR makes every document searchable without any tag or field. **Title** is the findable name; **document date** is detected when possible; **sender**, **type**, and **tags** are optional ways to group or filter. **ASN** is only for numbering a physical paper copy; **follow-up** is only for a task with a due date. You may leave these fields untouched. For recurring bills, make an Email rule that matches the sender or subject and assigns a Bills tag and type; this works immediately without waiting for the learned model.
+
+
 Ripiano learns from the senders, document types, and tags you set by hand, on your own server. It learns again every night, or when you press **Tags & filing → Learned suggestions → Learn now**.
 - **When it suggests:** only when it is at least 60% likely to be right. The probability is calibrated on documents the model had not seen.
 - **On a phone**, an open document with suggestions shows a short link above the preview (for example "3 filing suggestions · Go to them") that jumps straight to them.
@@ -367,6 +370,9 @@ Each document also keeps an audit history, shown as **Changes** in the document 
 
 ### Related documents
 
+**Find similar documents** compares distinctive words in the title and first 3,000 characters of OCR text with up to 500 recent ready documents in the same archive. It removes words common across many documents, requires at least three shared words and a minimum overlap score, and shows up to six matches. An identical original is flagged by its checksum. It uses no AI service; with only a few documents, a match can be broad or there may be no result.
+
+
 The same panel can link related documents. Search for the other document by title or text, then choose **Link**. The connection appears on both documents, so either side opens the other. Moving one document to Trash hides the link until it is restored; its underlying relationship is retained.
 
 ### Pages and versions
@@ -385,7 +391,7 @@ Document exports include every older version. Only permanent deletion removes ve
 
 ### Export
 
-Use **Export document ZIP** under Files to download the preserved original, the searchable PDF and OCR text when available, and a readable `manifest.json` with tags, notes, related documents, and paper-copy history. Each file has a SHA-256 checksum in the manifest. In the Library, select up to 20 documents and open **Export selected** to download one collection ZIP. Its root manifest identifies each document and gives checksums for files in stable ID-based folders. To move the whole archive, see `export_archive` and `import_archive` in [Move to a new server](#move-to-a-new-server).
+Under **Files**, **Download original** gets exactly the uploaded file. **Export document ZIP** is for moving one document with its metadata or keeping a portable copy; it includes the preserved original, the searchable PDF and OCR text when available, and a readable `manifest.json` with tags, notes, related documents, and paper-copy history. Each file has a SHA-256 checksum in the manifest. In the Library, select up to 20 documents and open **Export selected** to download one collection ZIP. Its root manifest identifies each document and gives checksums for files in stable ID-based folders. To move the whole archive, see `export_archive` and `import_archive` in [Move to a new server](#move-to-a-new-server).
 
 ### Trash
 
@@ -422,7 +428,7 @@ To give someone a document without an account, open **Share original** in its do
 - **New versions:** adding a new version of a document revokes the links and bundles that include it.
 - **Password changes:** changing your password under **Security**, or an admin resetting it under **People**, revokes all your share links and bundles at once, like your API tokens and agents (docs/DECISIONS.md D11). They are listed as revoked, marked "password changed"; create new links for anything you still want to share.
 - **Turned-off accounts:** turning an account off revokes all its share links and bundles at once (a visitor sees the same "Link not found" as for any unknown link). Turning the account on again does not revive them: the owner sees them as revoked, marked "account turned off", and creates new links if still needed.
-- **Email:** **Email this document** sends the original (checksum-verified) or the searchable PDF through the server's SMTP settings. It is off unless the operator sets `RIPIANO_DOCUMENT_EMAIL=1`; SMTP alone (for workflows) does not enable it. Each account can email up to 30 recipients per hour, replies go to the account's email address, and the send history is shown on the document.
+- **Email:** **Email this document** sends the original (checksum-verified) or the searchable PDF through the server's SMTP settings. It is off unless the operator sets `RIPIANO_DOCUMENT_EMAIL=1`; SMTP alone (for workflows) does not enable it. Each account can email up to 30 recipients per hour, replies go to the account's email address, and the send history is shown on the document. For local testing, run the existing GreenMail test server (`deploy/compose.mailtest.yaml`), set `RIPIANO_DOCUMENT_EMAIL=1`, `RIPIANO_SMTP_HOST=mailtest`, `RIPIANO_SMTP_PORT=3025`, `RIPIANO_SMTP_SECURITY=none`, and a fake `RIPIANO_SMTP_FROM`, then restart the API and maintenance worker. GreenMail captures these messages locally; it does not deliver them to the internet.
 - **Bundle ZIPs:** each bundle's ZIP is built once in the background and deleted when the link ends. Moving a bundled document to Trash or adding a new version revokes the bundle, and restoring the document does not re-share it.
 
 ### People and sharing
@@ -443,7 +449,9 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 
 ## Overview
 
-**Overview** shows:
+**Overview** is reached from the sidebar or **Open your dashboard** on the Library. The **Your dashboard** section lets you create up to six live collections from a name, optional search words, and an optional tag. You can also pin an existing saved search with its full filters. Each card shows the matching count and three recent documents; **Open all in Library** applies the saved search. Each person has their own collections. **Open this dashboard first on this device** is a local browser preference, so opening `/` on that device starts on Overview; an explicit Library or document link still opens where it points.
+
+**Overview** also shows:
 - totals and storage used;
 - what needs a look (unreadable documents, overdue follow-ups, exact copies, mailbox problems, failed workflow runs), each linking to the right screen;
 - documents added per month over the last year;

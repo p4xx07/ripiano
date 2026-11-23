@@ -286,6 +286,7 @@ class SavedView(models.Model):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="saved_views")
     name = models.CharField(max_length=100)
     query = models.CharField(max_length=200, blank=True)
+    dashboard_pinned = models.BooleanField(default=False)
     tag = models.ForeignKey(Tag, null=True, blank=True, on_delete=models.SET_NULL)
     correspondent = models.ForeignKey(Correspondent, null=True, blank=True, on_delete=models.SET_NULL)
     document_type = models.ForeignKey(DocumentType, null=True, blank=True, on_delete=models.SET_NULL)

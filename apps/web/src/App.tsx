@@ -847,6 +847,7 @@ function App() {
   });
   const [view, setView] = useState<View>(() =>
     initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : initialSourceNotice ? "sources"
+      : window.location.pathname === "/" && !window.location.search ? (() => { try { return localStorage.getItem("ripiano.dashboardHome") === "1" ? "overview" : "documents"; } catch { return "documents"; } })()
       : viewFromPath(window.location.pathname) ?? "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
@@ -2407,6 +2408,7 @@ function App() {
             </>
           ) : view === "overview" ? (
             <OverviewPanel isOwner={Boolean(session.owner)} onNavigate={(target) => setView(target)}
+              onOpenCollection={(savedQuery, savedFilters) => { setQuery(savedQuery); setFilters(savedFilters); setNextCursor(null); setShowFilters(Object.values(savedFilters).some(Boolean)); setView("documents"); }}
               onOpenDocument={(id) => void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch((cause) => setError(cause.message))}
               onOpenUntagged={() => {
               setQuery("is:untagged");
@@ -2450,6 +2452,7 @@ function App() {
                     <span className="heading-period">.</span>
                   </h1>
                   <p>{l.intro}</p>
+                  <button type="button" className="text-action library-dashboard-link" onClick={() => setView("overview")}>{l.openDashboard}</button>
                 </div>
                 <Button
                   className="desktop-add"

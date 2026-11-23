@@ -66,6 +66,7 @@ export type SavedView = {
   id: string;
   name: string;
   query: string;
+  dashboard_pinned: boolean;
   tag_id: string | null;
   copy_status: string;
   correspondent_id: string | null;

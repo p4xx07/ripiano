@@ -1,6 +1,6 @@
 # Ripiano
 
-**A self-hosted document archive for your home server or NAS: snap or upload a document, let Ripiano read and file it, find it again in seconds, and know which shelf the paper original is on.**
+**A self-hosted document archive for your home server or NAS: snap or upload a document, let Ripiano read it, find it again in seconds, and know which shelf the paper original is on.**
 
 <p align="center">
   <img src="qa-artifacts/20261119-readme/desktop-library.png" alt="The Ripiano Library on desktop: a search bar, filters, and filed household documents with dates, senders, types, and tags" width="880">
@@ -16,7 +16,8 @@
 
 - **Scan or upload**: phone camera, photos, PDFs, Office files, and emails; the text is recognised automatically. If text recognition is stopped, the Library and document view explain why the file is waiting; people opening a shared waiting document see the same problem and are asked to contact its owner.
 - **Find anything fast**: search the words inside every document, or filter by sender, tag, type, or date.
-- **Filed for you**: tags, senders, and document types are suggested and filled in from your own past choices. Email suggestions compare the message and sender, excluding recipient addresses and header labels that recur across unrelated mail.
+- **Filing help**: matching rules and optional, locally learned automatic filing can add tags, senders, and document types. The learned automatic mode starts off; OCR search works before you configure any filing. Email suggestions ignore recurring recipient and header noise.
+- **Personal dashboard**: pin up to six live saved searches for bills, tickets, house papers, or anything else; see counts and recent matches, and optionally open the dashboard first on that device.
 - **Paper originals**: a QR sticker on each paper copy tells you which shelf or box it is in. Scan it with the phone camera (in Ripiano where the browser can read QR codes, or with the phone's camera app).
 - **Works on your phone**: install it from the browser on iPhone or Android; an Android app adds a document scanner.
 - **Family accounts**: everyone gets a private archive, and you can share single documents or send a link that expires.

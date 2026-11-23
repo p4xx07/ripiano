@@ -443,6 +443,34 @@ def test_library_filters_bind_cursor_and_keep_owner_scope():
 
 
 @pytest.mark.django_db
+def test_dashboard_pins_are_private_persistent_and_bounded():
+    owner = get_user_model().objects.create_user("dashboard_owner")
+    other = get_user_model().objects.create_user("dashboard_other")
+    client = Client()
+    client.force_login(owner)
+
+    def send(method, path, body):
+        return getattr(client, method)(path, json.dumps(body), content_type="application/json")
+
+    created = send("post", "/api/saved-views", {"name": "Bollettini", "query": "bollettino", "dashboard_pinned": True})
+    assert created.status_code == 201 and created.json()["dashboard_pinned"] is True
+    view_id = created.json()["id"]
+    assert send("patch", f"/api/saved-views/{view_id}", {"dashboard_pinned": "yes"}).status_code == 400
+    assert send("patch", f"/api/saved-views/{view_id}", {"query": "pagamento"}).json()["dashboard_pinned"] is True
+    assert client.get("/api/saved-views").json()["views"][0]["dashboard_pinned"] is True
+
+    client.force_login(other)
+    assert client.get("/api/saved-views").json()["views"] == []
+    assert send("patch", f"/api/saved-views/{view_id}", {"dashboard_pinned": False}).status_code == 404
+    client.force_login(owner)
+    for index in range(5):
+        assert send("post", "/api/saved-views", {"name": f"Card {index}", "query": "house", "dashboard_pinned": True}).status_code == 201
+    assert send("post", "/api/saved-views", {"name": "One too many", "dashboard_pinned": True}).status_code == 400
+    assert send("patch", f"/api/saved-views/{view_id}", {"dashboard_pinned": False}).json()["dashboard_pinned"] is False
+    assert send("post", "/api/saved-views", {"name": "Now there is room", "dashboard_pinned": True}).status_code == 201
+
+
+@pytest.mark.django_db
 def test_saved_searches_are_owned_validated_and_survive_deleted_metadata():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     other = get_user_model().objects.create_user("other", password="secure-password-2")

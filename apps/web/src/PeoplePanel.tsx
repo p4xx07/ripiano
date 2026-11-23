@@ -93,7 +93,7 @@ export default function PeoplePanel({ currentUsername }: { currentUsername: stri
     {error && <div className="inline-error" role="alert" id="people-error">{error}</div>}
     {notice && <p className="bulk-notice" role="status">{notice}</p>}
     <div className="people-confirm">
-      <Field label={m.yourPassword} hint={m.yourPasswordHint}>
+      <Field label={m.yourPassword} hint={m.yourPasswordHint} className="detail-label">
         <input type="password" autoComplete="current-password" {...invalid.props("admin")} value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} />
       </Field>
     </div>
@@ -119,7 +119,7 @@ export default function PeoplePanel({ currentUsername }: { currentUsername: stri
                 m.passwordSet(person.username), "reset").then((ok) => { if (ok) { setResetFor(null); setResetPassword(""); } });
             }}>
               <p className="password-warning" id={`reset-warning-${person.id}`}>{m.resetWarning(person.username)}</p>
-              <Field label={m.newPasswordFor(person.username)} hint={m.atLeast12}>
+              <Field label={m.newPasswordFor(person.username)} hint={m.atLeast12} className="detail-label">
                 <input type="password" autoComplete="new-password" minLength={12} required autoFocus {...tooShortMessage(m.tooShort)} {...invalid.props("reset")} value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} />
               </Field>
               <Button aria-describedby={`reset-warning-${person.id}`} pending={busy || !adminPassword}>{m.setPassword}</Button>
@@ -138,9 +138,9 @@ export default function PeoplePanel({ currentUsername }: { currentUsername: stri
       <form className="people-form" onSubmit={(event) => void addPerson(event)}>
         <h3><UserPlus size={17} /> {m.addPersonHeading}</h3>
         <p>{m.addPersonIntro}</p>
-        <Field label={m.username}><input required maxLength={150} autoComplete="off" {...invalid.props("username")} value={username} onChange={(event) => setUsername(event.target.value)} /></Field>
-        <Field label={m.name} hint={m.optional}><input maxLength={150} value={name} onChange={(event) => setName(event.target.value)} /></Field>
-        <Field label={m.password} hint={m.passwordHint}><input type="password" required minLength={12} autoComplete="new-password" {...tooShortMessage(m.tooShort)} {...invalid.props("password")} value={password} onChange={(event) => setPassword(event.target.value)} /></Field>
+        <Field label={m.username} className="detail-label"><input required maxLength={150} autoComplete="off" {...invalid.props("username")} value={username} onChange={(event) => setUsername(event.target.value)} /></Field>
+        <Field label={m.name} hint={m.optional} className="detail-label"><input maxLength={150} value={name} onChange={(event) => setName(event.target.value)} /></Field>
+        <Field label={m.password} hint={m.passwordHint} className="detail-label"><input type="password" required minLength={12} autoComplete="new-password" {...tooShortMessage(m.tooShort)} {...invalid.props("password")} value={password} onChange={(event) => setPassword(event.target.value)} /></Field>
         {data.groups.length > 0 && <fieldset className="person-groups">
           <legend>{m.groups}</legend>
           {data.groups.map((group) => <label key={group.id}>
@@ -166,7 +166,7 @@ export default function PeoplePanel({ currentUsername }: { currentUsername: stri
         </li>)}
       </ul>
       <form className="filing-create" onSubmit={(event) => void addGroup(event)}>
-        <Field label={m.newGroupName}><input placeholder={m.groupPlaceholder} maxLength={150} {...invalid.props("group")} value={groupName} onChange={(event) => setGroupName(event.target.value)} /></Field>
+        <Field label={m.newGroupName} className="detail-label"><input placeholder={m.groupPlaceholder} maxLength={150} {...invalid.props("group")} value={groupName} onChange={(event) => setGroupName(event.target.value)} /></Field>
         <Button variant="secondary" pending={busy || !groupName.trim()}><Plus size={16} /> {m.addGroup}</Button>
       </form>
     </section>

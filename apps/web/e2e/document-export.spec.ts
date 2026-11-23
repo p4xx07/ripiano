@@ -22,6 +22,11 @@ test("a document can be downloaded as a portable ZIP", async ({ page }, testInfo
   await (await chooser).setFiles({ name: `${name}.png`, mimeType: "image/png", buffer: readFileSync(fixture) });
   await page.getByRole("button", { name, exact: true }).click();
   const files = page.getByRole("dialog").filter({ hasText: "Keep it in place." }).locator(".detail-files").first();
+  const originalPromise = page.waitForEvent("download");
+  await files.getByRole("link", { name: "Download original" }).click();
+  const original = await originalPromise;
+  expect(original.suggestedFilename()).toBe(`${name}.png`);
+  expect(await original.failure()).toBeNull();
   const downloadPromise = page.waitForEvent("download");
   await files.getByRole("link", { name: "Export document ZIP" }).click();
   const download = await downloadPromise;

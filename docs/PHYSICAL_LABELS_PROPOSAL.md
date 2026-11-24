@@ -1,6 +1,6 @@
 # One paper label per document — proposal (2026-11-23)
 
-**Status: partly implemented (2026-11-23).** New copies use owner-scoped category sequences, categories can be added and renamed, the ordinary document screen hides ASN, and old labels still scan. Replace label keeps previous QR codes as aliases. Automatic category suggestions remain planned. Current behaviour is documented in [USER_GUIDE.md](USER_GUIDE.md#paper-copies). `Document.asn` remains an optional legacy archive number used by barcode splitting; a container still has an `L-…` code.
+**Status: implemented for the daily and replacement flows (2026-11-23).** New copies use owner-scoped category sequences, categories can be added and renamed, the ordinary document screen hides ASN, and old labels still scan. Replace label keeps previous QR codes as aliases. A category is suggested from one unambiguous broad attached tag or parent; otherwise `VAR` is proposed for review. Current behaviour is documented in [USER_GUIDE.md](USER_GUIDE.md#paper-copies). `Document.asn` remains an optional legacy archive number used by barcode splitting; a container still has an `L-…` code.
 
 ## Recommended daily flow
 

@@ -23,6 +23,7 @@ import {
 import { ApiError, asSentence, byLocationPath, Document, DocumentNote, hasOpenWarning, FilingItem, FilingSuggestion, FilingSuggestions, formatDateTime, Location, PaperCategory, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
+import { suggestPaperCategory } from "./paperCategorySuggestion";
 
 /**
  * Set while a document dialog is open. Browser/Android Back calls it before leaving the document: it returns true
@@ -199,6 +200,11 @@ export default function DocumentPanel({
   const [newLocation, setNewLocation] = useState("");
   const [paperCategories, setPaperCategories] = useState<PaperCategory[]>([]);
   const [newCategory, setNewCategory] = useState("VAR");
+  const [categoryTouched, setCategoryTouched] = useState(false);
+  const paperSuggestion = useMemo(() => suggestPaperCategory(current.tags, copies, paperCategories, available), [current.tags, copies, paperCategories, available]);
+  useEffect(() => {
+    if (!categoryTouched && paperCategories.length) setNewCategory(paperSuggestion.prefix);
+  }, [categoryTouched, paperCategories.length, paperSuggestion.prefix]);
   const [replacementCategories, setReplacementCategories] = useState<Record<string, string>>({});
   const newCategorySelectRef = useRef<HTMLSelectElement>(null);
   const [moveChoices, setMoveChoices] = useState<Record<string, string>>({});
@@ -1509,9 +1515,10 @@ export default function DocumentPanel({
             {copies.length > 0 && <summary>{m.addAnotherCopy}</summary>}
             <div className="new-copy">
               <label className="detail-label">{m.paperCategory} <small>{m.paperCategoryHint}</small>
-                <select ref={newCategorySelectRef} value={newCategory} onChange={(event) => setNewCategory(event.target.value)}>
+                <select ref={newCategorySelectRef} value={newCategory} onChange={(event) => { setNewCategory(event.target.value); setCategoryTouched(true); }}>
                   {paperCategories.map((category) => <option key={category.id} value={category.prefix}>{category.prefix} · {category.name}</option>)}
                 </select>
+                {paperSuggestion.tag && !categoryTouched && <small>{m.paperCategorySuggested(paperSuggestion.tag)}</small>}
               </label>
               <label className="detail-label">{m.paperLocation}
               <select

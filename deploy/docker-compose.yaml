@@ -94,7 +94,7 @@ services:
     volumes:
       - ${RIPIANO_MEDIA_PATH:-ripiano_media}:/data
       - ${RIPIANO_BACKUP_PATH:-ripiano_backup}:/backup:ro
-      # Folder sources (Sources -> Folder on the NAS): read-only here, used by Preview.
+      # Folder sources (Sources -> Folder on the server): read-only here, used by Preview.
       - ${RIPIANO_SOURCES_PATH:-ripiano_sources}:/sources:ro
       # Consume folder: drop files here and they are imported (read-only here, used by Preview).
       - ${RIPIANO_CONSUME_PATH:-ripiano_consume}:/consume:ro
@@ -166,7 +166,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
-  # Optional NAS model for semantic search (turn it on in Agents -> Search by meaning).
+  # Optional server-side model for semantic search (turn it on in Agents -> Search by meaning).
   # Installs its pinned packages into the models volume on first start; no published port.
   embedder:
     <<: *api-base
@@ -185,7 +185,7 @@ services:
   web:
     image: ${RIPIANO_WEB_IMAGE:?Set a published ghcr.io/p4xx07/ripiano-web image or digest}
     environment:
-      # Reverse proxies allowed to report the client address (e.g. the Raspberry Pi gateway's LAN IP). Docker networks
+      # Reverse proxies allowed to report the client address (e.g. a gateway's LAN IP). Docker networks
       # and localhost are always trusted. Needed so failed sign-ins are throttled per person, not for the whole proxy.
       RIPIANO_TRUSTED_PROXIES: ${RIPIANO_TRUSTED_PROXIES:-}
     ports:

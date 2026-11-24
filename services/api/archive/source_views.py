@@ -93,7 +93,7 @@ def _apply(source, body, owner):
     s3 = source.kind == StorageSource.Kind.S3
     folder = source.kind == StorageSource.Kind.FOLDER
     if folder and not owner.is_superuser:
-        raise ValueError("Only the archive owner can import from folders on the NAS")
+        raise ValueError("Only the archive owner can import from folders on the server")
     credentials = source.kind in (StorageSource.Kind.S3, StorageSource.Kind.WEBDAV)
     cloud = source.kind in CLOUD_KINDS  # signed in with "Connect account" after saving
     files = credentials or folder or cloud  # storages with folders, files, and after-import actions

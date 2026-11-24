@@ -72,6 +72,7 @@ export default function PhysicalPanel({
   const [scanning, setScanning] = useState(false);
   // Moving or marking the copy found by its sticker, right on the result card (round-11 judge 3 M2, judge 2 M3).
   const [foundTarget, setFoundTarget] = useState("");
+  const [foundPath, setFoundPath] = useState("");
   const [copyBusy, setCopyBusy] = useState(false);
   const foundRef = useRef<HTMLElement>(null);
   // A sticker opened from its QR on a phone: bring the result and its Move control into view.
@@ -168,6 +169,7 @@ export default function PhysicalPanel({
     setNotice("");
     setFound(null);
     setFoundLocation(null);
+    setFoundPath("");
     const normalized = stickerCodeFrom(value);
     if (normalized !== value) setCode(normalized);
     if (!normalized) return;
@@ -198,14 +200,15 @@ export default function PhysicalPanel({
     setError("");
     setNotice("");
     try {
+      const isPath = name.includes("/");
       const created = await request<Location>("/api/locations", {
         method: "POST",
-        body: JSON.stringify({ name, parent_id: parent || null }),
+        body: JSON.stringify(isPath ? { path: name, parent_id: parent || null } : { name, parent_id: parent || null }),
       });
       setName("");
       // Reset "Inside" so the next location is not silently nested under the previous parent.
       setParent("");
-      setNotice(parentPath ? m.addedInside(created.name, parentPath) : m.addedTop(created.name));
+      setNotice(isPath ? m.addedPath(created.path.join(" / ")) : parentPath ? m.addedInside(created.name, parentPath) : m.addedTop(created.name));
       await load();
     } catch (cause) {
       setError(
@@ -321,6 +324,7 @@ export default function PhysicalPanel({
     if (!found || copyBusy) return;
     const code = found.copy.sticker_code;
     const target = foundTarget;
+    const path = foundPath.trim();
     setError("");
     setNotice("");
     setCopyBusy(true);
@@ -332,16 +336,18 @@ export default function PhysicalPanel({
         setFoundTarget(copy.location_id ?? "");
         return;
       }
-      if (target === (copy.location_id ?? "")) {
+      if (!path && target === (copy.location_id ?? "")) {
         setNotice(m.copyAlreadyThere(code));
         return;
       }
       const moved = await request<PhysicalCopy>(`/api/copies/${copy.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ location_id: target || null }),
+        body: JSON.stringify(path ? { location_path: path } : { location_id: target || null }),
       });
       setFound((current) => current?.copy.id === moved.id ? { ...current, copy: moved } : current);
       setFoundTarget(moved.location_id ?? "");
+      setFoundPath("");
+      if (path) await load();
       setNotice(moved.location_id ? m.copyMovedTo(moved.sticker_code, moved.location_path.join(" / ")) : m.copyMovedNowhere(moved.sticker_code));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.moveError);
@@ -482,13 +488,17 @@ export default function PhysicalPanel({
                     aria-label={m.moveCopyTo(found.copy.sticker_code)}
                     value={foundTarget}
                     disabled={copyBusy}
-                    onChange={(event) => setFoundTarget(event.target.value)}
+                    onChange={(event) => { setFoundTarget(event.target.value); setFoundPath(""); }}
                   >
                     <option value="">{m.noLocation}</option>
                     {locations.map((location) => (
                       <option key={location.id} value={location.id}>{location.path.join(" / ")}</option>
                     ))}
                   </select>
+                  <label className="detail-label">{m.newLocationPath}
+                    <input value={foundPath} onChange={(event) => { setFoundPath(event.target.value); setFoundTarget(""); }}
+                      placeholder={m.locationPathPlaceholder} maxLength={1200} disabled={copyBusy} />
+                  </label>
                   <Button pending={copyBusy} aria-label={m.moveCopyButton(found.copy.sticker_code)}>{m.move}</Button>
                 </form>
               )}
@@ -623,9 +633,10 @@ export default function PhysicalPanel({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder={m.namePlaceholder}
-                maxLength={100}
+                maxLength={1200}
                 required
               />
+              <small>{m.pathHint}</small>
             </label>
             <label>
               {m.inside} <small>{m.optional}</small>

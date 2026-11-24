@@ -36,9 +36,9 @@ PROCESSING_ERRORS = {
     # After a retry failed too, repeating it will not help (judge 1 round 7, L4).
     "generic_again": "Text recognition failed again, so the file is probably damaged. Download the original and open it on your computer, then re-scan it or save it again as PDF and upload the new copy.",
     "backup": "The backup failed. Details are in the maintenance worker log.",
-    "backup_permission": "Ripiano cannot write to the backup folder. Check the permissions of the mounted backup folder on the NAS.",
+    "backup_permission": "Ripiano cannot write to the backup folder. Check the permissions of the mounted backup folder on the server.",
     # A worker stopped (restart, out of memory) while processing this document, three times in a row.
-    "interrupted": "Processing stopped unexpectedly several times (the worker restarted or ran out of memory). Choose Retry OCR to try again; if it keeps stopping, the file may be too large for the NAS.",
+    "interrupted": "Processing stopped unexpectedly several times (the worker restarted or ran out of memory). Choose Retry OCR to try again; if it keeps stopping, the file may be too large for the server.",
     "damaged_pdf": "This PDF is damaged, so some of its pages may be missing. Ripiano kept the original and made the pages it could read searchable. Compare it with the paper, then re-scan it or upload an undamaged copy.",
 }
 

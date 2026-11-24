@@ -66,7 +66,7 @@ test("backup and NAS copy controls show a queued cancellation and a separate ret
   await backupRow.getByRole("button", { name: /Cancel queued backup/ }).click();
   await expect(backupRow.locator(".status")).toHaveText("cancelled");
   await expect(backupRow.getByRole("button", { name: /Retry backup/ })).toBeFocused();
-  await expect(browseRow.getByRole("button", { name: /Retry NAS copy/ })).toBeVisible();
+  await expect(browseRow.getByRole("button", { name: /Retry browse copy/ })).toBeVisible();
   await expect(browseRow.locator(".doc-error")).toHaveCSS("white-space", "normal");
   await page.locator(".browse-section").screenshot({ path: testInfo.outputPath("browse-job-controls.png"), animations: "disabled" });
   await backupRow.getByRole("button", { name: /Retry backup/ }).click();
@@ -74,7 +74,7 @@ test("backup and NAS copy controls show a queued cancellation and a separate ret
   await expect(backupRetry).toHaveText("pending");
   await expect(backupRetry).toBeFocused();
   await expect(backupRow.getByRole("button", { name: /Retry backup/ })).toHaveCount(0);
-  await browseRow.getByRole("button", { name: /Retry NAS copy/ }).click();
+  await browseRow.getByRole("button", { name: /Retry browse copy/ }).click();
   await expect(page.locator(".browse-section .document-row")).toHaveCount(2);
-  await expect(browseRow.getByRole("button", { name: /Retry NAS copy/ })).toHaveCount(0);
+  await expect(browseRow.getByRole("button", { name: /Retry browse copy/ })).toHaveCount(0);
 });

@@ -4,7 +4,7 @@ import { defineMessages } from "../i18n";
 export default defineMessages({
   loadError: "Could not load the overview",
   nothingYet: "Nothing yet.",
-  sourceFolder: "NAS folder",
+  sourceFolder: "mounted folder",
   sourceEmail: "Email",
   sourceS3: "S3 bucket",
   sourceWebdav: "WebDAV",
@@ -50,7 +50,7 @@ export default defineMessages({
 }, {
   loadError: "Impossibile caricare la panoramica",
   nothingYet: "Ancora niente.",
-  sourceFolder: "Cartella del NAS",
+  sourceFolder: "Cartella montata",
   sourceEmail: "Email",
   sourceS3: "Bucket S3",
   sourceWebdav: "WebDAV",

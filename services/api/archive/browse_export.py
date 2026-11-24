@@ -63,7 +63,7 @@ def _copy_file(source, destination, *, expected_size=None, expected_hash=None):
         os.fsync(output.fileno())
     checksum = digest.hexdigest()
     if (expected_size is not None and size != expected_size) or (expected_hash is not None and checksum != expected_hash):
-        raise BrowseExportError("A managed original changed during the NAS browse copy")
+        raise BrowseExportError("A managed original changed during the browse copy")
     return {"size": size, "sha256": checksum}
 
 
@@ -114,17 +114,17 @@ def _write_document(stage, document):
 def _safe_path(root, value, prefix):
     relative = PurePosixPath(value)
     if relative.is_absolute() or ".." in relative.parts or not relative.parts or relative.parts[0] != prefix:
-        raise BrowseExportError("NAS browse manifest contains an unsafe path")
+        raise BrowseExportError("Browse manifest contains an unsafe path")
     path = root.joinpath(*relative.parts)
     if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
-        raise BrowseExportError("NAS browse copy contains an unsafe path")
+        raise BrowseExportError("Browse copy contains an unsafe path")
     return path
 
 
 def _verify_published(root, owner_id):
     manifest_path = root / "manifest.json"
     if manifest_path.is_symlink():
-        raise BrowseExportError("NAS browse manifest is a link")
+        raise BrowseExportError("Browse manifest is a link")
     try:
         manifest = json.loads(manifest_path.read_text())
         if manifest.get("format_version") != 1 or manifest.get("kind") != "nas_browse_copy" or manifest.get("owner_id") != str(owner_id):
@@ -155,7 +155,7 @@ def _verify_published(root, owner_id):
                         raise ValueError
         return len(entries)
     except (OSError, KeyError, TypeError, ValueError) as exc:
-        raise BrowseExportError("NAS browse copy checksum or manifest verification failed") from exc
+        raise BrowseExportError("Browse copy checksum or manifest verification failed") from exc
 
 
 def build_browse_tree(run):
@@ -170,7 +170,7 @@ def build_browse_tree(run):
         staging.mkdir(parents=True, exist_ok=True)
         complete.mkdir(parents=True, exist_ok=True)
         if destination.is_symlink() or stage.is_symlink():
-            raise BrowseExportError("The NAS browse output folder is an unsafe link")
+            raise BrowseExportError("The browse output folder is an unsafe link")
         if destination.exists():
             return folder_name, _verify_published(destination, run.owner_id)
         if stage.exists():

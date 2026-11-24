@@ -5,6 +5,7 @@ from uuid import UUID
 
 import segno
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, Q
 from django.db.models.deletion import ProtectedError
@@ -86,6 +87,24 @@ def _location(owner, raw_id):
         return None
 
 
+def _path_parts(value):
+    if not isinstance(value, str) or len(value) > 1200:
+        return None
+    parts = [part.strip() for part in value.strip().strip("/").split("/")]
+    if not 1 <= len(parts) <= 12 or any(not part or len(part) > 100 for part in parts):
+        return None
+    return parts
+
+
+def _ensure_path(owner, parts, parent=None):
+    """Reuse matching siblings and create missing levels under the owner row lock."""
+    get_user_model().objects.select_for_update().get(pk=owner.pk)
+    for name in parts:
+        location = Location.objects.filter(owner=owner, parent=parent, name__iexact=name).order_by("created_at", "id").first()
+        parent = location or Location.objects.create(owner=owner, parent=parent, name=name)
+    return parent
+
+
 def _locked_copy(owner, copy_id):
     """Lock parent before copy, matching the document Trash lock order."""
     document_id = PhysicalCopy.objects.filter(pk=copy_id, document__owner=owner).values_list("document_id", flat=True).first()
@@ -94,6 +113,7 @@ def _locked_copy(owner, copy_id):
     return PhysicalCopy.objects.select_for_update(of=("self",)).filter(pk=copy_id, document_id=document_id).first()
 
 
+@transaction.atomic
 @require_http_methods(["GET", "POST"])
 def locations(request):
     unauthorized = _unauthorized(request)
@@ -104,6 +124,15 @@ def locations(request):
     body = _body(request)
     if body is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
+    if "path" in body:
+        parts = _path_parts(body["path"])
+        if parts is None:
+            return JsonResponse({"error": "Use 1 to 12 location names separated by /"}, status=400)
+        parent = _location(request.user, body.get("parent_id"))
+        if body.get("parent_id") and parent is None:
+            return JsonResponse({"error": "Parent location not found"}, status=400)
+        location = _ensure_path(request.user, parts, parent)
+        return JsonResponse(location_json(location), status=201)
     name = body.get("name", "")
     description = body.get("description", "")
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 100 or not isinstance(description, str) or len(description) > 500:
@@ -111,6 +140,7 @@ def locations(request):
     parent = _location(request.user, body.get("parent_id"))
     if body.get("parent_id") and parent is None:
         return JsonResponse({"error": "Parent location not found"}, status=400)
+    get_user_model().objects.select_for_update().get(pk=request.user.pk)
     if Location.objects.filter(owner=request.user, parent=parent, name__iexact=name.strip()).exists():
         return JsonResponse({"error": "Location already exists here"}, status=409)
     location = Location.objects.create(owner=request.user, name=name.strip(), description=description.strip(), parent=parent)
@@ -389,7 +419,12 @@ def document_copies(request, document_id):
     reserve_only = body.get("reserve_only", False)
     if not isinstance(reserve_only, bool):
         return JsonResponse({"error": "Invalid code reservation"}, status=400)
-    if reserve_only and body.get("location_id") is not None:
+    if "location_path" in body and body.get("location_id") is not None:
+        return JsonResponse({"error": "Choose a location or a new path, not both"}, status=400)
+    parts = _path_parts(body["location_path"]) if "location_path" in body else None
+    if "location_path" in body and parts is None:
+        return JsonResponse({"error": "Use 1 to 12 location names separated by /"}, status=400)
+    if reserve_only and (body.get("location_id") is not None or parts is not None):
         return JsonResponse({"error": "A reserved code cannot have a paper location"}, status=400)
     location = _location(request.user, body.get("location_id"))
     if body.get("location_id") and location is None:
@@ -398,6 +433,8 @@ def document_copies(request, document_id):
     if reserved:
         if reserve_only:
             return JsonResponse(copy_json(reserved), status=200)
+        if parts is not None:
+            location = _ensure_path(request.user, parts)
         reserved.reserved_at = None
         reserved.location = location
         reserved.save(update_fields=["reserved_at", "location"])
@@ -418,6 +455,8 @@ def document_copies(request, document_id):
     if allocated is None:
         return JsonResponse({"error": "Could not allocate a sticker code"}, status=503)
     number, code = allocated
+    if parts is not None:
+        location = _ensure_path(request.user, parts)
     copy = PhysicalCopy.objects.create(document=document, sticker_code=code, paper_category=category, paper_number=number,
                                        location=location, reserved_at=timezone.now() if reserve_only else None)
     if reserve_only:
@@ -476,10 +515,15 @@ def copy_detail(request, copy_id):
     if unauthorized:
         return unauthorized
     body = _body(request)
-    if body is None or "location_id" not in body:
+    if body is None or ("location_id" not in body and "location_path" not in body):
         return JsonResponse({"error": "Choose a location or null"}, status=400)
-    location = _location(request.user, body["location_id"])
-    if body["location_id"] is not None and location is None:
+    if "location_path" in body and body.get("location_id") is not None:
+        return JsonResponse({"error": "Choose a location or a new path, not both"}, status=400)
+    parts = _path_parts(body["location_path"]) if "location_path" in body else None
+    if "location_path" in body and parts is None:
+        return JsonResponse({"error": "Use 1 to 12 location names separated by /"}, status=400)
+    location = _location(request.user, body.get("location_id"))
+    if body.get("location_id") is not None and location is None:
         return JsonResponse({"error": "Location not found"}, status=400)
     note = body.get("note", "")
     if not isinstance(note, str) or len(note) > 300:
@@ -492,6 +536,8 @@ def copy_detail(request, copy_id):
             return JsonResponse({"error": "Keep a paper copy before assigning a location"}, status=409)
         if copy.missing_at:
             return JsonResponse({"error": "Mark this paper copy found before moving it"}, status=409)
+        if parts is not None:
+            location = _ensure_path(request.user, parts)
         if copy.location_id != (location.id if location else None):
             Movement.objects.create(physical_copy=copy, kind=Movement.Kind.MOVE, from_location=copy.location, to_location=location, moved_by=request.user, note=note.strip())
             copy.location = location
@@ -584,7 +630,7 @@ def printable_label(request, copy_id):
     svg = output.getvalue().decode("utf-8")
     brand = "ripiano" + (f" · {copy.paper_category.name}" if copy.paper_category_id else "")
     html = _label_html(display(request, "Ripiano sticker {0}", copy.sticker_code), brand, svg, copy.document.title, copy.sticker_code,
-                       location_path(copy.location) or [display(request, "Location not assigned")], lang="it" if wants_italian(request) else "en")
+                       [], lang="it" if wants_italian(request) else "en")
     response = HttpResponse(html, content_type="text/html; charset=utf-8")
     response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     return response

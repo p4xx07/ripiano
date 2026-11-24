@@ -1,4 +1,4 @@
-"""Folder backend for storage sources: subfolders of one NAS folder mounted at RIPIANO_SOURCES_ROOT.
+"""Folder backend for storage sources: subfolders of one mounted folder mounted at RIPIANO_SOURCES_ROOT.
 
 Paths always stay inside the mounted root; symbolic links are never followed. Files changed within the
 last minute are left for the next check, so a scanner that is still writing is not imported half-done.
@@ -37,7 +37,7 @@ class FolderBackend:
         if not self.root.is_dir():
             if source.builtin:
                 raise SourceError("The consume folder is not mounted. Set RIPIANO_CONSUME_PATH in the stack (see the README).")
-            raise SourceError("No NAS folder is mounted for sources. Set RIPIANO_SOURCES_PATH in the stack (see the README).")
+            raise SourceError("No folder is mounted for sources. Set RIPIANO_SOURCES_PATH in the stack (see the README).")
         self.real_root = self.root.resolve()
         self.base = _clean(source.path)
         self.now = now or time.time()
@@ -49,20 +49,20 @@ class FolderBackend:
         path = self.root / _clean(key)
         # The parent must resolve inside the root; the final component is checked with lstat (no symlinks).
         if not path.parent.resolve().is_relative_to(self.real_root):
-            raise SourceError("That folder is outside the mounted NAS folder")
+            raise SourceError("That folder is outside the mounted folder")
         return path
 
     def _walk(self, start, recursive):
         top = self._path(start) if start else self.root
         if not top.is_dir() or top.is_symlink():
-            raise SourceError(f"The folder “{start or '/'}” does not exist in the mounted NAS folder")
+            raise SourceError(f"The folder “{start or '/'}” does not exist in the mounted folder")
         pending, seen = [(top, 0)], 0
         while pending:
             folder, depth = pending.pop(0)
             try:
                 items = sorted(os.scandir(folder), key=lambda item: item.name)
             except OSError as exc:
-                raise SourceError(f"Ripiano cannot read the folder “{folder.relative_to(self.root)}” (check NAS permissions)") from exc
+                raise SourceError(f"Ripiano cannot read the folder “{folder.relative_to(self.root)}” (check folder permissions)") from exc
             for item in items:
                 if item.is_symlink() or item.name.startswith("."):
                     continue  # hidden files and links are never imported
@@ -99,7 +99,7 @@ class FolderBackend:
         try:
             descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         except OSError as exc:
-            raise SourceError(f"Ripiano cannot read “{entry.relative}” (check NAS permissions)") from exc
+            raise SourceError(f"Ripiano cannot read “{entry.relative}” (check folder permissions)") from exc
         with os.fdopen(descriptor, "rb") as source:
             copied = 0
             for chunk in iter(lambda: source.read(64 * 1024), b""):
@@ -130,10 +130,10 @@ class FolderBackend:
                     target.unlink(missing_ok=True)  # never leave a second copy behind
                     raise
         except OSError as exc:
-            raise SourceError(f"Ripiano cannot move “{entry.relative}” (it needs write access to the mounted NAS folder)") from exc
+            raise SourceError(f"Ripiano cannot move “{entry.relative}” (it needs write access to the mounted folder)") from exc
 
     def delete(self, entry):
         try:
             self._path(entry.key).unlink(missing_ok=True)
         except OSError as exc:
-            raise SourceError(f"Ripiano cannot delete “{entry.relative}” (it needs write access to the mounted NAS folder)") from exc
+            raise SourceError(f"Ripiano cannot delete “{entry.relative}” (it needs write access to the mounted folder)") from exc

@@ -400,7 +400,7 @@ def run_rule(connection, rule, capabilities):
             continue  # Already recorded by a concurrent poll.
         except OSError:
             logger.exception("Mail rule %s could not store message uid %s", rule.id, uid)
-            raise MailError("Ripiano could not save an attachment. Check free space on the NAS.", "storage")
+            raise MailError("Ripiano could not save an attachment. Check free space on the server.", "storage")
         except Exception:
             logger.exception("Mail rule %s could not read message uid %s", rule.id, uid)
             ProcessedMail.objects.get_or_create(**base, defaults={"status": ProcessedMail.Status.FAILED, "detail": "Ripiano could not read this message"})

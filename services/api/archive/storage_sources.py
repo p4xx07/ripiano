@@ -72,10 +72,10 @@ def _private(host):
 
 
 def check_endpoint(source):
-    """Only the archive owner may connect sources on the home network (for example MinIO on the NAS)."""
+    """Only the archive owner may connect sources on the home network (for example MinIO on the server)."""
     if source.kind == StorageSource.Kind.FOLDER:
         if not source.owner.is_superuser:
-            raise SourceError("Only the archive owner can import from folders on the NAS")
+            raise SourceError("Only the archive owner can import from folders on the server")
         return
     if source.kind in CLOUD_KINDS:
         return  # fixed provider addresses

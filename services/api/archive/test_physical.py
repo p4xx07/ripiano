@@ -333,6 +333,50 @@ def _json(client, method, url, body):
 
 
 @pytest.mark.django_db
+def test_location_path_creates_missing_levels_and_paper_moves_keep_sticker():
+    owner = get_user_model().objects.create_user("path-owner", password="secure-password-1")
+    other = get_user_model().objects.create_user("path-other", password="secure-password-2")
+    document = Document.objects.create(
+        owner=owner, title="Medical report", original_name="report.pdf", original_path="originals/report.pdf",
+        original_mime="application/pdf", original_sha256="c" * 64, original_size=1,
+    )
+    client = Client()
+    client.force_login(owner)
+    endpoint = "/api/locations"
+    first = _json(client, "post", endpoint, {"path": "Shelf / Top / Row / Box"})
+    assert first.status_code == 201 and first.json()["path"] == ["Shelf", "Top", "Row", "Box"]
+    assert Location.objects.filter(owner=owner).count() == 4
+    reused = _json(client, "post", endpoint, {"path": "shelf/top/row/box"})
+    assert reused.json()["id"] == first.json()["id"]
+    assert Location.objects.filter(owner=owner).count() == 4
+    extended = _json(client, "post", endpoint, {"path": "Shelf / Top / Row / Folder"})
+    assert extended.json()["path"] == ["Shelf", "Top", "Row", "Folder"]
+    assert Location.objects.filter(owner=owner).count() == 5
+    for bad in ("Shelf//Broken", "/", "/".join(str(i) for i in range(13)), "x" * 101):
+        assert _json(client, "post", endpoint, {"path": bad}).status_code == 400
+    assert Location.objects.filter(owner=owner).count() == 5
+    client.force_login(other)
+    assert _json(client, "post", endpoint, {"path": "Shelf"}).json()["id"] != first.json()["id"]
+    client.force_login(owner)
+    copy_endpoint = f"/api/documents/{document.id}/copies"
+    assert _json(client, "post", copy_endpoint, {"location_id": first.json()["id"], "location_path": "Elsewhere"}).status_code == 400
+    assert not Location.objects.filter(owner=owner, name="Elsewhere").exists()
+    assert _json(client, "post", copy_endpoint, {"location_path": "Rejected / Path", "category_prefix": "INVALID"}).status_code == 400
+    assert not Location.objects.filter(owner=owner, name="Rejected").exists()
+    copy_response = _json(client, "post", copy_endpoint, {"location_path": "Home / Desk / Tray", "category_prefix": "MED"})
+    assert copy_response.status_code == 201
+    paper = copy_response.json()
+    assert paper["location_path"] == ["Home", "Desk", "Tray"]
+    assert paper["sticker_code"] == "MED-00001"
+    moved = _json(client, "patch", f"/api/copies/{paper['id']}", {"location_path": "Home / Cabinet / Box"})
+    assert moved.status_code == 200
+    assert moved.json()["sticker_code"] == paper["sticker_code"]
+    assert moved.json()["location_path"] == ["Home", "Cabinet", "Box"]
+    assert client.get(f"/api/stickers/{paper['sticker_code']}").json()["copy"]["location_path"] == ["Home", "Cabinet", "Box"]
+    assert Movement.objects.filter(physical_copy_id=paper["id"]).count() == 2
+
+
+@pytest.mark.django_db
 def test_location_rename_move_and_validation_keep_copy_history():
     owner = get_user_model().objects.create_user("mover", password="secure-password-1")
     other = get_user_model().objects.create_user("intruder", password="secure-password-2")
@@ -452,7 +496,7 @@ def test_sticker_label_never_breaks_code_and_clamps_text():
     html = client.get(f"/api/copies/{copy['id']}/label").content.decode()
     assert "white-space:nowrap" in html and "-webkit-line-clamp:3" in html
     assert re.search(r'<div class="code" style="font-size:(\d+(\.\d)?)pt">' + copy["sticker_code"] + "</div>", html)
-    assert "Cartella condominio</div>" in html
+    assert "Cartella condominio</div>" not in html  # Paper stickers stay accurate after moving the copy.
     location_html = client.get(f"/api/locations/{parent['id']}/label").content.decode()
     assert f'>{parent["sticker_code"]}</div>' in location_html
     from archive.physical_views import code_font_pt

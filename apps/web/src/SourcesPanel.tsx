@@ -332,7 +332,7 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
                 {editing?.builtin ? <p className="source-note">{m.builtinNote} <code>RIPIANO_CONSUME_PATH</code>.</p> : <label>{m.storage}
                   <select value={draft.kind} onChange={(event) => { const kind = event.target.value as Draft["kind"]; setDraft((current) => ({ ...current, kind, max_size_mb: kind === "telegram" ? Math.min(current.max_size_mb, 20) : current.max_size_mb, after: kind === "telegram" ? "keep" : current.after === "keep" ? "move" : current.after })); }}>
                     <option value="s3">{m.kindS3}</option>
-                    <option value="webdav">WebDAV (Nextcloud, Synology, ownCloud, …)</option>
+                    <option value="webdav">WebDAV (Nextcloud, ownCloud, …)</option>
                     {owner && <option value="folder">{m.kindFolder}</option>}
                     <option value="gdrive">Google Drive</option>
                     <option value="onedrive">OneDrive</option>
@@ -360,7 +360,7 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
                   null
                 ) : draft.kind === "webdav" ? (
                   <>
-                    <label>{m.address} <small>Nextcloud: https://cloud.example.com/remote.php/dav/files/USER · Synology: https://nas.local:5006</small>
+                    <label>{m.address} <small>Nextcloud: https://cloud.example.com/remote.php/dav/files/USER</small>
                       <input value={draft.endpoint} onChange={(event) => set("endpoint", event.target.value)} required maxLength={300} autoCapitalize="none" spellCheck={false} placeholder="https://cloud.example.com/remote.php/dav/files/ada" />
                     </label>
                     <label>{m.userName}<input value={draft.username} onChange={(event) => set("username", event.target.value)} required maxLength={200} autoCapitalize="none" spellCheck={false} autoComplete="off" /></label>

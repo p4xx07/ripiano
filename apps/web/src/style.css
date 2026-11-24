@@ -3312,9 +3312,13 @@ button:disabled {
   color: var(--color-muted);
 }
 .copy-move {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-tight);
 }
+.copy-move select { grid-column: 1 / -1; }
+.copy-move .detail-label { min-width: 0; }
+.copy-move .button { align-self: center; }
 .new-copy {
   display: grid;
   gap: var(--space-3);

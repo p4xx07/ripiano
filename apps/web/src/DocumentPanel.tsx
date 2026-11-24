@@ -205,6 +205,7 @@ export default function DocumentPanel({
   const reservedCopy = copies.find((copy) => Boolean(copy.reserved_at));
   const paperCopies = copies.filter((copy) => !copy.reserved_at);
   const [newLocation, setNewLocation] = useState("");
+  const [newLocationPath, setNewLocationPath] = useState("");
   const [paperCategories, setPaperCategories] = useState<PaperCategory[]>([]);
   const [newCategory, setNewCategory] = useState("VAR");
   const [categoryTouched, setCategoryTouched] = useState(false);
@@ -215,6 +216,7 @@ export default function DocumentPanel({
   const [replacementCategories, setReplacementCategories] = useState<Record<string, string>>({});
   const newCategorySelectRef = useRef<HTMLSelectElement>(null);
   const [moveChoices, setMoveChoices] = useState<Record<string, string>>({});
+  const [movePaths, setMovePaths] = useState<Record<string, string>>({});
   const [histories, setHistories] = useState<
     Record<string, { from: string[]; to: string[]; note: string; at: string; by?: string }[]>
   >({});
@@ -767,10 +769,17 @@ export default function DocumentPanel({
     try {
       const created = await request<PhysicalCopy>(`/api/documents/${current.id}/copies`, {
         method: "POST",
-        body: JSON.stringify({ location_id: reserveOnly ? null : newLocation || null, category_prefix: newCategory, reserve_only: reserveOnly }),
+        body: JSON.stringify({ location_id: reserveOnly || newLocationPath.trim() ? null : newLocation || null,
+          ...(reserveOnly || !newLocationPath.trim() ? {} : { location_path: newLocationPath.trim() }),
+          category_prefix: newCategory, reserve_only: reserveOnly }),
       });
       await refreshCopies();
+      if (newLocationPath.trim()) {
+        try { setLocations(byLocationPath((await request<{ locations: Location[] }>("/api/locations")).locations)); }
+        catch { /* The paper copy was saved; the location list can refresh when the panel opens again. */ }
+      }
       setNewLocation("");
+      setNewLocationPath("");
       // Announced like a move (round-6 judge 2 L1).
       setCopyNotice(reserveOnly ? m.codeReserved(created.sticker_code) : reservedCopy
         ? m.reservedCodeUsed(created.sticker_code) : m.copyCreated(created.sticker_code, created.location_path.join(" / ")));
@@ -812,9 +821,10 @@ export default function DocumentPanel({
     if (busy) return;
     // Send exactly what the list shows (round-6 judge 2 H1: an untouched list used to send "no location").
     const target = moveTarget(copy);
+    const path = movePaths[copy.id]?.trim() || "";
     setError("");
     setCopyNotice("");
-    if (target === (copy.location_id ?? "")) {
+    if (!path && target === (copy.location_id ?? "")) {
       setCopyNotice(m.copyAlreadyThere(copy.sticker_code));
       return;
     }
@@ -822,14 +832,19 @@ export default function DocumentPanel({
     try {
       await request(`/api/copies/${copy.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ location_id: target || null }),
+        body: JSON.stringify(path ? { location_path: path } : { location_id: target || null }),
       });
       await refreshCopies();
+      if (path) {
+        try { setLocations(byLocationPath((await request<{ locations: Location[] }>("/api/locations")).locations)); }
+        catch { /* The move succeeded even if the location list could not refresh. */ }
+      }
       // An open history shows the move too (round-8 judge 1 L1).
       if (histories[copy.id]) await showHistory(copy);
       setMoveChoices(({ [copy.id]: _moved, ...others }) => others);
+      setMovePaths(({ [copy.id]: _moved, ...others }) => others);
       // A printed sticker shows the location it had when printed (round-6 judge 1 L6).
-      setCopyNotice(target ? m.copyMovedReprint(copy.sticker_code) : m.copyMoved(copy.sticker_code));
+      setCopyNotice(path || target ? m.copyMovedReprint(copy.sticker_code) : m.copyMoved(copy.sticker_code));
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : m.moveCopyError,
@@ -1514,12 +1529,13 @@ export default function DocumentPanel({
                   aria-label={m.moveCopyTo(copy.sticker_code)}
                   disabled={busy || Boolean(copy.missing_at)}
                   value={moveTarget(copy)}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    setMovePaths((value) => ({ ...value, [copy.id]: "" }));
                     setMoveChoices((value) => ({
                       ...value,
                       [copy.id]: event.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                 >
                   <option value="">{m.noLocation}</option>
                   {locations.map((location) => (
@@ -1528,6 +1544,15 @@ export default function DocumentPanel({
                     </option>
                   ))}
                 </select>
+                <label className="detail-label">{m.newLocationPath}
+                  <input value={movePaths[copy.id] || ""} maxLength={1200} placeholder={m.locationPathPlaceholder}
+                    disabled={busy || Boolean(copy.missing_at)}
+                    onChange={(event) => {
+                      setMoveChoices((value) => ({ ...value, [copy.id]: "" }));
+                      setMovePaths((value) => ({ ...value, [copy.id]: event.target.value }));
+                    }} />
+                  <small>{m.locationPathHint}</small>
+                </label>
                 <Button
                   type="button"
                   variant="secondary"
@@ -1579,7 +1604,7 @@ export default function DocumentPanel({
               aria-label={m.newCopyLocation}
               ref={newCopySelectRef}
               value={newLocation}
-              onChange={(event) => setNewLocation(event.target.value)}
+              onChange={(event) => { setNewLocation(event.target.value); setNewLocationPath(""); }}
             >
               <option value="">{m.noLocationYet}</option>
               {locations.map((location) => (
@@ -1588,6 +1613,11 @@ export default function DocumentPanel({
                 </option>
               ))}
               </select>
+              </label>
+              <label className="detail-label">{m.newLocationPath}
+                <input value={newLocationPath} onChange={(event) => { setNewLocationPath(event.target.value); setNewLocation(""); }}
+                  placeholder={m.locationPathPlaceholder} maxLength={1200} />
+                <small>{m.locationPathHint}</small>
               </label>
             <Button
               type="button"
@@ -1605,11 +1635,6 @@ export default function DocumentPanel({
             <p>{m.reserveCodeHint}</p>
             <Button type="button" variant="secondary" pending={busy} disabled={!paperCategories.length} onClick={() => void createCopy(true)}>{m.reserveCode}</Button>
           </details>}
-          {!locations.length && (
-            <button className="text-action" onClick={() => leave(onOpenLocations)}>
-              {m.createLocationFirst} <Plus size={15} />
-            </button>
-          )}
         </div>
         <div className="detail-files trash-action">
           <h3><Trash2 size={17} /> {m.moveToTrash}</h3>

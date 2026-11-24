@@ -39,7 +39,7 @@ def _admin(request):
 def _validated(body, config):
     mode = body.get("mode", config.mode)
     if mode not in SemanticSettings.Mode.values:
-        raise ValueError("Choose Off, Ollama, or On the NAS")
+        raise ValueError("Choose Off, Ollama, or On this server")
     url = body.get("ollama_url", config.ollama_url)
     if not isinstance(url, str) or len(url) > 300:
         raise ValueError("Enter the Ollama address")

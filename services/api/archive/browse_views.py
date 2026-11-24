@@ -38,7 +38,7 @@ def browse_exports(request):
             owner=request.user, status__in=[BrowseExportRun.Status.PENDING, BrowseExportRun.Status.RUNNING],
         ).first()
         if active:
-            return JsonResponse({"error": "A NAS browse copy is already running", "id": str(active.id)}, status=409)
+            return JsonResponse({"error": "A browse copy is already running", "id": str(active.id)}, status=409)
         run = BrowseExportRun.objects.create(owner=request.user)
     try:
         build_browse_export.delay(str(run.id))

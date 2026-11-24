@@ -23,7 +23,7 @@ test("create a limited agent and revoke its access", async ({
   await expect(page.getByRole("heading", { name: "Agents." })).toBeVisible();
 
   const name = `Judge agent ${Date.now()} ${testInfo.project.name}`;
-  await page.getByPlaceholder("e.g. Local Mac classifier").fill(name);
+  await page.getByPlaceholder("e.g. Local classifier").fill(name);
   await expect(page.getByLabel("Find document titles and tags")).toBeChecked();
   await expect(page.getByLabel("Read OCR text")).not.toBeChecked();
   await expect(page.getByLabel("Add or remove tags")).not.toBeChecked();

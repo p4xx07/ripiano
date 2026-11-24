@@ -7,7 +7,7 @@ export default defineMessages({
   describeTelegram: (chats: number) => `Telegram bot · ${chats ? `${chats} allowed chat${chats === 1 ? "" : "s"}` : "no chat allowed yet: send /start to the bot"} · checked every minute.`,
   describeBuiltin: (recursive: boolean, after: After, processed: string, minutes: number) =>
     `Built in: drop files into the mounted consume folder${recursive ? " (subfolders too)" : ""}; ${after === "delete" ? "removed after import" : after === "move" ? `moved to ${processed}` : "left in place"}. Checked ${minutes === 1 ? "every minute" : `every ${minutes} minutes`}.`,
-  nasFolder: (path: string) => `NAS folder /${path}`,
+  nasFolder: (path: string) => `mounted folder /${path}`,
   describeExternal: (where: string, recursive: boolean, include: string, after: After, processed: string, retention: number, minutes: number) =>
     `${where} · ${recursive ? "including subfolders" : "this folder only"}${include ? `, names like ${include}` : ""}; ${after === "move"
       ? `then moved to ${processed}${retention ? ` and deleted after ${retention} days` : ""}`
@@ -89,7 +89,7 @@ export default defineMessages({
   edit: "Edit",
   removeSource: (name: string) => `Remove source ${name}`,
   noSources: "No sources yet",
-  noSourcesIntro: "Optional. Connect S3-compatible storage (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, …), WebDAV (Nextcloud, Synology, ownCloud, …), Google Drive, OneDrive, Dropbox, a folder on the NAS, or a Telegram bot on the right.",
+  noSourcesIntro: "Optional. Connect S3-compatible storage (AWS S3, Backblaze B2, Wasabi, MinIO, …), WebDAV (Nextcloud, ownCloud, …), Google Drive, OneDrive, Dropbox, a folder on the server, or a Telegram bot on the right.",
 
   // Form
   editNamed: (name: string) => `Edit “${name}”`,
@@ -98,10 +98,10 @@ export default defineMessages({
   name: "Name",
   namePlaceholder: "e.g. Scanner bucket",
   connection: "Connection",
-  builtinNote: "The built-in consume folder: the NAS folder mounted with",
+  builtinNote: "The built-in consume folder, mounted with",
   storage: "Storage",
   kindS3: "S3-compatible storage",
-  kindFolder: "Folder on the NAS",
+  kindFolder: "Folder on the server",
   kindTelegram: "Telegram bot",
   botToken: "Bot token",
   replyLanguage: "Bot reply language",
@@ -109,7 +109,7 @@ export default defineMessages({
   botTokenHint: "From BotFather; stored encrypted. Then send /start to the bot and allow your chat here.",
   cloudNoteStart: "Save the source, then choose",
   cloudNoteEnd: (service: string, kind: string) => ` on its card to sign in to ${service}. Ripiano keeps only an encrypted sign-in token; “Delete” moves files to the ${kind === "dropbox" ? "deleted files" : kind === "onedrive" ? "recycle bin" : "trash"}.`,
-  folderNoteStart: "Uses the NAS folder mounted with",
+  folderNoteStart: "Uses the folder mounted with",
   folderNoteEnd: ". Choose a subfolder of it below.",
   address: "Address",
   userName: "User name",
@@ -126,7 +126,7 @@ export default defineMessages({
   folder: "Folder",
   folderHintCloud: "From the top of your drive, e.g. Scans; empty for everything",
   folderHintBuiltin: "Inside the consume folder; empty for all of it",
-  folderHintNas: "Inside the mounted NAS folder, e.g. Scanner",
+  folderHintNas: "Inside the mounted folder, e.g. Scanner",
   folderHintWebdav: "Leave empty for the whole storage",
   folderHintBucket: "Leave empty for the whole bucket",
   webdavFolderPlaceholder: "Documents/Scans",
@@ -159,7 +159,7 @@ export default defineMessages({
   describeTelegram: (chats: number) => `Bot Telegram · ${chats ? `${chats} ${chats === 1 ? "chat consentita" : "chat consentite"}` : "nessuna chat ancora consentita: invia /start al bot"} · controllo ogni minuto.`,
   describeBuiltin: (recursive: boolean, after: After, processed: string, minutes: number) =>
     `Cartella integrata: metti i file nella cartella di acquisizione montata${recursive ? " (anche nelle sottocartelle)" : ""}; ${after === "delete" ? "vengono rimossi dopo l'importazione" : after === "move" ? `vengono spostati in ${processed}` : "restano al loro posto"}. Controllo ${minutes === 1 ? "ogni minuto" : `ogni ${minutes} minuti`}.`,
-  nasFolder: (path: string) => `Cartella NAS /${path}`,
+  nasFolder: (path: string) => `Cartella montata /${path}`,
   describeExternal: (where: string, recursive: boolean, include: string, after: After, processed: string, retention: number, minutes: number) =>
     `${where} · ${recursive ? "sottocartelle incluse" : "solo questa cartella"}${include ? `, nomi come ${include}` : ""}; ${after === "move"
       ? `poi spostati in ${processed}${retention ? ` ed eliminati dopo ${retention} giorni` : ""}`
@@ -241,7 +241,7 @@ export default defineMessages({
   edit: "Modifica",
   removeSource: (name: string) => `Rimuovi la sorgente ${name}`,
   noSources: "Ancora nessuna sorgente",
-  noSourcesIntro: "Facoltativo. Collega a destra uno spazio di archiviazione compatibile S3 (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, …), WebDAV (Nextcloud, Synology, ownCloud, …), Google Drive, OneDrive, Dropbox, una cartella sul NAS o un bot Telegram.",
+  noSourcesIntro: "Facoltativo. Collega a destra uno spazio di archiviazione compatibile S3 (AWS S3, Backblaze B2, Wasabi, MinIO, …), WebDAV (Nextcloud, ownCloud, …), Google Drive, OneDrive, Dropbox, una cartella sul server o un bot Telegram.",
 
   // Form
   editNamed: (name: string) => `Modifica “${name}”`,
@@ -250,10 +250,10 @@ export default defineMessages({
   name: "Nome",
   namePlaceholder: "es. Bucket dello scanner",
   connection: "Connessione",
-  builtinNote: "La cartella di acquisizione integrata: la cartella del NAS montata con",
+  builtinNote: "La cartella di acquisizione integrata, montata con",
   storage: "Servizio",
   kindS3: "Spazio di archiviazione compatibile S3",
-  kindFolder: "Cartella sul NAS",
+  kindFolder: "Cartella sul server",
   kindTelegram: "Bot Telegram",
   botToken: "Token del bot",
   replyLanguage: "Lingua delle risposte del bot",
@@ -261,7 +261,7 @@ export default defineMessages({
   botTokenHint: "Da BotFather; conservato cifrato. Poi invia /start al bot e consenti qui la tua chat.",
   cloudNoteStart: "Salva la sorgente, poi scegli",
   cloudNoteEnd: (service: string, kind: string) => ` sulla sua scheda per accedere a ${service}. Ripiano conserva solo un token di rinnovo cifrato; “Elimina” sposta i file ${kind === "dropbox" ? "tra i file eliminati" : "nel cestino"}.`,
-  folderNoteStart: "Usa la cartella del NAS montata con",
+  folderNoteStart: "Usa la cartella montata con",
   folderNoteEnd: ". Scegli qui sotto una sua sottocartella.",
   address: "Indirizzo",
   userName: "Nome utente",
@@ -278,7 +278,7 @@ export default defineMessages({
   folder: "Cartella",
   folderHintCloud: "Dalla radice del tuo drive, es. Scansioni; vuoto per tutto",
   folderHintBuiltin: "Dentro la cartella di acquisizione; vuoto per tutta la cartella",
-  folderHintNas: "Dentro la cartella NAS montata, es. Scanner",
+  folderHintNas: "Dentro la cartella montata, es. Scanner",
   folderHintWebdav: "Lascia vuoto per tutto lo spazio di archiviazione",
   folderHintBucket: "Lascia vuoto per l'intero bucket",
   webdavFolderPlaceholder: "Documenti/Scansioni",

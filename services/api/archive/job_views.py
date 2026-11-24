@@ -65,25 +65,25 @@ def browse_run_action(request, run_id, action):
         get_user_model().objects.select_for_update().get(pk=request.user.pk)
         run = BrowseExportRun.objects.select_for_update().filter(pk=run_id, owner=request.user).first()
         if run is None:
-            return JsonResponse({"error": "NAS browse copy not found"}, status=404)
+            return JsonResponse({"error": "Browse copy not found"}, status=404)
         if action == "cancel":
             if run.status != BrowseExportRun.Status.PENDING:
-                return JsonResponse({"error": "Only a queued NAS browse copy can be cancelled"}, status=409)
+                return JsonResponse({"error": "Only a queued browse copy can be cancelled"}, status=409)
             run.status = BrowseExportRun.Status.CANCELLED
             run.completed_at = timezone.now()
             run.save(update_fields=["status", "completed_at"])
             return JsonResponse({"id": str(run.id), "status": run.status})
         if run.status not in {BrowseExportRun.Status.FAILED, BrowseExportRun.Status.CANCELLED}:
-            return JsonResponse({"error": "Only a failed or cancelled NAS browse copy can be retried"}, status=409)
+            return JsonResponse({"error": "Only a failed or cancelled browse copy can be retried"}, status=409)
         if BrowseExportRun.objects.filter(retry_of=run).exists():
-            return JsonResponse({"error": "This NAS browse copy already has a retry"}, status=409)
+            return JsonResponse({"error": "This browse copy already has a retry"}, status=409)
         if BrowseExportRun.objects.filter(owner=request.user, status__in=[BrowseExportRun.Status.PENDING, BrowseExportRun.Status.RUNNING]).exists():
-            return JsonResponse({"error": "A NAS browse copy is already running"}, status=409)
+            return JsonResponse({"error": "A browse copy is already running"}, status=409)
         retry = BrowseExportRun.objects.create(owner=request.user, retry_of=run)
     try:
         build_browse_export.delay(str(retry.id))
     except Exception:
-        logger.exception("NAS browse copy queue unavailable: %s", retry.id)
+        logger.exception("Browse copy queue unavailable: %s", retry.id)
         BrowseExportRun.objects.filter(pk=retry.id, status=BrowseExportRun.Status.PENDING).update(status=BrowseExportRun.Status.FAILED, error="Browse export queue unavailable", completed_at=timezone.now())
         return JsonResponse({"error": "Browse export queue unavailable", "id": str(retry.id)}, status=503)
     return JsonResponse({"id": str(retry.id), "status": retry.status, "retry_of": str(run.id)}, status=202)

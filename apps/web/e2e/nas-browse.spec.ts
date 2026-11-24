@@ -28,7 +28,7 @@ test("build a readable NAS copy from the Backups screen", async ({ page }, testI
   const menu = page.getByRole("button", { name: "Toggle menu" });
   if (await menu.isVisible()) await menu.click();
   await page.getByRole("button", { name: "Backups" }).click();
-  await expect(page.getByRole("heading", { name: "Browse on your NAS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Browse on your server" })).toBeVisible();
   const started = page.waitForResponse((response) => response.url().endsWith("/api/browse-exports") && response.request().method() === "POST" && response.status() === 202);
   await page.getByRole("button", { name: "Build browse copy" }).click();
   const runId = (await (await started).json()).id;
@@ -44,6 +44,6 @@ test("build a readable NAS copy from the Backups screen", async ({ page }, testI
   const menuAfterReload = page.getByRole("button", { name: "Toggle menu" });
   if (await menuAfterReload.isVisible()) await menuAfterReload.click();
   await page.getByRole("button", { name: "Backups" }).click();
-  await expect(page.getByText(`${run!.document_count} ${run!.document_count === 1 ? "document" : "documents"} ready on NAS`).first()).toBeVisible();
+  await expect(page.getByText(`${run!.document_count} ${run!.document_count === 1 ? "document" : "documents"} ready in the browse copy`).first()).toBeVisible();
   await page.locator(".browse-section").screenshot({ path: testInfo.outputPath("nas-browse.png"), animations: "disabled" });
 });

@@ -2,7 +2,7 @@
 
 This guide holds the detailed feature explanations, configuration reference, and how-tos that used to live in the [README](../README.md). For a short overview and the quick start, see the README.
 
-Ripiano is a self-hosted document archive for a NAS. It combines quick mobile capture, automatic filing, full-text search, and a simple way to locate paper originals with stickers. The web app is an installable PWA for iOS and Android. An Android client shares the web interface and adds a native document scanner.
+Ripiano is a self-hosted document archive for a server. It combines quick mobile capture, automatic filing, full-text search, and a simple way to locate paper originals with stickers. The web app is an installable PWA for iOS and Android. An Android client shares the web interface and adds a native document scanner.
 
 Ripiano is an independent implementation. Paperless-ngx v3.4.2 is the capability baseline, not a backend dependency or a workflow template. The product target is feature parity with that release plus a better day-to-day filing process.
 
@@ -14,11 +14,11 @@ This is the summary that used to open the README; each item is explained in the 
 - Add documents from the phone camera, gallery, or files: PDF, images, Word/Excel/PowerPoint, OpenDocument, RTF, and emails (`.eml`, `.msg`). The original is always kept unchanged.
 - If a session expires while a file is being added, the file waits on that device and resumes after the same person signs in.
 - Background OCR turns every document into a searchable PDF. Barcodes on scans can split documents, set an archive number (ASN), or add tags.
-- Optional inputs, off until you enable them: a consume folder, watched NAS folders, S3/WebDAV/Google Drive/OneDrive/Dropbox, a Telegram bot, and IMAP mailboxes.
+- Optional inputs, off until you enable them: a consume folder, watched mounted folders, S3/WebDAV/Google Drive/OneDrive/Dropbox, a Telegram bot, and IMAP mailboxes.
 
 **Find**
 - Full-text search with field filters (`tag:`, `sender:`, `date:2026-01..2026-03`, …), saved searches, and matching passages in the results. Common Italian accents can be omitted when typing a search; older indexes update in small background batches.
-- Optional semantic ("search by meaning") search, off by default, using Ollama on another computer or a small model on the NAS.
+- Optional semantic ("search by meaning") search, off by default, using Ollama on another computer or a small model on the server.
 
 **File**
 - Tags, senders, document types, custom fields, and storage paths, filled automatically by matching rules, workflows, and suggestions learned on your own server from your own choices.
@@ -34,7 +34,7 @@ This is the summary that used to open the README; each item is explained in the 
 - Grant an AI agent (for example Claude, or a local Ollama model) narrow, revocable access through MCP: search, read text, tag, or file. Ripiano itself never calls a paid AI API.
 
 **Privacy and backup**
-- Two-step sign-in, personal API tokens, scheduled checksum-verified backups for Hyper Backup, a browsable NAS copy, and a portable export to move to a new server.
+- Two-step sign-in, personal API tokens, scheduled checksum-verified backups for an external backup tool, a browsable copy, and a portable export to move to a new server.
 
 The stack is a Docker Compose set of services (Django API, OCR workers, PostgreSQL) with an installable web app (PWA) for iOS and Android and an Android client with a native scanner. Everything stays on your server; no cloud AI provider is ever called.
 
@@ -45,12 +45,12 @@ The stack is a Docker Compose set of services (Django API, OCR workers, PostgreS
 - [Interface language and appearance](#interface-language)
 - [Install and run](#install-and-run)
   - [Run locally](#run-locally)
-  - [NAS deployment](#nas-deployment)
+  - [Server deployment](#server-deployment)
   - [Work on the services](#work-on-the-services)
 - [Adding documents](#adding-documents)
   - [Uploads and file types](#uploads-and-file-types)
   - [Consume folder](#consume-folder)
-  - [Folders on the NAS](#folders-on-the-nas)
+  - [Mounted folders](#mounted-folders)
   - [Telegram](#telegram)
   - [Optional email intake](#optional-email-intake)
   - [Sources (external storage)](#sources-external-storage)
@@ -83,14 +83,14 @@ The stack is a Docker Compose set of services (Django API, OCR workers, PostgreS
   - [Two-step sign-in](#two-step-sign-in)
   - [API tokens](#api-tokens)
 - [Backups and moving](#backups-and-moving)
-  - [NAS browse copy](#nas-browse-copy)
+  - [Browse copy](#browse-copy)
   - [Move to a new server](#move-to-a-new-server)
 - [Screenshots](#screenshots)
 - [Planning documents](#planning-documents)
 
 ## First implementation slice
 
-The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and Office/OpenDocument/RTF upload, IMAP email intake, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, tag-changing, and sender/type-filing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional Mac worker can ask a local Ollama model to apply existing tags and fill empty sender/type fields through separately granted MCP scopes and write settings. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. Locally trained filing suggestions can also be applied automatically to new documents when the owner opts in and strict confidence checks pass. AI suggestions and document chat are served through MCP agents rather than by Ripiano calling a model provider (see [DECISIONS.md](DECISIONS.md) D1). Release still requires the owner-side checks on the NAS and real devices and the row-by-row verification of the [parity matrix](FEATURE_PARITY.md); the [quality judges](QUALITY_JUDGES.md) list the release blockers. No Paperless source code is included in this repository; see [LICENSE](../LICENSE) for the license terms.
+The current slice has owner setup and sign-in, PDF/JPEG/PNG, email (.eml), and Office/OpenDocument/RTF upload, IMAP email intake, preserved originals, background OCR to PDF/A for PDF/images and searchable PDF conversion for Office files, text search, a responsive installable PWA, scheduled or manual checksum-verified backups, tags, correspondents, document types, local phrase-based automatic filing, exact duplicate flags, a physical archive, and named MCP agent grants. Camera, gallery, and file selection are available through the browser. A native Android debug build adds multi-page capture and keeps pending scans on-device for retry; it has not passed real-device validation. Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. An agent can be given separate search, OCR-text, tag-changing, and sender/type-filing permissions, with optional tag filtering, expiry, revocation, and an activity log. An optional local worker can ask a local Ollama model to apply existing tags and fill empty sender/type fields through separately granted MCP scopes and write settings. Failed OCR can be retried; ready documents can rebuild the searchable PDF from the preserved original. In Library selection mode, use **OCR actions** to retry failed documents or rebuild searchable PDFs for up to 100 selected documents; files already processing are skipped, and originals remain unchanged. Locally trained filing suggestions can also be applied automatically to new documents when the owner opts in and strict confidence checks pass. AI suggestions and document chat are served through MCP agents rather than by Ripiano calling a model provider (see [DECISIONS.md](DECISIONS.md) D1). Release still requires the owner-side checks on the server and real devices and the row-by-row verification of the [parity matrix](FEATURE_PARITY.md); the [quality judges](QUALITY_JUDGES.md) list the release blockers. No Paperless source code is included in this repository; see [LICENSE](../LICENSE) for the license terms.
 
 ## Interface language
 
@@ -110,9 +110,9 @@ The Appearance menu offers device setting, Light, Dark, and AMOLED black. The pr
 
 Required variables in `.env`: `RIPIANO_SECRET_KEY`, `RIPIANO_SETUP_KEY`, `RIPIANO_DB_PASSWORD`, `RIPIANO_PUBLIC_ORIGIN` (the exact URL in the browser), and `RIPIANO_ALLOWED_HOSTS` (its hostname). `RIPIANO_PORT` changes the published port (default 8080). Without path variables, data lives in Docker volumes.
 
-### NAS deployment
+### Server deployment
 
-For a NAS deployment, use the [complete pull-only Compose example](../deploy/docker-compose.yaml) and the [example environment values](../deploy/env.example). The example maps the database, media, and backup folders to persistent Synology paths and publishes only the web port; the API, OCR worker, maintenance worker, scheduler, broker, and MCP stay inside the stack. OCR work has its own queue so a long rule recheck or backup does not hold new uploads. Whatever runs the stack (`docker compose` or a Compose-based manager) needs the complete Compose file and the environment variables, with real secrets and released image digests. A short excerpt shows the important mounts:
+For a server deployment, use the [complete pull-only Compose example](../deploy/docker-compose.yaml) and the [example environment values](../deploy/env.example). The example maps the database, media, and backup folders to persistent host paths and publishes only the web port; the API, OCR worker, maintenance worker, scheduler, broker, and MCP stay inside the stack. OCR work has its own queue so a long rule recheck or backup does not hold new uploads. Whatever runs the stack (`docker compose` or a Compose-based manager) needs the complete Compose file and the environment variables, with real secrets and released image digests. A short excerpt shows the important mounts:
 
 ```yaml
 services:
@@ -135,11 +135,11 @@ services:
       - "${RIPIANO_PORT:-8080}:8080"
 ```
 
-This excerpt illustrates storage and exposure; use the linked full stack for deployment. Set an HTTPS `RIPIANO_PUBLIC_ORIGIN`, the reverse proxy hostname in `RIPIANO_ALLOWED_HOSTS`, and give container UID 10001 write access to the media and backup folders. Point Synology's HTTPS reverse proxy at the web port and Hyper Backup at the backup folder's `complete/` subfolder. [Deployment details](../deploy/README.md) include image pinning and NAS permissions; [backup/restore instructions](BACKUP_RESTORE.md) cover recovery. Backblaze B2 configuration stays in Synology. A local clean-stack restore passed with documents, locations, duplicate links, and revoked agent grants, but NAS-specific permissions and restore still need verification before storing real documents. No release images have been published from this draft PR yet.
+This excerpt illustrates storage and exposure; use the linked full stack for deployment. Set an HTTPS `RIPIANO_PUBLIC_ORIGIN`, the reverse proxy hostname in `RIPIANO_ALLOWED_HOSTS`, and give container UID 10001 write access to the media and backup folders. Point your HTTPS reverse proxy at the web port and your backup tool at the backup folder's `complete/` subfolder. [Deployment details](../deploy/README.md) include image pinning and server permissions; [backup/restore instructions](BACKUP_RESTORE.md) cover recovery. A local clean-stack restore passed with documents, locations, duplicate links, and revoked agent grants, but server-specific permissions and restore still need verification before storing real documents. No release images have been published from this draft PR yet.
 
 For monitoring, `/healthz` answers 200 while the database and the queue server are reachable and 503 otherwise; `/livez` only says Ripiano itself is answering. Details are in [Backup and restore](BACKUP_RESTORE.md#health-checks).
 
-To reach Ripiano from outside the home network through one sign-in, see the [Raspberry Pi gateway](../deploy/gateway/README.md) (Traefik + Authelia).
+To reach Ripiano from outside the home network through one sign-in, see the [optional gateway example](../deploy/gateway/README.md) (Traefik + Authelia).
 
 ### Work on the services
 
@@ -160,17 +160,17 @@ The document originals are stored under the mounted media path. OCR output is de
 
 ### Consume folder
 
-Drop files into the consume folder and Ripiano imports them by itself, like Paperless's consume directory. Set `RIPIANO_CONSUME_PATH` (default `/volume1/docker/ripiano/consume`; Ripiano runs as UID 10001 and needs read and write access) and redeploy. Ripiano then adds a built-in **Consume folder** source for the archive owner: it checks every minute, includes subfolders, and removes each file after it is safely imported. A file must be unchanged for a minute first, so a scan that is still being copied is not taken half-done. Unsupported files, hidden files, and links stay where they are. The source appears on the Sources screen, where you can pause it, add filters or tags, or keep files instead of removing them; it cannot be deleted.
+Drop files into the consume folder and Ripiano imports them by itself, like Paperless's consume directory. Set `RIPIANO_CONSUME_PATH` (set this to a host folder; Ripiano runs as UID 10001 and needs read and write access) and redeploy. Ripiano then adds a built-in **Consume folder** source for the archive owner: it checks every minute, includes subfolders, and removes each file after it is safely imported. A file must be unchanged for a minute first, so a scan that is still being copied is not taken half-done. Unsupported files, hidden files, and links stay where they are. The source appears on the Sources screen, where you can pause it, add filters or tags, or keep files instead of removing them; it cannot be deleted.
 
-### Folders on the NAS
+### Mounted folders
 
-Watched folders are sources too (see [Sources](#sources-external-storage) below). Mount one NAS folder into Ripiano with `RIPIANO_SOURCES_PATH` (default `/volume1/docker/ripiano/sources`; Ripiano runs as UID 10001 and needs read access, plus write access if a source moves or deletes imported files). Then, as the archive owner, add **Folder on the NAS** sources in the app for any subfolder of it, for example the folder your scanner saves to, each with its own filters and after-import action.
+Watched folders are sources too (see [Sources](#sources-external-storage) below). Mount one mounted folder into Ripiano with `RIPIANO_SOURCES_PATH` (set this to a host folder; Ripiano runs as UID 10001 and needs read access, plus write access if a source moves or deletes imported files). Then, as the archive owner, add **Mounted folder** sources in the app for any subfolder of it, for example the folder your scanner saves to, each with its own filters and after-import action.
 
 ### Telegram
 
 Telegram is a source like any other: see [Sources](#sources-external-storage) below. Create a bot with BotFather, paste its token into a new Telegram source, and send `/start` to the bot in a private chat. Your chat appears on the source as waiting; choose **Allow**. From then on, files and photos you send or forward to the bot are imported within about a minute, and the bot answers "Saved to Ripiano."
 
-Telegram's [Bot API limits bot downloads to 20 MB](https://core.telegram.org/bots/api#getfile). Telegram handles the file before Ripiano downloads it, so use the direct app upload when a document must never pass through Telegram. Undelivered messages stay on Telegram for at most 24 hours, so a NAS that is off for longer can miss files. Only private chats you allowed are accepted; groups are ignored, and the NAS needs no inbound port.
+Telegram's [Bot API limits bot downloads to 20 MB](https://core.telegram.org/bots/api#getfile). Telegram handles the file before Ripiano downloads it, so use the direct app upload when a document must never pass through Telegram. Undelivered messages stay on Telegram for at most 24 hours, so a server that is off for longer can miss files. Only private chats you allowed are accepted; groups are ignored, and the server needs no inbound port.
 
 ### Optional email intake
 
@@ -182,14 +182,14 @@ Gmail and Outlook can use OAuth instead. Register a web OAuth client with the re
 
 ### Sources (external storage)
 
-Open **Sources** to connect a storage as a document input, much like adding a Hyper Backup destination. Ripiano checks each source on its own schedule and imports new files. Everything is set up in the app; no Compose profile or environment variable is needed.
+Open **Sources** to connect a storage as a document input, much like adding a an external backup tool destination. Ripiano checks each source on its own schedule and imports new files. Everything is set up in the app; no Compose profile or environment variable is needed.
 
-Available now: **S3-compatible storage** (AWS S3, Backblaze B2, Wasabi, Synology C2, MinIO, SeaweedFS, and others), **WebDAV** (Nextcloud, ownCloud, Synology WebDAV Server, and others), **Google Drive**, **OneDrive**, **Dropbox**, **folders on the NAS**, and **Telegram bots**.
+Available now: **S3-compatible storage** (AWS S3, Backblaze B2, Wasabi, MinIO, SeaweedFS, and others), **WebDAV** (Nextcloud, ownCloud, and others), **Google Drive**, **OneDrive**, **Dropbox**, **mounted folders**, and **Telegram bots**.
 
 - **Google Drive, OneDrive, Dropbox:** save the source with its folder (a path from the top of the drive, such as `Scans`), then choose **Connect account** on its card and sign in at the provider. Ripiano stores only an encrypted refresh token; **Reconnect** replaces it. Google Docs, Sheets, Slides, and Drawings are imported as PDF exports; forms and shortcuts are skipped. "Delete" after import moves files to the provider's trash, recycle bin, or deleted files, never permanently.
 - **Sign-in apps (archive owner):** each provider needs an OAuth app registered once. On the Sources screen, **Sign-in apps** shows the redirect address to register (`<RIPIANO_PUBLIC_ORIGIN>/api/sources/oauth/callback`) and stores each client ID and secret (encrypted). Google: a web OAuth client with the Drive API enabled; Ripiano asks for the full Drive scope so it can move and trash files. A Google app left in "Testing" status signs people out after 7 days; publish it (Google may require verification for the Drive scope) or reconnect weekly. Microsoft: an app registration with delegated `Files.ReadWrite` and `offline_access`. Dropbox: an app with `files.metadata.read`, `files.content.read`, `files.content.write`, and `account_info.read`. The Gmail and Outlook client settings for mail are reused for Google Drive and OneDrive when no app is saved here (add the new redirect address to them).
-- **Folder on the NAS:** choose a subfolder of the folder mounted with `RIPIANO_SOURCES_PATH` (archive owner only). Files changed in the last minute wait for the next check, so a scanner still writing is never imported half-done. Hidden files and symbolic links are ignored, and paths can never leave the mounted folder. The check interval can be as short as one minute.
-- **WebDAV:** enter the WebDAV address (Nextcloud: `https://cloud.example.com/remote.php/dav/files/USER`; Synology WebDAV Server: `https://nas.local:5006`), the user name, and a password (an app password where offered; stored encrypted). Folders are listed with standard PROPFIND requests, recursively when **Include subfolders** is on (up to 25 levels and 20,000 files per check). Moving creates the dated processed folders; if a file with the same name was already moved that day, both are kept.
+- **Mounted folder:** choose a subfolder of the folder mounted with `RIPIANO_SOURCES_PATH` (archive owner only). Files changed in the last minute wait for the next check, so a scanner still writing is never imported half-done. Hidden files and symbolic links are ignored, and paths can never leave the mounted folder. The check interval can be as short as one minute.
+- **WebDAV:** enter the WebDAV address (Nextcloud: `https://cloud.example.com/remote.php/dav/files/USER`; another WebDAV server: `https://dav.example.com`), the user name, and a password (an app password where offered; stored encrypted). Folders are listed with standard PROPFIND requests, recursively when **Include subfolders** is on (up to 25 levels and 20,000 files per check). Moving creates the dated processed folders; if a file with the same name was already moved that day, both are kept.
 - **Telegram:** paste the bot token (stored encrypted). Anyone who writes to the bot is listed on the source as waiting until you **Allow** that chat; you can remove an allowed chat at any time. Ripiano asks Telegram for new messages every minute with a quick request, so no extra process runs. Name patterns, file types, the size limit (20 MB at most), and filing apply as for other sources. **Bot reply language** sets whether the bot answers in English or Italian. **Preview** checks the token and shows the bot's name.
 - **Connection (S3):** address, bucket, region, address style (path style for MinIO/SeaweedFS and most self-hosted servers; virtual-hosted for AWS), access key, and secret key. The secret is stored encrypted (with `RIPIANO_MAIL_KEY` or a key derived from the server secret) and never shown again.
 - **What to import:** a folder (prefix), **Include subfolders** (recursive) or this folder only, name patterns to include and to skip (for example `fattura*` and `drafts/*`), file types (PDF, images, Office, email), the largest file size (up to the 25 MB upload limit), and an optional "changed after" date.
@@ -197,13 +197,13 @@ Available now: **S3-compatible storage** (AWS S3, Backblaze B2, Wasabi, Synology
 - **Filing:** optional tags, sender, and type for every imported document; your own later choices are never overwritten.
 - **Preview** lists what the next check would import and why other files are skipped, without downloading or changing anything. **Check now** runs a check immediately; the card shows the last check, how many files were new, and any problem.
 - **Once only:** each file version is imported once, even if its document is later deleted or the service restarts mid-move. A changed file is imported as a new document.
-- **Home network:** only the archive owner can connect storage on the home network (for example MinIO on the NAS). Other people can connect internet storage over `https://` only.
+- **Home network:** only the archive owner can connect storage on the home network (for example MinIO on the server). Other people can connect internet storage over `https://` only.
 - **Least privilege:** give Ripiano its own key that can list the bucket, read and delete under the source folder, and write, read, and delete under the processed folder. With AWS IAM that is `s3:ListBucket` (limited to both prefixes) plus `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on both prefixes.
 - **Weight:** sources run on the existing maintenance worker and add no Python packages (Ripiano signs S3 requests itself).
 
 ### Barcodes on paper scans
 
-PDF and image scans are checked for QR codes and common 1D barcodes on the NAS. Nothing is sent elsewhere.
+PDF and image scans are checked for QR codes and common 1D barcodes on the server. Nothing is sent elsewhere.
 
 - **Separator sheets:** a sheet with the code `PATCHT` splits a multi-page PDF into separate documents and is itself dropped. The full scan is kept unchanged as the hidden source of its parts; open it from any part with **Open full scan**.
 - **ASN:** a code such as `ASN00042` gives the document archive number 42. An ASN barcode on a later PDF page starts a new document, even if it is the only ASN; pages before it become an unnumbered first part. Each barcode page stays with its document, and the full scan is kept unchanged and available from the parts. If the scan also has `PATCHT` sheets, those separators take precedence. Numbers are unique per owner. A clash is recorded as a note instead of being assigned, and you can change the number on the document. Search with `asn:42`.
@@ -233,17 +233,17 @@ Select up to 100 loaded documents to add or remove a tag, set or clear the sende
 
 Turn it on as the archive owner under **Agents → Search by meaning**, choosing where the model runs:
 
-| Choice | Cost on the NAS | Notes |
+| Choice | Cost on the server | Notes |
 | --- | --- | --- |
 | **Off** | nothing | Keyword search only |
-| **Ollama on another computer** | nothing | Enter its address, e.g. `http://192.168.1.30:11434`, and run `ollama pull bge-m3` there (or name another embedding model). Meaning search pauses while that computer is off and catches up later. Set `OLLAMA_HOST=0.0.0.0` on the Mac so the NAS can reach it. |
-| **On the NAS** | about 800 MB RAM while the model is loaded; about 150 MB of packages and 240 MB of model files in the `ripiano_models` volume | Start the `semantic` Compose profile (the `embedder` service). On first start it installs hash-pinned packages from `services/api/semantic-requirements.txt` into its volume, so the normal Ripiano image does not grow. It runs at low CPU priority with one thread (`RIPIANO_EMBEDDER_THREADS`), capped by `RIPIANO_EMBEDDER_MEMORY` and `RIPIANO_EMBEDDER_CPUS`. |
+| **Ollama on another computer** | nothing | Enter its address, e.g. `http://192.168.1.30:11434`, and run `ollama pull bge-m3` there (or name another embedding model). Meaning search pauses while that computer is off and catches up later. Set `OLLAMA_HOST=0.0.0.0` on the other computer so the server can reach it. |
+| **On the server** | about 800 MB RAM while the model is loaded; about 150 MB of packages and 240 MB of model files in the `ripiano_models` volume | Start the `semantic` Compose profile (the `embedder` service). On first start it installs hash-pinned packages from `services/api/semantic-requirements.txt` into its volume, so the normal Ripiano image does not grow. It runs at low CPU priority with one thread (`RIPIANO_EMBEDDER_THREADS`), capped by `RIPIANO_EMBEDDER_MEMORY` and `RIPIANO_EMBEDDER_CPUS`. |
 
 - **Keep the model loaded:** off by default, so the model unloads after 10 idle minutes and the next search waits while it loads (about 15–20 s on first use). Tick it for faster searches at the cost of permanent RAM. The same setting is passed to Ollama.
 - **Database:** passages are stored with the pgvector extension. Set `RIPIANO_DB_IMAGE=pgvector/pgvector:pg17` (same PostgreSQL 17 data directory) and redeploy before turning the feature on; Ripiano says so if the extension is missing. Without it nothing else changes.
 - **Indexing** runs in the background on the maintenance queue, 20 documents at a time, after each new document and every 15 minutes. Changed text and a changed model are indexed again. **Test connection** checks the settings before you rely on them; the last problem is shown in the card.
 - **Rebuild everything** (for example after changing the model or its settings): `docker compose exec maintenance_worker .venv/bin/python manage.py semantic_rebuild` (add `--owner NAME` for one person). Existing passages keep answering until each document is re-indexed.
-- **Quality:** the small NAS model (`paraphrase-multilingual-MiniLM-L12-v2`, Italian and English) is good but not perfect; in a four-document test it found the right document first for three of four questions. Larger models through Ollama (such as `bge-m3`) are better.
+- **Quality:** the small built-in model (`paraphrase-multilingual-MiniLM-L12-v2`, Italian and English) is good but not perfect; in a four-document test it found the right document first for three of four questions. Larger models through Ollama (such as `bge-m3`) are better.
 
 ### Keyboard shortcuts and accessibility
 
@@ -351,8 +351,8 @@ Every change a workflow makes (title, storage path, custom fields, sharing, tags
 
 ### Storage paths
 
-**Storage paths are optional.** Under **Tags & filing → Storage paths**, name a layout (for example **By sender**) and enter a folder template such as `{correspondent}/{year}`. In a document, open **More filing options** and choose **By sender** under **Storage path**, or let a workflow assign it. Then use **Backups → Build browse copy**. That copy places the document under `documents/City office/2026/…` instead of the default year folder. Nothing changes in Ripiano's managed originals, and making a template alone creates no NAS folders.
-With the default local Compose stack, the browse copy is in Docker's `ripiano_backup` volume; on a NAS, mount the backup directory to make that folder visible outside the containers.
+**Storage paths are optional.** Under **Tags & filing → Storage paths**, name a layout (for example **By sender**) and enter a folder template such as `{correspondent}/{year}`. In a document, open **More filing options** and choose **By sender** under **Storage path**, or let a workflow assign it. Then use **Backups → Build browse copy**. That copy places the document under `documents/City office/2026/…` instead of the default year folder. Nothing changes in Ripiano's managed originals, and making a template alone creates no mounted folders.
+With the default local Compose stack, the browse copy is in Docker's `ripiano_backup` volume; on a server, mount the backup directory to make that folder visible outside the containers.
 - **Placeholders:** `{year}`, `{month}`, `{day}`, `{added_year}`, `{added_month}`, `{correspondent}`, `{document_type}`, `{title}`, `{asn}`, `{tag}`, and `{source}`.
 - **Safe names:** values are made into safe single folder names. Slashes and reserved names such as `CON` are replaced.
 - **Originals:** Ripiano's managed originals never move.
@@ -404,7 +404,7 @@ Move a completed document to **Trash** from its detail panel and restore it late
 
 ## Paper copies
 
-If you keep the paper, open its document and choose **Keep paper copy**. Pick a broad, lasting topic and optionally a location. Ripiano allocates a code such as `MED-00042` and prints a QR label for the copy. Digital-only documents receive no code by default. Under **Reserve a code for later (advanced)**, you can reserve a code while keeping the document digital-only. It is searchable, but it does not count as a paper copy or appear in the paper archive. If you later keep a printed copy, **Keep paper with this code** registers that copy using the reserved code, without consuming another number. Each topic has its own sequence; a deleted label number is not reused. The initial topics are `MED` (medical), `HOM` (home), `FIN` (finance and taxes), `AUT` (vehicles), `PER` (personal), `EVT` (events and travel), and `VAR` (other). If one attached tag or its parent exactly names a broad topic (for example, Medical or Salute) or a custom paper category, Ripiano suggests it and shows the source tag. If tags point to different topics or none matches, it proposes `VAR`; you can always change the category before printing. It never reads a mutable shelf or guesses a topic from the document title for a permanent label. Tags and locations can change without changing the printed code. Another physical copy is available under an advanced action and gets a different code.
+If you keep the paper, open its document and choose **Keep paper copy**. Pick a broad, lasting topic and optionally a location. Choose an existing place or type a path such as `Home / Shelf / Box`; Ripiano reuses matching levels and creates missing ones in the same step. Ripiano allocates a code such as `MED-00042` and prints a QR label for the copy. Digital-only documents receive no code by default. Under **Reserve a code for later (advanced)**, you can reserve a code while keeping the document digital-only. It is searchable, but it does not count as a paper copy or appear in the paper archive. If you later keep a printed copy, **Keep paper with this code** registers that copy using the reserved code, without consuming another number. Each topic has its own sequence; a deleted label number is not reused. The initial topics are `MED` (medical), `HOM` (home), `FIN` (finance and taxes), `AUT` (vehicles), `PER` (personal), `EVT` (events and travel), and `VAR` (other). If one attached tag or its parent exactly names a broad topic (for example, Medical or Salute) or a custom paper category, Ripiano suggests it and shows the source tag. If tags point to different topics or none matches, it proposes `VAR`; you can always change the category before printing. It never reads a mutable shelf or guesses a topic from the document title for a permanent label. Tags and locations can change without changing the printed code. Another physical copy is available under an advanced action and gets a different code.
 
 You can add or rename paper categories under **Paper archive → Paper categories**. Prefixes must be 3–5 uppercase letters and cannot be changed after creation because labels may already be printed. Codes are unique within one person's archive, so two people can both have `MED-00001`. Find a copy or reserved code by scanning its QR or typing `MED-00042`, `MED00042`, or `med-42`. A reserved-code lookup says that no paper copy exists yet. Existing random `R-…` stickers still work with or without `R-`, and a location code typed in full (`L-…`) opens the location. ASN remains an advanced numeric barcode field for uploaded scans, including scan splitting; it is not the sticker code and entering one does not register a paper copy.
 
@@ -420,13 +420,13 @@ Each shelf or box also has a stable `L-` code and a printable QR label. Scan it 
 
 ### Editing locations
 
-In **Paper archive → Add a location**, the button tells you where the new location goes ("Add location at top level" or "Add location inside Shelf / Box"). After you add a location, "Inside" goes back to the top level. To fix a mistake, choose **Edit** next to a location. You can rename it or choose a new "Inside" location. Paper copies, stickers, printed labels, and their history stay attached, and any locations inside it move with it. **Delete location** asks you to confirm first. It works only when the location is empty, so move its paper copies and any locations inside it somewhere else first. Printed stickers keep the code on one line and show the innermost locations when the full path is too long.
+In **Paper archive → Add a location**, type one name or a full path such as `Shelf / Top / Row / Box`. Existing levels are reused and missing levels are created in one submission. **Inside** optionally starts the path below an existing place, and resets to the top level afterward. To fix a mistake, choose **Edit** next to a location. You can rename it or choose a new **Inside** location. Paper copies, stickers, and history stay attached, and any locations inside it move with it. You can also type a new path while moving a paper copy from its document. Its sticker code stays the same. New paper stickers print no location, so moving a copy never makes their text stale; older stickers that printed a location can be reprinted. **Delete location** asks you to confirm first. It works only when the location is empty, so move its paper copies and any locations inside it somewhere else first. Location labels show the innermost places when the full path is too long.
 
 ## Sharing
 
 ### Expiring share links
 
-To give someone a document without an account, open **Share original** in its document panel, choose a 1, 7, or 30-day expiry, and create a link. Copy it while it is shown: Ripiano stores only a hash of the token and cannot display that URL later. Anyone with the URL can download the original without signing in. You can revoke an active link at any time; moving a document to Trash revokes its links permanently, even if the document is restored. A link only exposes original file bytes, not notes, tags, OCR text, or the rest of the archive. On a NAS, the recipient must be able to reach the HTTPS `RIPIANO_PUBLIC_ORIGIN`; a Tailscale-only address only works for people on that tailnet.
+To give someone a document without an account, open **Share original** in its document panel, choose a 1, 7, or 30-day expiry, and create a link. Copy it while it is shown: Ripiano stores only a hash of the token and cannot display that URL later. Anyone with the URL can download the original without signing in. You can revoke an active link at any time; moving a document to Trash revokes its links permanently, even if the document is restored. A link only exposes original file bytes, not notes, tags, OCR text, or the rest of the archive. On a server, the recipient must be able to reach the HTTPS `RIPIANO_PUBLIC_ORIGIN`; a Tailscale-only address only works for people on that tailnet.
 
 ### Share and email
 
@@ -469,10 +469,10 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 **Background job controls:**
 - **Cancel** takes a queued or processing document out of processing. It stays in your archive, marked as not processed, and **Retry OCR** queues it again. You can cancel a document that is being processed at any time, for example when it seems stuck; whatever the worker was doing for it is discarded. The worker itself stays on that file until its current text recognition step ends (up to 55 minutes for a very large scan), so with the default single worker a **Retry OCR** or the next upload waits behind it.
 - **Stopped workers:** the Library row, the open document, the Overview, and a retried Inbox card show the same "taking longer than usual" note. While a document is processed, the worker reports every 30 seconds. If it stops reporting for 2 minutes (the worker was restarted, killed, or ran out of memory), the document is marked as stalled and you can **Retry OCR** or **Cancel** it. The scheduler checks every minute and puts it back in the queue once two checks in a row find it stalled, so about 3–4 minutes after the worker stopped; one late report (a clock change, a short database outage) is not counted. A document that stops its worker three times in a row is marked as failed instead of being retried again; **Retry OCR** starts that count afresh, and it is kept apart from failed text recognition. If the worker was alive after all, its late result is discarded: it cannot undo your Cancel or run workflows a second time. Processing again never creates duplicate parts of a barcode-split scan, and files left behind by a stopped run are removed when a worker starts and as soon as the stopped run is noticed (a few minutes). The every-minute check runs on the maintenance worker, so it is not held up by a long text recognition; during a long backup it waits for the backup to finish.
-- **No OCR worker running:** each worker reports every 30 seconds, even while it is busy with a long scan. When documents have been waiting for more than 2 minutes and the OCR worker has not reported for 2 minutes (it was stopped, killed, or ran out of memory), Background jobs and the Overview say so and show since when documents are waiting; start the `worker` container again and they are processed once each. Documents that could not be handed to the queue server (Valkey down) are reported as waiting for it, not as being processed. A waiting document is queued once: the every-minute check sends it again only if it never reached the queue server, or if the OCR queue is empty although it has been waiting for more than 5 minutes (the queue server lost it), so the queue count in the Overview stays at most one per waiting document however long the worker is stopped. The `worker` and `maintenance_worker` containers also have a light health check (the age of a file their heartbeat touches), so the NAS container list shows a worker that stopped reporting as unhealthy. In the Library a queued document shows **Waiting** and one being processed shows **Processing**; the Overview counts both, like Background jobs. The archive owner is also told on the Overview when the maintenance worker (backups and scheduled checks) is not running.
+- **No OCR worker running:** each worker reports every 30 seconds, even while it is busy with a long scan. When documents have been waiting for more than 2 minutes and the OCR worker has not reported for 2 minutes (it was stopped, killed, or ran out of memory), Background jobs and the Overview say so and show since when documents are waiting; start the `worker` container again and they are processed once each. Documents that could not be handed to the queue server (Valkey down) are reported as waiting for it, not as being processed. A waiting document is queued once: the every-minute check sends it again only if it never reached the queue server, or if the OCR queue is empty although it has been waiting for more than 5 minutes (the queue server lost it), so the queue count in the Overview stays at most one per waiting document however long the worker is stopped. The `worker` and `maintenance_worker` containers also have a light health check (the age of a file their heartbeat touches), so the server container list shows a worker that stopped reporting as unhealthy. In the Library a queued document shows **Waiting** and one being processed shows **Processing**; the Overview counts both, like Background jobs. The archive owner is also told on the Overview when the maintenance worker (backups and scheduled checks) is not running.
 - **Retry OCR**, **Retry** (permanent deletion), and **Retry** (learning) restart failed work.
 - Failed workflow runs are listed for information; workflows never retry a run by themselves.
-- Backups and NAS browse copies keep their own cancel and retry controls under **Backups**.
+- Backups and browse copies keep their own cancel and retry controls under **Backups**.
 
 ### Offline
 
@@ -508,9 +508,9 @@ Scheduled or manual checksum-verified backups are written to the mounted backup 
 
 See [Backup and restore](BACKUP_RESTORE.md) for the layout, schedule, and clean-stack recovery.
 
-### NAS browse copy
+### browse copy
 
-In **Backups**, **Build browse copy** writes a human-readable, owner-scoped year/tag tree to the mounted NAS backup volume under `browse/owners/.../complete`. It includes the preserved original, available searchable PDF, OCR text, and metadata for each active document. This is an on-demand copy for NAS browsing; the checksum-verified restore snapshots remain separately under `complete`. Rebuild after changing titles or tags. The owner can cancel a backup or browse copy while it is queued, and retry a failed or cancelled run; a retry is recorded as a new run. An active run cannot be interrupted because a partial output could be misleading.
+In **Backups**, **Build browse copy** writes a human-readable, owner-scoped year/tag tree to the mounted backup volume under `browse/owners/.../complete`. It includes the preserved original, available searchable PDF, OCR text, and metadata for each active document. This is an on-demand copy for browsing on the server; the checksum-verified restore snapshots remain separately under `complete`. Rebuild after changing titles or tags. The owner can cancel a backup or browse copy while it is queued, and retry a failed or cancelled run; a retry is recorded as a new run. An active run cannot be interrupted because a partial output could be misleading.
 
 ### Move to a new server
 
@@ -539,11 +539,11 @@ The screenshots come from the running development stack with fictional PDF docum
 - [Architecture](ARCHITECTURE.md): services, data model, classification, agents, security, deployment, and backup.
 - [Backup and restore](BACKUP_RESTORE.md): mounted volume layout, schedule, and clean-stack recovery.
 - [Agent access](AGENT_ACCESS.md): named MCP grants, permissions, and privacy boundaries.
-- [Optional local Mac classifier](../agents/local_classifier/README.md): Ollama through MCP, 10:00 LaunchAgent, and missed-run catch-up.
+- [Optional local classifier](../agents/local_classifier/README.md): Ollama through MCP, 10:00 LaunchAgent, and missed-run catch-up.
 - [Implementation plan](IMPLEMENTATION_PLAN.md): build order and verification gates.
 - [Quality judges](QUALITY_JUDGES.md): the 9.5 target, independent review rubric, and release blockers.
 - [Design system](DESIGN_SYSTEM.md): Ripiano colors, shared controls, focus behavior, and mobile density.
-- [NAS deployment](../deploy/README.md): digest-pinned images, NAS volumes, HTTPS, and backup mount.
+- [Server deployment](../deploy/README.md): digest-pinned images, mounted volumes, HTTPS, and backup mount.
 - [Android app](../apps/android/README.md), [contributing](../CONTRIBUTING.md), and [security policy](../SECURITY.md).
 
 The planning documents remain the implementation baseline. No Paperless source code is included in this repository.

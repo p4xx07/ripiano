@@ -3,7 +3,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 // Round-11 judge regressions owned by the web slice. Judge 3: M1 a jump to the filing suggestions near the top of the
 // document on a phone, M2 move or mark a paper copy right on the sticker result, L1 workflow summaries in plain English,
 // L2 "offline" only when the device has no connection. Judge 2: M3 (same as judge 3 M2, from the label's QR address),
-// L1 Overview plurals, L2 "No backup yet" for the owner, L3 locations in tree order, L5 one name for NAS folders.
+// L1 Overview plurals, L2 "No backup yet" for the owner, L3 locations in tree order, L5 one name for mounted folders.
 // Every state is simulated with page.route on made-up records, so nothing is created or left on the shared stack.
 const username = process.env.RIPIANO_E2E_USERNAME;
 const password = process.env.RIPIANO_E2E_PASSWORD;
@@ -223,9 +223,9 @@ test("judge 3 L1 / judge 2 L5: workflow summaries read as sentences and name the
   await page.goto("/workflows");
   const card = page.locator(".mail-card").filter({ hasText: "R11 summary" });
   await expect(card).toContainText(
-    "When I change a document, if it came from a NAS folder and its file name matches *.pdf and it is tagged Family and its sender is City office and its type is Notice: add a note.",
+    "When I change a document, if it came from a mounted folder and its file name matches *.pdf and it is tagged Family and its sender is City office and its type is Notice: add a note.",
   );
-  await expect(page.getByRole("group", { name: "Came from" }).getByRole("checkbox", { name: "NAS folder" })).toBeAttached();
+  await expect(page.getByRole("group", { name: "Came from" }).getByRole("checkbox", { name: "mounted folder" })).toBeAttached();
   await expect(page.getByRole("group", { name: "Came from" }).getByRole("checkbox", { name: "WebDAV" })).toBeAttached();
 });
 
@@ -235,7 +235,7 @@ test("judge 3 L1 Italian: workflow summaries read as sentences", async ({ page }
   await mockWorkflows(page);
   await page.goto("/workflows");
   const card = page.locator(".mail-card").filter({ hasText: "R11 summary" });
-  await expect(card).toContainText("se proviene da una cartella del NAS e il nome del file corrisponde a *.pdf e ha l'etichetta Family e il mittente è City office e il tipo è Notice");
+  await expect(card).toContainText("se proviene da una cartella montata e il nome del file corrisponde a *.pdf e ha l'etichetta Family e il mittente è City office e il tipo è Notice");
 });
 
 function overview(backup: { status: string; at: string } | null) {
@@ -261,7 +261,7 @@ test("judge 2 L1/L2: Overview says '1 exact copy', and the owner sees 'No backup
   await expect(attention).toContainText("1 mailbox has a problem");
   await expect(attention).toContainText("1 workflow run failed this week");
   await expect(attention).not.toContainText("Backups are visible to the archive owner.");
-  await expect(page.getByText("NAS folder").first()).toBeVisible();
+  await expect(page.getByText("mounted folder").first()).toBeVisible();
   const toBackups = attention.getByRole("button", { name: "No backup yet · Open Backups" });
   await toBackups.click();
   await expect(page).toHaveURL(/\/backups$/);
@@ -300,7 +300,7 @@ test("judge 1 M1: Storage paths and the sender/type forms have visible labels, t
   await expect(card.getByText("Folder template", { exact: true })).toBeVisible();
   const template = card.getByRole("textbox", { name: "Folder template" });
   await expect(template).toHaveValue("{correspondent}/{year}");
-  await expect(template).toHaveAccessibleDescription(/separated by \/.*\{correspondent\}\/\{year\} gives, for example, City office\/2026/);
+  await expect(template).toHaveAccessibleDescription(/\{correspondent\}\/\{year\} becomes City office\/2026.*separated by \//);
   await expect(card.locator("#storage-template-hint")).toContainText("You can use {correspondent} {year}");
   for (const input of [card.getByRole("textbox", { name: "Storage path name" }), template]) {
     expect(await input.evaluate((node) => getComputedStyle(node).borderTopLeftRadius)).not.toBe("0px");
@@ -319,7 +319,7 @@ test("judge 1 M1 Italian: the Storage paths labels and hint are translated", asy
   await page.goto("/tags");
   const card = page.getByRole("region", { name: "Percorsi di archiviazione" });
   await expect(card.getByText("Modello di cartella", { exact: true })).toBeVisible();
-  await expect(card.getByRole("textbox", { name: "Modello di cartella" })).toHaveAccessibleDescription(/separate da \//);
+  await expect(card.getByRole("textbox", { name: "Modello di cartella" })).toHaveAccessibleDescription(/separati da \//);
 });
 
 const ROW_IDS = ["00000000-0000-4000-8000-0000000001a1", "00000000-0000-4000-8000-0000000001a2", "00000000-0000-4000-8000-0000000001a3"];

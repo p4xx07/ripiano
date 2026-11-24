@@ -106,7 +106,7 @@ test("Move without changing the list keeps the copy's location, and a real move 
   await list.selectOption(second.id);
   await move.focus();
   await page.keyboard.press("Enter");
-  await expect(dialog.getByRole("status").filter({ hasText: "moved" })).toContainText("print it again");
+  await expect(dialog.getByRole("status").filter({ hasText: "moved" })).toContainText("can be reprinted");
   await expect.poll(location).toBe(second.id);
   await expect(move).toBeFocused();
   await expect(list).toHaveValue(second.id);

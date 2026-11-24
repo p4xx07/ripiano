@@ -12,7 +12,7 @@ const STORE = "pending";
  *  Entries saved before it existed have none and get one when they are sent. */
 export type PendingUpload = { id: string; owner: string; name: string; type: string; blob: Blob; addedAt: number; scanId?: string };
 
-/** A random UUID (version 4). crypto.randomUUID needs a secure context; a NAS on plain http does not have one. */
+/** A random UUID (version 4). crypto.randomUUID needs a secure context; a server on plain http does not have one. */
 export function newScanId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   bytes[6] = (bytes[6] & 0x0f) | 0x40;

@@ -181,7 +181,8 @@ export default function PhysicalPanel({
         const result = await request<Lookup>(`/api/stickers/${encodeURIComponent(normalized)}`);
         setFound(result);
         setFoundTarget(result.copy.location_id ?? "");
-        setNotice(m.stickerFound(result.document.title, result.copy.location_path.join(" / "), Boolean(result.copy.missing_at)));
+        setNotice(result.copy.reserved_at ? m.reservedCodeFound(result.document.title)
+          : m.stickerFound(result.document.title, result.copy.location_path.join(" / "), Boolean(result.copy.missing_at)));
       }
     } catch (cause) {
       // A 404 (also the proxy's HTML page for an address the API does not know) means no such sticker.
@@ -465,14 +466,15 @@ export default function PhysicalPanel({
               <div className="sticker-code">{found.copy.sticker_code}</div>
               <h3 id="sticker-result-title">{found.document.title}</h3>
               {found.replaced_label && <p className="sticker-result-hint">{m.replacedSticker(found.replaced_label, found.copy.sticker_code)}</p>}
+              {found.copy.reserved_at && <p className="sticker-result-hint">{m.reservedCode}</p>}
               {found.copy.missing_at && <p className="copy-missing-label">{m.copyMissing}</p>}
-              <p>
+              {!found.copy.reserved_at && <p>
                 <MapPin size={16} />{" "}
                 {found.copy.missing_at ? m.lastKnown : ""}{found.copy.location_path.join(" / ") ||
                   m.notAssigned}
-              </p>
+              </p>}
               {/* The usual next step after scanning a sticker: put the paper somewhere else, here and now. */}
-              {found.copy.missing_at ? (
+              {found.copy.reserved_at ? null : found.copy.missing_at ? (
                 <p className="sticker-result-hint">{m.markFoundFirst}</p>
               ) : (
                 <form className="copy-move sticker-result-move" onSubmit={(event) => { event.preventDefault(); void moveFound(); }}>
@@ -490,7 +492,7 @@ export default function PhysicalPanel({
                   <Button pending={copyBusy} aria-label={m.moveCopyButton(found.copy.sticker_code)}>{m.move}</Button>
                 </form>
               )}
-              <div className="copy-actions sticker-result-actions">
+              {!found.copy.reserved_at && <div className="copy-actions sticker-result-actions">
                 <button type="button" aria-disabled={copyBusy || undefined}
                   aria-label={found.copy.missing_at ? m.markFoundFor(found.copy.sticker_code) : m.markMissingFor(found.copy.sticker_code)}
                   onClick={() => void setFoundMissing(!found.copy.missing_at)}>
@@ -499,7 +501,7 @@ export default function PhysicalPanel({
                 <a href={`/api/copies/${found.copy.id}/label`} target="_blank" rel="noreferrer" aria-label={m.printStickerFor(found.copy.sticker_code)}>
                   <Printer size={16} aria-hidden="true" /> {m.printSticker}
                 </a>
-              </div>
+              </div>}
               <Button
                 variant="secondary"
                 onClick={() => onOpenDocument(found.document.id)}

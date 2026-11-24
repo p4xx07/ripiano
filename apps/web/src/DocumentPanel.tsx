@@ -202,6 +202,8 @@ export default function DocumentPanel({
     tagPathLabel(a, availableById).localeCompare(tagPathLabel(b, availableById)));
   const [locations, setLocations] = useState<Location[]>([]);
   const [copies, setCopies] = useState<PhysicalCopy[]>(initial.physical_copies);
+  const reservedCopy = copies.find((copy) => Boolean(copy.reserved_at));
+  const paperCopies = copies.filter((copy) => !copy.reserved_at);
   const [newLocation, setNewLocation] = useState("");
   const [paperCategories, setPaperCategories] = useState<PaperCategory[]>([]);
   const [newCategory, setNewCategory] = useState("VAR");
@@ -757,7 +759,7 @@ export default function DocumentPanel({
     onSaved(await request<Document>(`/api/documents/${current.id}`));
   }
 
-  async function createCopy() {
+  async function createCopy(reserveOnly = false) {
     if (busy) return;
     setBusy(true);
     setError("");
@@ -765,12 +767,13 @@ export default function DocumentPanel({
     try {
       const created = await request<PhysicalCopy>(`/api/documents/${current.id}/copies`, {
         method: "POST",
-        body: JSON.stringify({ location_id: newLocation || null, category_prefix: newCategory }),
+        body: JSON.stringify({ location_id: reserveOnly ? null : newLocation || null, category_prefix: newCategory, reserve_only: reserveOnly }),
       });
       await refreshCopies();
       setNewLocation("");
       // Announced like a move (round-6 judge 2 L1).
-      setCopyNotice(m.copyCreated(created.sticker_code, created.location_path.join(" / ")));
+      setCopyNotice(reserveOnly ? m.codeReserved(created.sticker_code) : reservedCopy
+        ? m.reservedCodeUsed(created.sticker_code) : m.copyCreated(created.sticker_code, created.location_path.join(" / ")));
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : m.createStickerError,
@@ -783,7 +786,8 @@ export default function DocumentPanel({
   async function replaceCopyLabel(copy: PhysicalCopy) {
     if (busy) return;
     const prefix = replacementCategories[copy.id] ?? copy.category_prefix ?? "VAR";
-    if (!window.confirm(m.confirmReplaceLabel(copy.sticker_code, prefix))) return;
+    if (!window.confirm(copy.reserved_at ? m.confirmReplaceReserved(copy.sticker_code, prefix)
+      : m.confirmReplaceLabel(copy.sticker_code, prefix))) return;
     setBusy(true);
     setError("");
     setCopyNotice("");
@@ -792,7 +796,8 @@ export default function DocumentPanel({
         method: "POST", body: JSON.stringify({ category_prefix: prefix }),
       });
       await refreshCopies();
-      setCopyNotice(m.labelReplaced(result.previous_code, result.copy.sticker_code));
+      setCopyNotice(copy.reserved_at ? m.reservedCodeChanged(result.previous_code, result.copy.sticker_code)
+        : m.labelReplaced(result.previous_code, result.copy.sticker_code));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.replaceLabelError);
     } finally {
@@ -1203,8 +1208,9 @@ export default function DocumentPanel({
             <button type="button" className="text-action" onClick={() => {
               paperSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
               requestAnimationFrame(() => (copies.length ? paperSectionRef.current : newCategorySelectRef.current)?.focus({ preventScroll: true }));
-            }}>{copies.length ? m.viewPaperCopy : m.keepPaperCopy}</button>
-            <span>{copies.length ? m.paperSummary(copies[0].sticker_code, copies[0].location_path.join(" / "), copies.length) : m.digitalOnlyBrief}</span>
+            }}>{paperCopies.length ? m.viewPaperCopy : m.keepPaperCopy}</button>
+            <span>{paperCopies.length ? m.paperSummary(paperCopies[0].sticker_code, paperCopies[0].location_path.join(" / "), paperCopies.length)
+              : reservedCopy ? m.reservedSummary(reservedCopy.sticker_code) : m.digitalOnlyBrief}</span>
           </div>
           {attentionSuggestion?.kind === "payment" && actionStatus === "none" && <div className="attention-suggestion">
             <strong>{m.possiblePaymentDue(formatDate(`${attentionSuggestion.date}T00:00:00`))}</strong>
@@ -1460,10 +1466,27 @@ export default function DocumentPanel({
             <MapPin size={17} /> {m.paperCopies}
           </h3>
           {copyNotice && <p className="bulk-notice" role="status">{copyNotice}</p>}
-          {!copies.length && (
+          {!paperCopies.length && !reservedCopy && (
             <p>{m.digitalOnly}</p>
           )}
-          {copies.map((copy) => (
+          {reservedCopy && <div className="copy-card">
+            <strong>{reservedCopy.sticker_code}</strong>
+            <span>{m.reservedDigitalOnly}</span>
+            <p>{m.reservedCopyHint}</p>
+            <details className="replace-paper-label">
+              <summary>{m.changeReservedTopic}</summary>
+              <label className="detail-label">{m.paperCategory}
+                <select aria-label={m.replacementCategoryFor(reservedCopy.sticker_code)}
+                  value={replacementCategories[reservedCopy.id] ?? reservedCopy.category_prefix ?? "VAR"}
+                  onChange={(event) => setReplacementCategories((current) => ({ ...current, [reservedCopy.id]: event.target.value }))}>
+                  {paperCategories.map((category) => <option key={category.id} value={category.prefix}>{category.prefix} · {category.name}</option>)}
+                </select>
+              </label>
+              <Button type="button" variant="secondary" pending={busy} disabled={!paperCategories.length}
+                onClick={() => void replaceCopyLabel(reservedCopy)}>{m.changeCode}</Button>
+            </details>
+          </div>}
+          {paperCopies.map((copy) => (
             <div className={`copy-card ${copy.missing_at ? "copy-card-missing" : ""}`} key={copy.id}>
               <strong>{copy.sticker_code}</strong>
               <span>
@@ -1542,15 +1565,15 @@ export default function DocumentPanel({
               )}
             </div>
           ))}
-          <details className="additional-paper-copy" open={copies.length === 0 || undefined}>
-            {copies.length > 0 && <summary>{m.addAnotherCopy}</summary>}
+          <details className="additional-paper-copy" open={paperCopies.length === 0 || undefined}>
+            {paperCopies.length > 0 && <summary>{m.addAnotherCopy}</summary>}
             <div className="new-copy">
-              <label className="detail-label">{m.paperCategory} <small>{m.paperCategoryHint}</small>
+              {!reservedCopy && <label className="detail-label">{m.paperCategory} <small>{m.paperCategoryHint}</small>
                 <select ref={newCategorySelectRef} value={newCategory} onChange={(event) => { setNewCategory(event.target.value); setCategoryTouched(true); }}>
                   {paperCategories.map((category) => <option key={category.id} value={category.prefix}>{category.prefix} · {category.name}</option>)}
                 </select>
                 {paperSuggestion.tag && !categoryTouched && <small>{m.paperCategorySuggested(paperSuggestion.tag)}</small>}
-              </label>
+              </label>}
               <label className="detail-label">{m.paperLocation}
               <select
               aria-label={m.newCopyLocation}
@@ -1573,10 +1596,15 @@ export default function DocumentPanel({
               disabled={!paperCategories.length}
               onClick={() => void createCopy()}
             >
-              <Plus size={16} /> {m.createSticker}
+              <Plus size={16} /> {reservedCopy ? m.useReservedCode : m.createSticker}
             </Button>
             </div>
           </details>
+          {!copies.length && <details className="additional-paper-copy reserve-code-option">
+            <summary>{m.reserveCodeAdvanced}</summary>
+            <p>{m.reserveCodeHint}</p>
+            <Button type="button" variant="secondary" pending={busy} disabled={!paperCategories.length} onClick={() => void createCopy(true)}>{m.reserveCode}</Button>
+          </details>}
           {!locations.length && (
             <button className="text-action" onClick={() => leave(onOpenLocations)}>
               {m.createLocationFirst} <Plus size={15} />
@@ -1588,7 +1616,7 @@ export default function DocumentPanel({
           <p>{m.trashIntro}</p>
           {confirmTrash ? <div className="trash-confirm">
             <strong>{m.trashConfirm(current.title)}</strong>
-            {copies.length > 0 && <p>{m.trashStickers(copies.length)}</p>}
+            {paperCopies.length > 0 && <p>{m.trashStickers(paperCopies.length)}</p>}
             <Button ref={confirmTrashRef} type="button" disabled={busy} onClick={() => void moveToTrash()}><Trash2 size={16} /> {m.confirmMove}</Button>
             <Button type="button" variant="secondary" disabled={busy} onClick={() => setConfirmTrash(false)}>{m.cancel}</Button>
           </div> : <Button ref={trashButtonRef} type="button" variant="secondary" disabled={busy} onClick={() => setConfirmTrash(true)}><Trash2 size={16} /> {m.moveToTrash}</Button>}

@@ -72,6 +72,7 @@ def copy_json(copy):
         "location_id": str(copy.location_id) if copy.location_id else None,
         "location_path": location_path(copy.location),
         "missing_at": copy.missing_at.isoformat() if copy.missing_at else None,
+        "reserved_at": copy.reserved_at.isoformat() if copy.reserved_at else None,
         "created_at": copy.created_at.isoformat(),
     }
 
@@ -385,9 +386,27 @@ def document_copies(request, document_id):
     body = _body(request)
     if body is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
+    reserve_only = body.get("reserve_only", False)
+    if not isinstance(reserve_only, bool):
+        return JsonResponse({"error": "Invalid code reservation"}, status=400)
+    if reserve_only and body.get("location_id") is not None:
+        return JsonResponse({"error": "A reserved code cannot have a paper location"}, status=400)
     location = _location(request.user, body.get("location_id"))
     if body.get("location_id") and location is None:
         return JsonResponse({"error": "Location not found"}, status=400)
+    reserved = document.physical_copies.select_for_update().filter(reserved_at__isnull=False).first()
+    if reserved:
+        if reserve_only:
+            return JsonResponse(copy_json(reserved), status=200)
+        reserved.reserved_at = None
+        reserved.location = location
+        reserved.save(update_fields=["reserved_at", "location"])
+        Movement.objects.create(physical_copy=reserved, kind=Movement.Kind.PLACEMENT if location else Movement.Kind.CREATED,
+                                to_location=location, moved_by=request.user,
+                                note="Initial placement" if location else "Sticker created")
+        return JsonResponse(copy_json(reserved), status=200)
+    if reserve_only and document.physical_copies.exists():
+        return JsonResponse({"error": "This document already has a paper code"}, status=409)
     _ensure_paper_categories(request.user)
     prefix = body.get("category_prefix", "VAR")
     if not isinstance(prefix, str):
@@ -399,7 +418,10 @@ def document_copies(request, document_id):
     if allocated is None:
         return JsonResponse({"error": "Could not allocate a sticker code"}, status=503)
     number, code = allocated
-    copy = PhysicalCopy.objects.create(document=document, sticker_code=code, paper_category=category, paper_number=number, location=location)
+    copy = PhysicalCopy.objects.create(document=document, sticker_code=code, paper_category=category, paper_number=number,
+                                       location=location, reserved_at=timezone.now() if reserve_only else None)
+    if reserve_only:
+        return JsonResponse(copy_json(copy), status=201)
     if location:
         Movement.objects.create(physical_copy=copy, kind=Movement.Kind.PLACEMENT, to_location=location, moved_by=request.user, note="Initial placement")
     else:
@@ -466,6 +488,8 @@ def copy_detail(request, copy_id):
         copy = _locked_copy(request.user, copy_id)
         if copy is None:
             return JsonResponse({"error": "Physical copy not found"}, status=404)
+        if copy.reserved_at:
+            return JsonResponse({"error": "Keep a paper copy before assigning a location"}, status=409)
         if copy.missing_at:
             return JsonResponse({"error": "Mark this paper copy found before moving it"}, status=409)
         if copy.location_id != (location.id if location else None):
@@ -490,6 +514,8 @@ def copy_status(request, copy_id):
         copy = _locked_copy(request.user, copy_id)
         if copy is None:
             return JsonResponse({"error": "Physical copy not found"}, status=404)
+        if copy.reserved_at:
+            return JsonResponse({"error": "No paper copy exists for this reserved code"}, status=409)
         if bool(copy.missing_at) == body["missing"]:
             return JsonResponse({"error": "Paper copy already has this status"}, status=409)
         copy.missing_at = timezone.now() if body["missing"] else None

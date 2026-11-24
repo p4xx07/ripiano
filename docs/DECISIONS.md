@@ -153,6 +153,10 @@ Implemented 2026-11-20, widened the same day after the independent review (`.omo
 
 **Open for the owner:** this is the safe default, chosen without you. You may prefer an explicit per-workflow switch ("also run sharing and notifications when an agent made the change") for workflows you trust; say so and it will be added. Held-back runs are visible in the workflow's run history only; a place for them under Needs attention is not built yet.
 
+## D13 — ASN barcode and paper sticker codes (2026-11-24) — Done (`f1df164`)
+
+ASN is an optional numeric barcode field used by uploaded scans, including barcode-based page splitting. It is not the normal document code. Sequential topic codes such as `MED-00042` are the visible sticker codes for paper originals. Digital-only documents have no code by default; an advanced action can reserve a sticker code for a document that may be printed later. Reserving does not create a paper copy, and registering one later uses that same code. The paper-copy filter and paper archive must distinguish a reservation from actual paper.
+
 ## Remaining work that needs no further decision
 
 In the owner's suggested order:

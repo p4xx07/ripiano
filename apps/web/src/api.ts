@@ -110,6 +110,7 @@ export type PhysicalCopy = {
   location_id: string | null;
   location_path: string[];
   missing_at: string | null;
+  reserved_at?: string | null;
   created_at: string;
 };
 

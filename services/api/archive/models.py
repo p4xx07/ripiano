@@ -471,14 +471,18 @@ class PhysicalCopy(models.Model):
     paper_number = models.PositiveBigIntegerField(null=True, blank=True)
     location = models.ForeignKey(Location, null=True, blank=True, on_delete=models.PROTECT, related_name="physical_copies")
     missing_at = models.DateTimeField(null=True, blank=True)
+    # A code can be reserved for a digital document before any paper exists.
+    reserved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["created_at"]
         constraints = [
             models.UniqueConstraint(fields=["paper_category", "paper_number"], condition=Q(paper_category__isnull=False), name="unique_paper_number_per_category"),
+            models.UniqueConstraint(fields=["document"], condition=Q(reserved_at__isnull=False), name="one_reserved_code_per_document"),
             models.CheckConstraint(condition=(Q(paper_category__isnull=True, paper_number__isnull=True)
                                               | Q(paper_category__isnull=False, paper_number__isnull=False)), name="paper_category_number_together"),
+            models.CheckConstraint(condition=Q(reserved_at__isnull=True) | Q(location__isnull=True), name="reserved_code_has_no_location"),
         ]
 
 

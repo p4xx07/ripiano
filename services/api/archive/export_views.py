@@ -72,6 +72,7 @@ def _metadata(document):
             "sticker_code": copy.sticker_code,
             "location": location_path(copy.location),
             "missing_at": copy.missing_at.isoformat() if copy.missing_at else None,
+            "reserved_at": copy.reserved_at.isoformat() if copy.reserved_at else None,
             "movements": [{
                 "kind": move.kind, "from": location_path(move.from_location),
                 "to": location_path(move.to_location), "note": move.note,

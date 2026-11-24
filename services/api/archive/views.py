@@ -551,7 +551,7 @@ def documents(request):
         if "document_type_id" in filters:
             queryset = queryset.filter(document_type_id=filters["document_type_id"])
         if "copy_status" in filters:
-            paper_copies = PhysicalCopy.objects.filter(document_id=OuterRef("pk"))
+            paper_copies = PhysicalCopy.objects.filter(document_id=OuterRef("pk"), reserved_at__isnull=True)
             if copy_status == "missing":
                 queryset = queryset.filter(Exists(paper_copies.filter(missing_at__isnull=False)))
             else:

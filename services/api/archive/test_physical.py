@@ -13,6 +13,70 @@ from archive.models import Document, Location, Movement, PaperCategory, PaperSti
 
 
 @pytest.mark.django_db
+def test_digital_document_can_reserve_a_code_and_use_it_for_paper_later():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    document = Document.objects.create(
+        owner=owner, title="Medical record", original_name="record.pdf",
+        original_path="originals/record.pdf", original_mime="application/pdf",
+        original_sha256="a" * 64, original_size=1, status=Document.Status.READY, asn=42,
+    )
+    client = Client()
+    client.force_login(owner)
+    endpoint = f"/api/documents/{document.id}/copies"
+    assert client.post(endpoint, json.dumps({"reserve_only": "yes"}), content_type="application/json").status_code == 400
+    assert client.post(endpoint, json.dumps({"reserve_only": True, "location_id": "invalid"}), content_type="application/json").status_code == 400
+
+    reserved = client.post(endpoint, json.dumps({"reserve_only": True, "category_prefix": "MED"}), content_type="application/json")
+    assert reserved.status_code == 201
+    code = reserved.json()["sticker_code"]
+    copy_id = reserved.json()["id"]
+    assert code == "MED-00001" and reserved.json()["reserved_at"]
+    assert reserved.json()["location_id"] is None
+    assert not Movement.objects.filter(physical_copy_id=copy_id).exists()
+    assert client.post(endpoint, json.dumps({"reserve_only": True, "category_prefix": "HOM"}), content_type="application/json").json()["id"] == copy_id
+    assert client.get("/api/documents", {"copy_status": "virtual"}).json()["documents"][0]["id"] == str(document.id)
+    assert client.get("/api/documents", {"copy_status": "paper"}).json()["documents"] == []
+    assert client.get("/api/documents", {"q": code}).json()["documents"][0]["id"] == str(document.id)
+    assert client.get(f"/api/stickers/{code}").json()["copy"]["reserved_at"]
+    assert client.patch(f"/api/copies/{copy_id}", json.dumps({"location_id": None}), content_type="application/json").status_code == 409
+    assert client.patch(f"/api/copies/{copy_id}/status", json.dumps({"missing": True}), content_type="application/json").status_code == 409
+
+    shelf = client.post("/api/locations", json.dumps({"name": "Shelf"}), content_type="application/json").json()
+    activated = client.post(endpoint, json.dumps({"location_id": shelf["id"], "category_prefix": "HOM"}), content_type="application/json")
+    assert activated.status_code == 200
+    assert activated.json()["id"] == copy_id and activated.json()["sticker_code"] == code
+    assert activated.json()["reserved_at"] is None and activated.json()["location_path"] == ["Shelf"]
+    assert Movement.objects.filter(physical_copy_id=copy_id).count() == 1
+    assert client.get("/api/documents", {"copy_status": "virtual"}).json()["documents"] == []
+    assert client.get("/api/documents", {"copy_status": "paper"}).json()["documents"][0]["id"] == str(document.id)
+    assert client.get(f"/api/locations/lookup/{shelf['sticker_code']}").json()["total"] == 1
+    document.refresh_from_db()
+    assert document.asn == 42
+
+
+@pytest.mark.django_db
+def test_reserved_code_can_change_topic_without_creating_paper():
+    owner = get_user_model().objects.create_user("owner", password="secure-password-1")
+    document = Document.objects.create(
+        owner=owner, title="Record", original_name="record.pdf", original_path="originals/record.pdf",
+        original_mime="application/pdf", original_sha256="b" * 64, original_size=1,
+    )
+    client = Client()
+    client.force_login(owner)
+    endpoint = f"/api/documents/{document.id}/copies"
+    reserved = client.post(endpoint, json.dumps({"reserve_only": True, "category_prefix": "VAR"}), content_type="application/json").json()
+    changed = client.post(f"/api/copies/{reserved['id']}/replace-label", json.dumps({"category_prefix": "MED"}), content_type="application/json")
+    assert changed.status_code == 200
+    assert changed.json()["copy"]["sticker_code"] == "MED-00001"
+    assert changed.json()["copy"]["reserved_at"]
+    assert client.get(f"/api/stickers/{reserved['sticker_code']}").json()["copy"]["sticker_code"] == "MED-00001"
+    assert client.get("/api/documents", {"copy_status": "virtual"}).json()["documents"][0]["id"] == str(document.id)
+    activated = client.post(endpoint, json.dumps({}), content_type="application/json").json()
+    assert activated["id"] == reserved["id"] and activated["sticker_code"] == "MED-00001"
+    assert activated["reserved_at"] is None
+
+
+@pytest.mark.django_db
 def test_sticker_location_move_and_owner_isolation():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     other = get_user_model().objects.create_user("other", password="secure-password-2")

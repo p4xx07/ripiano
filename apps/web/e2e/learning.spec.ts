@@ -14,9 +14,13 @@ test("learned suggestions can be relearned on demand and explain how reliable th
   await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
   await page.getByRole("button", { name: "Tags & filing", exact: true }).click();
   const panel = page.getByRole("region", { name: "Learned suggestions" });
-  await expect(panel).toContainText("Automatic filing stays off unless you choose it");
+  await expect(panel).toContainText("File a few documents yourself with senders, types, or tags");
   const automatic = panel.getByRole("checkbox", { name: /File new documents automatically when very confident/ });
   await expect(automatic).not.toBeChecked();
+  const checkBox = await automatic.boundingBox();
+  const optionTitle = await panel.getByText("File new documents automatically when very confident", { exact: true }).boundingBox();
+  expect(checkBox && optionTitle && Math.abs(checkBox.y - optionTitle.y)).toBeLessThan(20);
+  expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await automatic.click();
   await expect(automatic).toBeChecked();
   await expect.poll(async () => (await (await page.request.get("/api/filing-model")).json()).auto_apply).toBe(true);
@@ -50,6 +54,10 @@ test("automatic filing control remains usable on mobile", async ({ page }, testI
   const panel = page.getByRole("region", { name: "Learned suggestions" });
   const automatic = panel.getByRole("checkbox", { name: /File new documents automatically when very confident/ });
   await expect(automatic).not.toBeChecked();
+  const checkBox = await automatic.boundingBox();
+  const optionTitle = await panel.getByText("File new documents automatically when very confident", { exact: true }).boundingBox();
+  expect(checkBox && optionTitle && Math.abs(checkBox.y - optionTitle.y)).toBeLessThan(20);
+  expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await automatic.click();
   await expect(automatic).toBeChecked();
   await panel.screenshot({ path: testInfo.outputPath("auto-filing-mobile.png"), animations: "disabled" });

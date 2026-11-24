@@ -10,6 +10,7 @@ export default defineMessages({
   write: "Write an email",
   notConfigured: "Emailing documents is not turned on for this server. The administrator can enable it with RIPIANO_DOCUMENT_EMAIL=1 and the RIPIANO_SMTP settings. You can share a link instead.",
   formLabel: "Email this document",
+  from: "From",
   to: "To",
   toHint: "Up to 10 addresses, separated by commas",
   message: "Message",
@@ -18,7 +19,7 @@ export default defineMessages({
   original: "The original file",
   searchable: "The searchable PDF",
   notReadyYet: " (not ready yet)",
-  hint: "The subject is the document title, and the message says it comes from you through Ripiano. Replies go to your account’s email address, if it has one.",
+  hint: "The subject is the document title, and the message names you. Replies go to your account’s email address, if it has one.",
   send: "Send email",
   sendStatus: (status: SendStatus, recipients: string) => `${status === "sent" ? "Sent" : status === "failed" ? "Not sent" : "Sending"} to ${recipients}`,
 }, {
@@ -29,6 +30,7 @@ export default defineMessages({
   write: "Scrivi un'email",
   notConfigured: "L'invio di documenti via email non è attivo su questo server. L'amministratore può attivarlo con RIPIANO_DOCUMENT_EMAIL=1 e le impostazioni RIPIANO_SMTP. In alternativa puoi condividere un link.",
   formLabel: "Invia questo documento via email",
+  from: "Da",
   to: "A",
   toHint: "Fino a 10 indirizzi, separati da virgole",
   message: "Messaggio",
@@ -37,7 +39,7 @@ export default defineMessages({
   original: "Il file originale",
   searchable: "Il PDF ricercabile",
   notReadyYet: " (non ancora pronto)",
-  hint: "L'oggetto è il titolo del documento e il messaggio indica che arriva da te tramite Ripiano. Le risposte vanno all'indirizzo email del tuo account, se ne ha uno.",
+  hint: "L'oggetto è il titolo del documento e il messaggio indica il tuo nome. Le risposte vanno all'indirizzo email del tuo account, se ne ha uno.",
   send: "Invia email",
   sendStatus: (status: SendStatus, recipients: string) => `${status === "sent" ? "Inviata" : status === "failed" ? "Non inviata" : "Invio in corso"} a ${recipients}`,
 });

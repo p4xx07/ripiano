@@ -114,7 +114,7 @@ def test_trash_and_new_versions_revoke_bundles_and_tampered_originals_never_ship
 
 
 @pytest.mark.django_db
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", EMAIL_HOST="smtp.example.test", RIPIANO_DOCUMENT_EMAIL=True)
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", EMAIL_HOST="smtp.example.test", DEFAULT_FROM_EMAIL="archive@example.test", RIPIANO_DOCUMENT_EMAIL=True)
 def test_emailing_a_document_is_opt_in_verified_and_limited_per_recipient(owner, tmp_path, django_capture_on_commit_callbacks):
     from archive.tasks import send_document_email
 
@@ -123,7 +123,9 @@ def test_emailing_a_document_is_opt_in_verified_and_limited_per_recipient(owner,
     client.force_login(owner)
     endpoint = f"/api/documents/{document.id}/email"
     with override_settings(MEDIA_ROOT=tmp_path):
-        assert client.get(endpoint).json()["configured"] is True
+        email_settings = client.get(endpoint).json()
+        assert email_settings["configured"] is True
+        assert email_settings["from_email"] == "archive@example.test"
         assert client.post(endpoint, {"to": "not-an-address"}, content_type="application/json").status_code == 400
         assert client.post(endpoint, {"to": "a@example.test," * 120}, content_type="application/json").status_code == 400
         assert client.post(endpoint, {"to": "me@example.test", "attachment": "searchable"}, content_type="application/json").status_code == 409
@@ -132,7 +134,8 @@ def test_emailing_a_document_is_opt_in_verified_and_limited_per_recipient(owner,
         assert queued.status_code == 202 and len(callbacks) == 1 and queued.json()["recipients"] == "me@example.test, partner@example.test"
         send_document_email(queued.json()["id"])
     sent = outbox.outbox[0]
-    assert sent.to == ["me@example.test", "partner@example.test"] and sent.reply_to == ["owner@example.test"] and "For the files" in sent.body
+    assert sent.to == ["me@example.test", "partner@example.test"] and sent.from_email == "archive@example.test"
+    assert sent.reply_to == ["owner@example.test"] and "For the files" in sent.body
     assert sent.attachments[0][1] == (tmp_path / document.original_path).read_bytes()
     assert DocumentEmailSend.objects.get().status == "sent"
 

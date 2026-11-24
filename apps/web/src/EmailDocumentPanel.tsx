@@ -11,6 +11,7 @@ export default function EmailDocumentPanel({ documentId, searchableReady }: { do
   const m = useMessages(messages);
   const [opened, setOpened] = useState(false);
   const [configured, setConfigured] = useState(true);
+  const [fromEmail, setFromEmail] = useState("");
   const [sends, setSends] = useState<Send[]>([]);
   const [to, setTo] = useState("");
   const [message, setMessage] = useState("");
@@ -21,8 +22,9 @@ export default function EmailDocumentPanel({ documentId, searchableReady }: { do
 
   async function load() {
     try {
-      const result = await request<{ configured: boolean; sends: Send[] }>(`/api/documents/${documentId}/email`);
+      const result = await request<{ configured: boolean; from_email: string; sends: Send[] }>(`/api/documents/${documentId}/email`);
       setConfigured(result.configured);
+      setFromEmail(result.from_email);
       setSends(result.sends);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.loadError);
@@ -66,13 +68,14 @@ export default function EmailDocumentPanel({ documentId, searchableReady }: { do
         <form onSubmit={send} aria-label={m.formLabel}>
           {error && <div className="inline-error" role="alert">{error}</div>}
           {notice && <p className="bulk-notice" role="status">{notice}</p>}
-          <Field label={m.to} hint={m.toHint}>
+          {fromEmail && <p className="email-from">{m.from}: <strong>{fromEmail}</strong></p>}
+          <Field label={m.to} hint={m.toHint} className="detail-label">
             <input value={to} onChange={(event) => setTo(event.target.value)} autoCapitalize="none" inputMode="email" maxLength={500} required />
           </Field>
-          <Field label={m.message} hint={m.optional}>
+          <Field label={m.message} hint={m.optional} className="detail-label">
             <textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={2000} rows={3} />
           </Field>
-          <Field label={m.attach}>
+          <Field label={m.attach} className="detail-label">
             <select value={attachment} onChange={(event) => setAttachment(event.target.value as "original" | "searchable")}>
               <option value="original">{m.original}</option>
               <option value="searchable" disabled={!searchableReady}>{m.searchable}{searchableReady ? "" : m.notReadyYet}</option>

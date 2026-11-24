@@ -21,10 +21,10 @@
 - **Personal dashboard**: pin up to six live saved searches for bills, tickets, house papers, or anything else; see counts and recent matches, and optionally open the dashboard first on that device.
 - **Paper originals**: keep a paper copy only when useful; Ripiano suggests a broad topic from an unambiguous matching tag, then gives it a sequential code such as `MED-00042`. Its QR label finds the document and current shelf or box. Add or rename paper categories in the Paper archive; if you replace a mistaken label, the old QR still finds the copy. Old `R-…` and location labels still scan.
 - **Works on your phone**: install it from the browser on iPhone or Android; an Android app adds a document scanner.
-- **Family accounts**: everyone gets a private archive, and you can share single documents or send a link that expires.
+- **Family accounts**: everyone gets a private archive, and you can share single documents or send a link that expires. Optional document email shows the server's sending address before you send.
 - **Automatic imports**: optionally pull in files from email, a NAS folder, cloud storage, or a Telegram bot.
 - **Readable workflows**: choose a recipe, then configure it in a full-width editor with a live plain-language summary; optional conditions and specialist actions remain available.
-- **Private and backed up**: everything stays on your server, with two-step sign-in and scheduled, checked backups.
+- **Private and backed up**: everything stays on your server, with two-step sign-in and scheduled, checked backups. Optional folder templates shape the readable NAS copy without moving originals.
 - **AI if you want it**: give an AI assistant limited, revocable access; Ripiano never sends your files to a paid AI service.
 
 Original file bytes are synced before an upload completes. If a mounted filesystem rejects directory sync, Ripiano retries, completes the upload, and records a durability warning in server logs. Other storage I/O errors still fail the upload.

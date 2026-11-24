@@ -1252,6 +1252,15 @@ def document_detail(request, document_id):
             run_for_document(document, Workflow.Trigger.UPDATED)
         document = Document.objects.filter(pk=document.id).select_related("owner", "duplicate_of", "correspondent", "document_type", "email", "split_parent", "storage_path").prefetch_related("tag_links__tag", "physical_copies__location").get()
     payload = _document_json(document, access=level)
+    if level != document_access.OWNER:
+        # /api/jobs belongs to the signed-in person's own archive. A recipient still needs the status of
+        # this one document they can open; do not expose the owner's other queued documents.
+        if document.status in (Document.Status.PENDING, Document.Status.PROCESSING):
+            from .processing_status import processing_summary
+
+            payload["processing"] = processing_summary(Document.objects.filter(pk=document.pk))
+        else:
+            payload["processing"] = None
     response = JsonResponse(payload)
     response["ETag"] = f'"{payload["edit_version"]}"'
     return response

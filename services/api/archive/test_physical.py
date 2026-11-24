@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 from django.utils import timezone
 
-from archive.models import Document, Location, Movement, PhysicalCopy
+from archive.models import Document, Location, Movement, PaperCategory, PaperStickerAlias, PhysicalCopy
 
 
 @pytest.mark.django_db
@@ -33,7 +33,8 @@ def test_sticker_location_move_and_owner_isolation():
     response = client.post(f"/api/documents/{document.id}/copies", json.dumps({"location_id": box.json()["id"]}), content_type="application/json")
     assert response.status_code == 201
     copy = response.json()
-    assert copy["sticker_code"].startswith("R-")
+    assert copy["sticker_code"] == "VAR-00001"
+    assert copy["category_prefix"] == "VAR"
     assert copy["location_path"] == ["Shelf A", "Box 1"]
     assert copy["missing_at"] is None
     container = client.get(f"/api/locations/lookup/{shelf.json()['sticker_code']}")
@@ -95,6 +96,116 @@ def test_sticker_location_move_and_owner_isolation():
 
 
 @pytest.mark.django_db
+def test_paper_categories_have_owner_scoped_sequences_and_typed_lookup():
+    users = [get_user_model().objects.create_user(name, password=f"test-password-{index}") for index, name in enumerate(("alice", "bob"), 1)]
+    documents = [Document.objects.create(
+        owner=owner, title=f"Paper {index}", original_name=f"paper-{index}.pdf", original_path=f"originals/paper-{index}.pdf",
+        original_mime="application/pdf", original_sha256=f"{index:064x}", original_size=1, status=Document.Status.READY,
+    ) for index, owner in enumerate((users[0], users[0], users[1]), 1)]
+    client = Client()
+    client.force_login(users[0])
+    categories = client.get("/api/paper-categories")
+    assert categories.status_code == 200
+    assert [item["prefix"] for item in categories.json()["categories"]] == ["AUT", "EVT", "FIN", "HOM", "MED", "PER", "VAR"]
+    assert client.post("/api/paper-categories", json.dumps({"prefix": "MED", "name": "Duplicate"}), content_type="application/json").status_code == 409
+    assert client.post("/api/paper-categories", json.dumps({"prefix": "ASN", "name": "Wrong"}), content_type="application/json").status_code == 400
+    custom = client.post("/api/paper-categories", json.dumps({"prefix": "UNI", "name": "University"}), content_type="application/json")
+    assert custom.status_code == 201 and custom.json()["prefix"] == "UNI"
+    assert client.patch(f"/api/paper-categories/{custom.json()['id']}", json.dumps({"name": "Studies"}), content_type="application/json").json()["name"] == "Studies"
+    assert client.patch(f"/api/paper-categories/{custom.json()['id']}", json.dumps({"prefix": "NEW", "name": "Wrong"}), content_type="application/json").status_code == 400
+    first = client.post(f"/api/documents/{documents[0].id}/copies", json.dumps({"category_prefix": "MED"}), content_type="application/json")
+    second = client.post(f"/api/documents/{documents[1].id}/copies", json.dumps({"category_prefix": "MED"}), content_type="application/json")
+    home = client.post(f"/api/documents/{documents[1].id}/copies", json.dumps({"category_prefix": "HOM"}), content_type="application/json")
+    assert (first.status_code, second.status_code, home.status_code) == (201, 201, 201)
+    assert [item.json()["sticker_code"] for item in (first, second, home)] == ["MED-00001", "MED-00002", "HOM-00001"]
+    assert PaperCategory.objects.get(owner=users[0], prefix="MED").next_number == 3
+    assert PhysicalCopy.objects.get(pk=first.json()["id"]).paper_number == 1
+    for typed in ("MED-00001", "MED00001", "med-1", "med 1"):
+        found = client.get(f"/api/stickers/{typed}")
+        assert found.status_code == 200 and found.json()["document"]["id"] == str(documents[0].id)
+    assert client.get("/api/documents", {"q": "MED-00001"}).json()["documents"][0]["id"] == str(documents[0].id)
+    assert client.post(f"/api/documents/{documents[0].id}/copies", json.dumps({"category_prefix": "BOG"}), content_type="application/json").status_code == 400
+    client.force_login(users[1])
+    assert client.get(f"/api/stickers/{first.json()['sticker_code']}").status_code == 404
+    assert client.patch(f"/api/paper-categories/{custom.json()['id']}", json.dumps({"name": "Mine"}), content_type="application/json").status_code == 404
+    other = client.post(f"/api/documents/{documents[2].id}/copies", json.dumps({"category_prefix": "MED"}), content_type="application/json")
+    assert other.status_code == 201 and other.json()["sticker_code"] == "MED-00001"
+    assert client.get("/api/stickers/MED-00001").json()["document"]["id"] == str(documents[2].id)
+
+
+@pytest.mark.django_db
+def test_deleted_paper_code_is_not_reused():
+    owner = get_user_model().objects.create_user("owner", password="test-password-1")
+    document = Document.objects.create(owner=owner, title="Letter", original_name="letter.pdf", original_path="originals/letter.pdf",
+                                       original_mime="application/pdf", original_sha256="a" * 64, original_size=1)
+    client = Client()
+    client.force_login(owner)
+    created = client.post(f"/api/documents/{document.id}/copies", json.dumps({"category_prefix": "PER"}), content_type="application/json").json()
+    PhysicalCopy.objects.filter(pk=created["id"]).delete()
+    later = client.post(f"/api/documents/{document.id}/copies", json.dumps({"category_prefix": "PER"}), content_type="application/json").json()
+    assert created["sticker_code"] == "PER-00001" and later["sticker_code"] == "PER-00002"
+
+
+@pytest.mark.django_db
+def test_replacing_paper_label_keeps_old_qr_as_owner_scoped_alias():
+    owner = get_user_model().objects.create_user("owner", password="test-password-1")
+    other = get_user_model().objects.create_user("other", password="test-password-2")
+    document = Document.objects.create(owner=owner, title="Medical record", original_name="record.pdf", original_path="originals/record.pdf",
+                                       original_mime="application/pdf", original_sha256="a" * 64, original_size=1)
+    client = Client()
+    client.force_login(owner)
+    first = client.post(f"/api/documents/{document.id}/copies", json.dumps({"category_prefix": "MED"}), content_type="application/json").json()
+    assert client.post(f"/api/copies/{first['id']}/replace-label", json.dumps({"category_prefix": "NOPE"}), content_type="application/json").status_code == 400
+    replaced = client.post(f"/api/copies/{first['id']}/replace-label", json.dumps({"category_prefix": "HOM"}), content_type="application/json")
+    assert replaced.status_code == 200
+    assert replaced.json()["previous_code"] == "MED-00001"
+    assert replaced.json()["copy"]["sticker_code"] == "HOM-00001"
+    assert str(PaperStickerAlias.objects.get(owner=owner, code="MED-00001").physical_copy_id) == first["id"]
+    for typed in ("MED-00001", "med-1", "MED00001"):
+        result = client.get(f"/api/stickers/{typed}")
+        assert result.status_code == 200
+        assert result.json()["copy"]["sticker_code"] == "HOM-00001"
+        assert result.json()["replaced_label"] == "MED-00001"
+    assert client.get("/api/stickers/HOM-00001").json()["replaced_label"] is None
+    with patch("archive.physical_views.segno.make_qr", wraps=segno.make_qr) as make_qr:
+        assert client.get(f"/api/copies/{first['id']}/label").status_code == 200
+    assert make_qr.call_args.args[0].endswith("/?sticker=HOM-00001")
+    next_med = client.post(f"/api/documents/{document.id}/copies", json.dumps({"category_prefix": "MED"}), content_type="application/json")
+    assert next_med.json()["sticker_code"] == "MED-00002"
+    legacy = PhysicalCopy.objects.create(document=document, sticker_code="R-OLDCODE")
+    assert client.post(f"/api/copies/{legacy.id}/replace-label", json.dumps({"category_prefix": "FIN"}), content_type="application/json").json()["copy"]["sticker_code"] == "FIN-00001"
+    assert client.get("/api/stickers/R-OLDCODE").json()["copy"]["sticker_code"] == "FIN-00001"
+    client.force_login(other)
+    assert client.get("/api/stickers/MED-00001").status_code == 404
+    assert client.post(f"/api/copies/{first['id']}/replace-label", json.dumps({"category_prefix": "HOM"}), content_type="application/json").status_code == 404
+    client.force_login(owner)
+    PhysicalCopy.objects.filter(pk=first["id"]).delete()
+    assert client.get("/api/stickers/MED-00001").status_code == 404
+    assert not PaperStickerAlias.objects.filter(owner=owner, code="MED-00001").exists()
+
+
+@pytest.mark.django_db
+def test_bare_sequential_code_takes_priority_over_legacy_r_code():
+    owner = get_user_model().objects.create_user("owner", password="test-password-1")
+    legacy_document = Document.objects.create(owner=owner, title="Old", original_name="old.pdf", original_path="originals/old.pdf",
+                                              original_mime="application/pdf", original_sha256="a" * 64, original_size=1)
+    new_document = Document.objects.create(owner=owner, title="New", original_name="new.pdf", original_path="originals/new.pdf",
+                                           original_mime="application/pdf", original_sha256="b" * 64, original_size=1)
+    PhysicalCopy.objects.create(document=legacy_document, sticker_code="R-MED22222")
+    PaperCategory.objects.create(owner=owner, prefix="MED", name="Medical", next_number=22222)
+    client = Client()
+    client.force_login(owner)
+    new_copy = client.post(f"/api/documents/{new_document.id}/copies", json.dumps({"category_prefix": "MED"}), content_type="application/json").json()
+    assert new_copy["sticker_code"] == "MED-22222"
+    assert client.get("/api/stickers/MED22222").json()["document"]["id"] == str(new_document.id)
+    assert client.get("/api/stickers/R-MED22222").json()["document"]["id"] == str(legacy_document.id)
+    replaced = client.post(f"/api/copies/{new_copy['id']}/replace-label", json.dumps({"category_prefix": "HOM"}), content_type="application/json")
+    assert replaced.status_code == 200
+    found = client.get("/api/stickers/MED22222").json()
+    assert found["document"]["id"] == str(new_document.id) and found["replaced_label"] == "MED-22222"
+
+
+@pytest.mark.django_db
 def test_location_label_escapes_name_and_lookup_hides_trashed_documents():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     location = Location.objects.create(owner=owner, name="Box <private>")
@@ -119,6 +230,7 @@ def test_location_label_escapes_name_and_lookup_hides_trashed_documents():
 def test_location_lookup_pages_more_than_fifty_copies():
     owner = get_user_model().objects.create_user("owner", password="secure-password-1")
     location = Location.objects.create(owner=owner, name="Full shelf")
+    category = PaperCategory.objects.create(owner=owner, prefix="MED", name="Medical", next_number=52)
     documents = [Document(
         owner=owner, title=f"Paper {index}", original_name=f"paper-{index}.pdf",
         original_path=f"originals/paper-{index}.pdf", original_mime="application/pdf",
@@ -126,7 +238,10 @@ def test_location_lookup_pages_more_than_fifty_copies():
     ) for index in range(102)]
     Document.objects.bulk_create(documents)
     PhysicalCopy.objects.bulk_create([
-        PhysicalCopy(document=document, location=location, sticker_code=f"R-{index:08d}",
+        PhysicalCopy(document=document, location=location,
+                     sticker_code=f"MED-{index + 1:05d}" if index < 51 else f"R-{index:08d}",
+                     paper_category=category if index < 51 else None,
+                     paper_number=index + 1 if index < 51 else None,
                      missing_at=timezone.now() if index >= 51 else None)
         for index, document in enumerate(documents)
     ])
@@ -135,10 +250,11 @@ def test_location_lookup_pages_more_than_fifty_copies():
     first = client.get(f"/api/locations/lookup/{location.sticker_code}").json()
     assert first["total"] == 51 and len(first["copies"]) == 50
     assert first["missing_count"] == 51 and len(first["missing_copies"]) == 50
-    assert first["next_cursor"] == "R-00000049"
+    assert first["next_cursor"] == "MED-00050"
     assert first["missing_next_cursor"] == "R-00000100"
     second = client.get(f"/api/locations/lookup/{location.sticker_code}", {"cursor": first["next_cursor"]}).json()
     assert second["total"] == 51 and len(second["copies"]) == 1
+    assert second["copies"][0]["copy"]["sticker_code"] == "MED-00051"
     assert second["next_cursor"] is None
     missing_second = client.get(f"/api/locations/lookup/{location.sticker_code}", {"missing_cursor": first["missing_next_cursor"]}).json()
     assert missing_second["missing_count"] == 51 and len(missing_second["missing_copies"]) == 1

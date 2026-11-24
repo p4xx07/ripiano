@@ -28,7 +28,7 @@ const when = (value: string | null) => (value ? formatDateTime(value) : "");
 
 /**
  * Says why documents are not being picked up: text recognition is not running, or the queue server cannot be
- * reached (round-11 judge 2 M1, judge 1 L2). Shown in Background jobs and in the Overview's "Needs a look".
+ * reached (round-11 judge 2 M1, judge 1 L2). Shown in Overview, Library and the open document.
  */
 export function ProcessingProblem({ health, isOwner = false }: { health: ProcessingHealth | null | undefined; isOwner?: boolean }) {
   const m = useMessages(messages);

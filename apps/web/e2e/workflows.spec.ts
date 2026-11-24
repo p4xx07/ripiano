@@ -35,7 +35,9 @@ test("a workflow tags matching new documents and records what it did", async ({ 
   // Regression: opening the form must not steal focus and send the phrase into the name field.
   await expect(form.getByLabel("Name", { exact: true })).toHaveValue(`Tag ${suffix}`);
   await expect(form.getByLabel("Mention this word or phrase")).toHaveValue(word);
+  await form.getByText("Add tags", { exact: true }).click();
   await form.getByRole("group", { name: "Add tags" }).getByRole("checkbox", { name: tag }).check();
+  await expect(form.getByText("Add tags (1)")).toBeVisible();
   await form.getByRole("button", { name: "Create workflow" }).click();
   await expect(page.getByRole("status")).toContainText(`Workflow “Tag ${suffix}” saved`);
   const card = page.locator(".mail-card").filter({ hasText: `Tag ${suffix}` });

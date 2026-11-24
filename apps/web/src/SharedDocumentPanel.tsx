@@ -4,6 +4,7 @@ import { ApiError, asSentence, Document, DocumentNote, formatDate, request } fro
 import { Button, Field, Modal } from "./ui";
 import { useMessages } from "./i18n";
 import DocumentHistory from "./DocumentHistory";
+import { ProcessingProblem, type ProcessingHealth } from "./JobsPanel";
 import messages from "./locales/SharedDocumentPanel";
 
 /** A document someone else owns and shared with the signed-in person. */
@@ -32,7 +33,28 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
 }) {
   const m = useMessages(messages);
   const [current, setCurrent] = useState(initial);
+  const [processingStatus, setProcessingStatus] = useState(initial.status);
+  const [processingHealth, setProcessingHealth] = useState<ProcessingHealth | null>(null);
+  const [archiveAvailable, setArchiveAvailable] = useState(initial.archive_available);
   const canEdit = current.access === "edit";
+  // The reader's /api/jobs intentionally contains only their own archive. Poll this accessible document's
+  // detail while it waits; its processing summary covers this document alone, never the owner's other work.
+  useEffect(() => {
+    if (processingStatus !== "pending" && processingStatus !== "processing") return;
+    let active = true;
+    const check = () => {
+      if (window.document.hidden) return;
+      void request<Document & { processing?: ProcessingHealth | null }>(`/api/documents/${current.id}`).then((updated) => {
+        if (!active) return;
+        setProcessingStatus(updated.status);
+        setProcessingHealth(updated.processing ?? null);
+        setArchiveAvailable(updated.archive_available);
+      }).catch(() => undefined);
+    };
+    check();
+    const timer = window.setInterval(check, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [current.id, processingStatus]);
   // The owner's tags, senders, and types shared with me, for filing this document.
   const [filing, setFiling] = useState<{ tags: SharedItem[]; correspondents: SharedItem[]; document_types: SharedItem[] }>({ tags: [], correspondents: [], document_types: [] });
   const [sharedTagIds, setSharedTagIds] = useState<string[]>([]);
@@ -271,6 +293,13 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
         <Users size={16} aria-hidden="true" />
         <span>{m.sharedBy(current.shared_by ?? "")} · {canEdit ? m.canEdit : m.canView}</span>
       </p>
+      {(processingStatus === "pending" || processingStatus === "processing") && (
+        <div className="shared-processing" role="status">
+          <p className="detail-processing">{processingStatus === "pending" ? m.ocrPreparing : m.ocrProcessing}</p>
+          <ProcessingProblem health={processingHealth} />
+        </div>
+      )}
+      {processingStatus === "failed" && <p className="detail-processing" role="status">{m.ocrFailed}</p>}
       <dl className="shared-facts">
         {current.correspondent && <><dt>{m.from}</dt><dd>{current.correspondent.name}</dd></>}
         {current.document_type && <><dt>{m.type}</dt><dd>{current.document_type.name}</dd></>}
@@ -381,7 +410,7 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
       <div className="detail-files">
         <h3><FileText size={17} /> {m.files}</h3>
         <a href={`/api/documents/${current.id}/original`}><ArrowDownToLine size={17} /> {m.downloadOriginal}</a>
-        {current.archive_available && <a href={`/api/documents/${current.id}/archive`} target="_blank" rel="noreferrer"><Eye size={17} /> {m.openPdf}</a>}
+        {archiveAvailable && <a href={`/api/documents/${current.id}/archive`} target="_blank" rel="noreferrer"><Eye size={17} /> {m.openPdf}</a>}
       </div>
     </Modal>
   );

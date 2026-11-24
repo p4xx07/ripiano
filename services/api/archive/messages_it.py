@@ -1,6 +1,12 @@
 """Reviewed Italian API errors. Unlisted messages remain in English until translated."""
 
 EXACT = {
+    "Choose a name; printed prefixes cannot be changed": "Scegli un nome; i prefissi già stampati non possono essere cambiati",
+    "Choose a paper category": "Scegli una categoria cartacea",
+    "Paper category not found": "Categoria cartacea non trovata",
+    "This paper prefix is already in use": "Questo prefisso cartaceo è già in uso",
+    "Use a category name of at most 100 characters": "Usa un nome di categoria di al massimo 100 caratteri",
+    "Use a unique 3–5 letter uppercase paper prefix": "Usa un prefisso cartaceo unico di 3–5 lettere maiuscole",
     "Invalid credentials": "Credenziali non valide",
     "A document's file disappeared from the media folder during the backup":
         "Il file di un documento è sparito dalla cartella dei file durante il backup",
@@ -234,6 +240,8 @@ EXACT = {
     "A managed original changed during the NAS browse copy": "Un originale gestito è cambiato durante la copia di consultazione sul NAS",
     "A rule with this text and matching already exists": "Esiste già una regola con questo testo e questa corrispondenza",
     "A saved search with this name already exists": "Esiste già una ricerca salvata con questo nome",
+    "Dashboard pin must be true or false": "L’opzione per fissare la ricerca nella dashboard deve essere vera o falsa",
+    "Dashboard can show at most 6 saved searches": "La dashboard può mostrare al massimo 6 ricerche salvate",
     "A selected document is already in Trash": "Uno dei documenti selezionati è già nel Cestino",
     "A selected document is not in Trash": "Uno dei documenti selezionati non è nel Cestino",
     "A selected document was not found": "Uno dei documenti selezionati non è stato trovato",

@@ -1,0 +1,62 @@
+{
+  "before": {
+    "copy": {
+      "id": "9d08d482-7f36-46a7-9343-511f17114b4c",
+      "document_id": "c4589b6b-b41e-40df-a78e-dcd75b7fecd0",
+      "sticker_code": "R-GYRPTEEP",
+      "location_id": "5767f2f0-6f42-4dbf-8a0a-e65fcc055f84",
+      "location_path": [
+        "Shelf 1795303116735 mobile"
+      ],
+      "missing_at": null,
+      "created_at": "2026-11-21T23:18:37.774387+00:00"
+    },
+    "document": {
+      "id": "c4589b6b-b41e-40df-a78e-dcd75b7fecd0",
+      "title": "missing-1795303116735-mobile"
+    }
+  },
+  "moved": {
+    "id": "9d08d482-7f36-46a7-9343-511f17114b4c",
+    "document_id": "c4589b6b-b41e-40df-a78e-dcd75b7fecd0",
+    "sticker_code": "R-GYRPTEEP",
+    "location_id": "3c3c583f-04b0-4c55-bd4e-70a5a84ae842",
+    "location_path": [
+      "Judge shelf 1795303069135"
+    ],
+    "missing_at": null,
+    "created_at": "2026-11-21T23:18:37.774387+00:00"
+  },
+  "reprint_http": 200,
+  "reprint_location": true,
+  "reprint_code": true,
+  "after": {
+    "copy": {
+      "id": "9d08d482-7f36-46a7-9343-511f17114b4c",
+      "document_id": "c4589b6b-b41e-40df-a78e-dcd75b7fecd0",
+      "sticker_code": "R-GYRPTEEP",
+      "location_id": "3c3c583f-04b0-4c55-bd4e-70a5a84ae842",
+      "location_path": [
+        "Judge shelf 1795303069135"
+      ],
+      "missing_at": null,
+      "created_at": "2026-11-21T23:18:37.774387+00:00"
+    },
+    "document": {
+      "id": "c4589b6b-b41e-40df-a78e-dcd75b7fecd0",
+      "title": "missing-1795303116735-mobile"
+    }
+  },
+  "history_last": {
+    "kind": "move",
+    "from": [
+      "Shelf 1795303116735 mobile"
+    ],
+    "to": [
+      "Judge shelf 1795303069135"
+    ],
+    "note": "J2 physical move drill",
+    "at": "2026-11-22T16:06:51.372965+00:00",
+    "by": "judge2"
+  }
+}

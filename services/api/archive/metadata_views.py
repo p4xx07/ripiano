@@ -168,7 +168,7 @@ def document_type_detail(request, type_id):
 
 def _saved_view_json(view):
     return {
-        "id": str(view.id), "name": view.name, "query": view.query,
+        "id": str(view.id), "name": view.name, "query": view.query, "dashboard_pinned": view.dashboard_pinned,
         "tag_id": str(view.tag_id) if view.tag_id else None,
         "correspondent_id": str(view.correspondent_id) if view.correspondent_id else None,
         "document_type_id": str(view.document_type_id) if view.document_type_id else None,
@@ -190,6 +190,12 @@ def _saved_view_values(body, owner, current=None):
     if not isinstance(query, str) or len(query.strip()) > 200:
         raise ValueError("Search text must be at most 200 characters")
     values = {"name": name.strip(), "query": query.strip()}
+    pinned = body.get("dashboard_pinned", current.dashboard_pinned if current else False)
+    if not isinstance(pinned, bool):
+        raise ValueError("Dashboard pin must be true or false")
+    if pinned and not (current and current.dashboard_pinned) and SavedView.objects.filter(owner=owner, dashboard_pinned=True).count() >= 6:
+        raise ValueError("Dashboard can show at most 6 saved searches")
+    values["dashboard_pinned"] = pinned
     copy_status = body.get("copy_status", current.copy_status if current else "")
     if copy_status not in ("", "paper", "virtual", "missing"):
         raise ValueError("Choose a valid paper-copy filter")

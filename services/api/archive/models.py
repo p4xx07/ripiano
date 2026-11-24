@@ -286,6 +286,7 @@ class SavedView(models.Model):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="saved_views")
     name = models.CharField(max_length=100)
     query = models.CharField(max_length=200, blank=True)
+    dashboard_pinned = models.BooleanField(default=False)
     tag = models.ForeignKey(Tag, null=True, blank=True, on_delete=models.SET_NULL)
     correspondent = models.ForeignKey(Correspondent, null=True, blank=True, on_delete=models.SET_NULL)
     document_type = models.ForeignKey(DocumentType, null=True, blank=True, on_delete=models.SET_NULL)
@@ -448,16 +449,49 @@ class Location(models.Model):
         ordering = ["name"]
 
 
+class PaperCategory(models.Model):
+    """A stable topic prefix with its own never-reused paper-label sequence for one owner."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="paper_categories")
+    prefix = models.CharField(max_length=5)
+    name = models.CharField(max_length=100)
+    next_number = models.PositiveBigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["prefix"]
+        constraints = [models.UniqueConstraint(fields=["owner", "prefix"], name="unique_paper_category_prefix_per_owner")]
+
+
 class PhysicalCopy(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     document = models.ForeignKey(Document, on_delete=models.PROTECT, related_name="physical_copies")
-    sticker_code = models.CharField(max_length=12, unique=True)
+    sticker_code = models.CharField(max_length=32, db_index=True)
+    paper_category = models.ForeignKey(PaperCategory, null=True, blank=True, on_delete=models.PROTECT, related_name="copies")
+    paper_number = models.PositiveBigIntegerField(null=True, blank=True)
     location = models.ForeignKey(Location, null=True, blank=True, on_delete=models.PROTECT, related_name="physical_copies")
     missing_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["paper_category", "paper_number"], condition=Q(paper_category__isnull=False), name="unique_paper_number_per_category"),
+            models.CheckConstraint(condition=(Q(paper_category__isnull=True, paper_number__isnull=True)
+                                              | Q(paper_category__isnull=False, paper_number__isnull=False)), name="paper_category_number_together"),
+        ]
+
+
+class PaperStickerAlias(models.Model):
+    """A retired printed code that still finds the same physical copy after relabelling."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="paper_sticker_aliases")
+    physical_copy = models.ForeignKey(PhysicalCopy, on_delete=models.CASCADE, related_name="sticker_aliases")
+    code = models.CharField(max_length=32)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["owner", "code"], name="unique_paper_sticker_alias_per_owner")]
 
 
 class Movement(models.Model):

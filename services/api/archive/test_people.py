@@ -154,6 +154,40 @@ def test_sharing_a_document_with_a_person_or_group(tmp_path):
 
 
 @pytest.mark.django_db
+def test_shared_pending_document_reports_its_own_stopped_worker(tmp_path):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from archive.models import Document
+
+    owner = User.objects.create_user("owner", password=PASSWORD)
+    viewer = User.objects.create_user("viewer", password=PASSWORD)
+    media = tmp_path / "media"
+    shared, _, _ = make_document(owner, media, "shared.pdf")
+    private, _, _ = make_document(owner, media, "private.pdf")
+    owner_client, viewer_client = client_for(owner), client_for(viewer)
+    url = f"/api/documents/{shared.id}"
+    assert send(owner_client, "post", f"{url}/access", {"user_id": viewer.pk}).status_code == 201
+    old = timezone.now() - timedelta(minutes=3)
+    Document.objects.filter(pk__in=[shared.pk, private.pk]).update(status=Document.Status.PENDING, queued_at=old)
+
+    with override_settings(MEDIA_ROOT=media):
+        detail = viewer_client.get(url).json()
+        assert detail["status"] == "pending"
+        assert detail["processing"]["pending"] == 1
+        assert detail["processing"]["problem"] == "worker_not_running"
+        assert detail["processing"]["worker"]["running"] is False
+        assert viewer_client.get("/api/jobs").json()["documents_waiting"]["total"] == 0
+        assert viewer_client.get(f"/api/documents/{private.id}").status_code == 404
+
+        Document.objects.filter(pk=shared.pk).update(status=Document.Status.READY)
+        ready = viewer_client.get(url).json()
+        assert ready["status"] == "ready"
+        assert ready["processing"] is None
+
+
+@pytest.mark.django_db
 def test_turned_off_people_lose_shared_access(tmp_path):
     owner = User.objects.create_user("owner", password=PASSWORD)
     reader = User.objects.create_user("reader", password=PASSWORD)

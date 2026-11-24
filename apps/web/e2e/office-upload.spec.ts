@@ -44,6 +44,7 @@ test("a Word document becomes searchable while its original stays intact", async
   await page.screenshot({ path: testInfo.outputPath("office-search.png"), animations: "disabled", fullPage: true });
   await page.getByRole("button", { name, exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
+  await dialog.getByText("Original and export files").click();
   await expect(dialog.getByRole("link", { name: "Download original" })).toBeVisible();
   await expect(dialog.getByRole("link", { name: "Open searchable PDF" })).toBeVisible();
   await dialog.locator(".detail-files").first().screenshot({ path: testInfo.outputPath("office-document.png"), animations: "disabled" });

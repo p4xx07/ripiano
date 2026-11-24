@@ -264,6 +264,8 @@ Dialogs keep focus inside until closed and return it afterwards; a document open
 
 Documents can optionally be marked **Needs action** with a due date and note. The separate action list shows only open follow-ups; completing one keeps the document in the archive. Uploading and automatic tags do not require this step.
 
+When a ready document's text identifies a PagoPA/MAV/bill or a concert/event ticket **and** places one future date beside an explicit deadline or event-date label, its detail panel shows that date as a suggestion. Payment suggestions offer **Use as task**, which fills an editable task and due date; review and save it if payment is still needed. A paid receipt, a past date, several different deadlines, or an unlabelled date does not automatically become a task. Event suggestions offer **Add to calendar**. The same button is available for a dated task in the document and Needs action list. It downloads a local, all-day `.ics` file for your calendar to import; Ripiano does not connect to or sync with a calendar service. Check the date before importing, especially on scanned tickets. Calendar import behavior on installed iOS/Android apps still needs real-device testing.
+
 The **Inbox** shows exceptions only: failed OCR, exact copies that have not been reviewed, and damaged PDFs of which only the readable pages could be kept. Such a PDF is searchable and previewable from what was saved; compare it with the paper, re-scan it if pages are missing, and mark it checked to take it off the list. Each card shows its whole explanation, on as many lines as it needs. Retry OCR, keep both copies, or choose **Move this copy to Trash**. After **Retry OCR** the card stays until the new attempt ends, and the result is announced. If that attempt is interrupted, the card says it is taking longer than usual and will be tried again by itself. **Resolve all exact copies** asks first, then keeps every original and moves every listed copy to the Trash, where you can restore it. Ordinary uploads go straight to the Library.
 
 <img src="../qa-artifacts/5252d3e/inbox/mobile/failed-ocr.png" alt="Mobile Inbox showing a failed OCR document and retry action" width="260">
@@ -298,6 +300,9 @@ Existing documents are rechecked in the background when you add or delete a rule
 
 ### Learned suggestions
 
+For a new archive, upload first: OCR makes every document searchable without any tag or field. The document panel starts with the title, detected document date, a short filing summary, and small **Add task** / **Keep paper copy** actions. **Save changes** appears only after you edit something. **More filing options** opens manual sender, type, tags, storage path and the legacy ASN field; you can leave them untouched. ASN is a separate number used by barcode scans, not a paper-copy sticker. **Add task** opens the follow-up status, optional due date and note; the saved task appears in **Needs action**. **Keep paper copy** takes you to the paper section to create or print a sticker. For recurring bills, make an Email rule that matches the sender or subject and assigns a Bills tag and type; this works immediately without waiting for the learned model.
+
+
 Ripiano learns from the senders, document types, and tags you set by hand, on your own server. It learns again every night, or when you press **Tags & filing → Learned suggestions → Learn now**.
 - **When it suggests:** only when it is at least 60% likely to be right. The probability is calibrated on documents the model had not seen.
 - **On a phone**, an open document with suggestions shows a short link above the preview (for example "3 filing suggestions · Go to them") that jumps straight to them.
@@ -310,7 +315,7 @@ Ripiano learns from the senders, document types, and tags you set by hand, on yo
 
 ### Workflows
 
-Open **Workflows** to automate routine filing. A workflow runs:
+Open **Workflows** to automate routine filing. The page starts with recipes and your existing workflows; choose a recipe or **Start a blank workflow** to open the full-width editor. It shows a live sentence describing the rule, groups optional conditions in columns, and keeps Save visible while you scroll. On a phone it uses the whole screen width. A workflow runs:
 - when a document is added (after its first processing);
 - when you change a document;
 - or each morning for documents a chosen number of days after their added date, document date, or follow-up due date.
@@ -367,6 +372,9 @@ Each document also keeps an audit history, shown as **Changes** in the document 
 
 ### Related documents
 
+**Find similar documents** compares distinctive words in the title and first 3,000 characters of OCR text with up to 500 recent ready documents in the same archive. It removes words common across many documents, requires at least three shared words and a minimum overlap score, and shows up to six matches. An identical original is flagged by its checksum. It uses no AI service; with only a few documents, a match can be broad or there may be no result.
+
+
 The same panel can link related documents. Search for the other document by title or text, then choose **Link**. The connection appears on both documents, so either side opens the other. Moving one document to Trash hides the link until it is restored; its underlying relationship is retained.
 
 ### Pages and versions
@@ -385,7 +393,7 @@ Document exports include every older version. Only permanent deletion removes ve
 
 ### Export
 
-Use **Export document ZIP** under Files to download the preserved original, the searchable PDF and OCR text when available, and a readable `manifest.json` with tags, notes, related documents, and paper-copy history. Each file has a SHA-256 checksum in the manifest. In the Library, select up to 20 documents and open **Export selected** to download one collection ZIP. Its root manifest identifies each document and gives checksums for files in stable ID-based folders. To move the whole archive, see `export_archive` and `import_archive` in [Move to a new server](#move-to-a-new-server).
+Under **Files → Original and export files**, **Download original** gets exactly the uploaded file. **Export document ZIP** is for moving one document with its metadata or keeping a portable copy; it includes the preserved original, the searchable PDF and OCR text when available, and a readable `manifest.json` with tags, notes, related documents, and paper-copy history. Each file has a SHA-256 checksum in the manifest. In the Library, select up to 20 documents and open **Export selected** to download one collection ZIP. Its root manifest identifies each document and gives checksums for files in stable ID-based folders. To move the whole archive, see `export_archive` and `import_archive` in [Move to a new server](#move-to-a-new-server).
 
 ### Trash
 
@@ -395,7 +403,11 @@ Move a completed document to **Trash** from its detail panel and restore it late
 
 ## Paper copies
 
-Paper copies can receive a stable sticker and QR label, be placed in nested locations, and be found again from a sticker link. A sticker code can be typed with or without its `R-` prefix (`R-MUD3PLDT`, `MUD3PLDT`); a location code typed in full (`L-…`) opens the location.
+If you keep the paper, open its document and choose **Keep paper copy**. Pick a broad, lasting topic and optionally a location. Ripiano allocates a code such as `MED-00042` and prints a QR label for the copy. Digital-only documents receive no code. Each topic has its own sequence; a deleted label number is not reused. The initial topics are `MED` (medical), `HOM` (home), `FIN` (finance and taxes), `AUT` (vehicles), `PER` (personal), `EVT` (events and travel), and `VAR` (other). If one attached tag or its parent exactly names a broad topic (for example, Medical or Salute) or a custom paper category, Ripiano suggests it and shows the source tag. If tags point to different topics or none matches, it proposes `VAR`; you can always change the category before printing. It never reads a mutable shelf or guesses a topic from the document title for a permanent label. Tags and locations can change without changing the printed code. Another physical copy is available under an advanced action and gets a different code.
+
+You can add or rename paper categories under **Paper archive → Paper categories**. Prefixes must be 3–5 uppercase letters and cannot be changed after creation because labels may already be printed. Codes are unique within one person's archive, so two people can both have `MED-00001`. Find a copy by scanning its QR or typing `MED-00042`, `MED00042`, or `med-42`. Existing random `R-…` stickers still work with or without `R-`, and a location code typed in full (`L-…`) opens the location. ASN remains an advanced archive/barcode field for older scan workflows; entering one does not register a paper copy.
+
+If the topic on a printed label is wrong, open the document's paper copy and expand **Replace label (advanced)**. Choose the new topic and confirm. Ripiano allocates a fresh code; print and attach the new label. Every older code and QR for that copy continues to find its document and shows the current code, so a forgotten old sticker is not a dead end. The paper copy's location and movement history stay the same.
 
 Scanning or typing a paper copy's sticker (also from the label's QR address on a phone) shows a result card where you can move the copy to another location (choose it and press **Move**), mark it missing or found, print its sticker again, or open the document. Locations are listed in tree order, each box under its shelf.
 
@@ -422,7 +434,7 @@ To give someone a document without an account, open **Share original** in its do
 - **New versions:** adding a new version of a document revokes the links and bundles that include it.
 - **Password changes:** changing your password under **Security**, or an admin resetting it under **People**, revokes all your share links and bundles at once, like your API tokens and agents (docs/DECISIONS.md D11). They are listed as revoked, marked "password changed"; create new links for anything you still want to share.
 - **Turned-off accounts:** turning an account off revokes all its share links and bundles at once (a visitor sees the same "Link not found" as for any unknown link). Turning the account on again does not revive them: the owner sees them as revoked, marked "account turned off", and creates new links if still needed.
-- **Email:** **Email this document** sends the original (checksum-verified) or the searchable PDF through the server's SMTP settings. It is off unless the operator sets `RIPIANO_DOCUMENT_EMAIL=1`; SMTP alone (for workflows) does not enable it. Each account can email up to 30 recipients per hour, replies go to the account's email address, and the send history is shown on the document.
+- **Email:** **Email this document** sends the original (checksum-verified) or the searchable PDF through the server's SMTP settings. It is off unless the operator sets `RIPIANO_DOCUMENT_EMAIL=1`; SMTP alone (for workflows) does not enable it. Each account can email up to 30 recipients per hour, replies go to the account's email address, and the send history is shown on the document. For local testing, run the existing GreenMail test server (`deploy/compose.mailtest.yaml`), set `RIPIANO_DOCUMENT_EMAIL=1`, `RIPIANO_SMTP_HOST=mailtest`, `RIPIANO_SMTP_PORT=3025`, `RIPIANO_SMTP_SECURITY=none`, and a fake `RIPIANO_SMTP_FROM`, then restart the API and maintenance worker. GreenMail captures these messages locally; it does not deliver them to the internet.
 - **Bundle ZIPs:** each bundle's ZIP is built once in the background and deleted when the link ends. Moving a bundled document to Trash or adding a new version revokes the bundle, and restoring the document does not re-share it.
 
 ### People and sharing
@@ -443,7 +455,9 @@ The first account is the admin. Under **People**, the admin adds people (each ge
 
 ## Overview
 
-**Overview** shows:
+**Overview** is reached from the sidebar or **Open your dashboard** on the Library. The **Your dashboard** section lets you create up to six live collections from a name, optional search words, and an optional tag. You can also pin an existing saved search with its full filters. Each card shows the matching count and three recent documents; **Open all in Library** applies the saved search. Each person has their own collections. **Open this dashboard first on this device** is a local browser preference, so opening `/` on that device starts on Overview; an explicit Library or document link still opens where it points.
+
+**Overview** also shows:
 - totals and storage used;
 - what needs a look (unreadable documents, overdue follow-ups, exact copies, mailbox problems, failed workflow runs), each linking to the right screen;
 - documents added per month over the last year;

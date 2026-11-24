@@ -1,4 +1,6 @@
+import errno
 import hashlib
+import logging
 import os
 import uuid
 import warnings
@@ -40,6 +42,25 @@ class InvalidDocument(ValueError):
 
 
 EQUIVALENT_EXTENSIONS = {".jpeg": ".jpg"}
+logger = logging.getLogger(__name__)
+
+
+def _sync_parent_directory(path):
+    """Persist the rename where supported; some mounted filesystems reject directory fsync."""
+    unsupported = {errno.EBADF, errno.EINVAL, errno.ENOTSUP}
+    for _ in range(2):
+        descriptor = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+            return
+        except OSError as exc:
+            if exc.errno not in unsupported:
+                raise
+        finally:
+            os.close(descriptor)
+    # The original file itself was already fsynced. Keep the successful rename usable,
+    # and make the weaker crash durability visible to the server operator.
+    logger.warning("The media filesystem does not support directory fsync; original rename durability is best effort")
 
 
 def download_name(original_name, stored_path):
@@ -116,11 +137,7 @@ def save_original(upload):
         destination_path = media_root / relative
         destination_path.parent.mkdir(parents=True, exist_ok=True)
         os.replace(temp_path, destination_path)
-        directory_fd = os.open(destination_path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        _sync_parent_directory(destination_path.parent)
         return str(relative), mime, digest.hexdigest(), size
     finally:
         temp_path.unlink(missing_ok=True)

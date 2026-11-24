@@ -61,6 +61,7 @@ test("a separator sheet splits a scan and an ASN barcode numbers the part", asyn
   await searched;
   await page.getByRole("button", { name: partTitle, exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
+  await dialog.getByRole("button", { name: "More filing options" }).click();
   await expect(dialog.getByLabel(/Archive number \(ASN\)/)).toHaveValue(String(asn));
   await dialog.getByRole("button", { name: /Open full scan/ }).click();
   await expect(page.getByRole("dialog").filter({ hasText: "Keep it in place." })).toContainText("This full scan was split by barcodes");
@@ -105,6 +106,7 @@ test("ASN barcodes start separate documents without separator sheets", async ({ 
   await searched;
   await page.getByRole("button", { name: `${name} (2/2)`, exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
+  await dialog.getByRole("button", { name: "More filing options" }).click();
   await expect(dialog.getByLabel(/Archive number \(ASN\)/)).toHaveValue(String(secondAsn));
   await expect(dialog.getByRole("button", { name: /Open full scan/ })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("asn-only-split.png"), animations: "disabled" });

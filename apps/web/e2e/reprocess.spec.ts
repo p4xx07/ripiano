@@ -32,6 +32,7 @@ test("a searchable PDF can be rebuilt from its preserved original", async ({ pag
   await expect(files.getByRole("link", { name: "Open searchable PDF" })).toBeVisible();
   await files.getByRole("button", { name: "Retry OCR" }).click();
   await expect(files.getByRole("status")).toContainText("OCR queued from the preserved original.");
+  await files.getByText("Original and export files").click();
   await expect(files.getByRole("link", { name: "Download original" })).toBeVisible();
   await expect.poll(async () => (await (await page.request.get(`/api/documents/${id}`)).json()).status, { timeout: 60000 }).toBe("ready");
   await expect(files.getByRole("status")).toContainText("Searchable PDF is ready.");

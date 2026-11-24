@@ -108,6 +108,7 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
   const [me, setMe] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(empty);
   const [editing, setEditing] = useState<string | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -165,11 +166,13 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
   function start(partial: Partial<Draft>) {
     setEditing(null);
     setDraft({ ...empty, ...partial });
+    setShowEditor(true);
     focusForm();
   }
 
   function edit(flow: Flow) {
     setEditing(flow.id);
+    setShowEditor(true);
     setDraft({
       ...flow, filter_tag_id: flow.filter_tag_id ?? "", filter_correspondent_id: flow.filter_correspondent_id ?? "",
       filter_document_type_id: flow.filter_document_type_id ?? "", set_correspondent_id: flow.set_correspondent_id ?? "",
@@ -211,6 +214,7 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
       setStatus(m.saved(draft.name, draft.trigger === "scheduled"));
       setDraft(empty);
       setEditing(null);
+      setShowEditor(false);
       await load();
     }, m.saveError);
   }
@@ -261,65 +265,9 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
       </div>
       {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={m.dismissError}><X size={16} /></button></div>}
       {status && <p className="bulk-notice" role="status">{status}</p>}
-      <div className="agent-layout">
-        <section className="agent-main">
-          <div className="section-heading"><div><h2>{m.yourWorkflows}</h2><p>{m.yourWorkflowsIntro}</p></div></div>
-          {flows.length ? (
-            <div className="agent-list">
-              {flows.map((flow) => (
-                <article className="agent-card mail-card" key={flow.id}>
-                  <span className="agent-avatar"><WorkflowIcon size={21} aria-hidden="true" /></span>
-                  <div className="agent-card-body">
-                    <strong>{flow.name}{!flow.enabled && m.paused}</strong>
-                    <span>{describe(flow, names, m)}</span>
-                  </div>
-                  <div className="mail-actions">
-                    {confirming === flow.id ? (
-                      <>
-                        <span>{m.confirmRemove}</span>
-                        <Button variant="danger" disabled={busy} onClick={() => remove(flow)}>{m.remove}</Button>
-                        <Button variant="secondary" autoFocus onClick={() => setConfirming(null)}>{m.keep}</Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button variant="secondary" disabled={busy} onClick={() => toggle(flow)}>{flow.enabled ? m.pause : m.resume}</Button>
-                        <Button variant="secondary" onClick={() => edit(flow)}>{m.edit}</Button>
-                        <Button variant="secondary" aria-label={m.removeLabel(flow.name)} onClick={() => setConfirming(flow.id)}>{m.remove}</Button>
-                      </>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="tag-empty">
-              <WorkflowIcon size={27} aria-hidden="true" />
-              <strong>{m.emptyTitle}</strong>
-              <p>{m.emptyText}</p>
-            </div>
-          )}
-          <div className="section-heading agent-activity-heading"><div><h2>{m.recentRuns}</h2><p>{m.recentRunsIntro}</p></div></div>
-          {runs.length ? (
-            // A real list with its own row layout (round-7 judge 3 M1): workflow and outcome, then the document,
-            // then what was done; the time sits on the right on wide screens and under the detail on a phone.
-            <ul className="workflow-runs" aria-label={m.recentRuns}>
-              {runs.map((item) => (
-                <li key={item.id}>
-                  <span className="workflow-run-head">
-                    <span className="workflow-run-name">{item.workflow}</span>
-                    <span className={`workflow-run-status${item.status === "failed" ? " workflow-run-failed" : item.status === "skipped" ? " workflow-run-skipped" : ""}`}>{item.status === "failed" ? m.problem : item.status === "skipped" ? m.skipped : m.applied}</span>
-                  </span>
-                  <time className="workflow-run-time" dateTime={item.created_at}>{formatDateTime(item.created_at)}</time>
-                  <button type="button" className="text-action workflow-run-document" onClick={() => onOpenDocument(item.document.id)}>{item.document.title}</button>
-                  {item.detail && <span className="workflow-run-detail">{item.detail}</span>}
-                </li>
-              ))}
-            </ul>
-          ) : <p className="agent-empty-activity">{m.noRuns}</p>}
-        </section>
-
-        <div className="mail-side">
-          {!editing && (
+      <div className="agent-layout workflow-layout">
+        <div className="mail-side workflow-editor-area">
+          {!showEditor && (
             <section className="tag-create-card agent-create-card">
               <h2>{m.startFromRecipe}</h2>
               <div className="mail-oauth">
@@ -329,11 +277,13 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                   </Button>
                 ))}
               </div>
+              <Button type="button" variant="secondary" onClick={() => start({})}>{m.createBlank}</Button>
             </section>
           )}
-          <section className="tag-create-card agent-create-card">
+          {showEditor && <section className="tag-create-card agent-create-card workflow-editor">
             <div className="tag-create-icon"><WorkflowIcon size={21} aria-hidden="true" /></div>
             <h2>{editing ? m.editWorkflow : m.newWorkflow}</h2>
+            <p className="workflow-live-summary"><strong>{m.preview}</strong> {describe({ ...draft, id: editing ?? "" } as Flow, names, m)}</p>
             <form ref={formRef} onSubmit={save} aria-label={m.formLabel}>
               <label>{m.name}<input value={draft.name} onChange={(event) => set("name", event.target.value)} maxLength={100} required placeholder={m.namePlaceholder} /></label>
               <label>{m.runs}
@@ -351,7 +301,7 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                   </label>
                 </div>
               )}
-              <fieldset>
+              <fieldset className="workflow-conditions">
                 <legend>{m.onlyDocuments} <small>{m.allOptional}</small></legend>
                 <label>{m.mention}<input value={draft.filter_text} onChange={(event) => set("filter_text", event.target.value)} maxLength={200} placeholder={m.mentionPlaceholder} /></label>
                 <label>{m.haveTag}
@@ -370,22 +320,22 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                   </select>
                 </label>
                 <label>{m.fileNameMatches}<input value={draft.filter_filename} onChange={(event) => set("filter_filename", event.target.value)} maxLength={200} placeholder={m.fileNamePlaceholder} /></label>
-                <div className="workflow-choices" role="group" aria-label={m.cameFrom}>
+                <div className="workflow-choices workflow-source-list" role="group" aria-label={m.cameFrom}>
                   <span>{m.cameFrom}</span>
                   {Object.entries(sources).map(([value, label]) => (
                     <label className="agent-scope-choice" key={value}><input type="checkbox" checked={draft.filter_sources.includes(value)} onChange={() => toggleIn("filter_sources", value)} />{label}</label>
                   ))}
                 </div>
               </fieldset>
-              <fieldset>
+              <fieldset className="workflow-actions">
                 <legend>{m.then}</legend>
                 {tags.length > 0 && (
-                  <div className="workflow-choices" role="group" aria-labelledby="workflow-add-tags">
-                    <span id="workflow-add-tags">{m.addTags}</span>
-                    <div className="workflow-choices mail-tags">
-                    {tags.map((tag) => <label className="agent-scope-choice" key={tag.id}><input type="checkbox" checked={draft.add_tag_ids.includes(tag.id)} onChange={() => toggleIn("add_tag_ids", tag.id)} />{tag.name}</label>)}
+                  <details className="workflow-remove workflow-tag-picker">
+                    <summary>{m.addTags}{draft.add_tag_ids.length ? ` (${draft.add_tag_ids.length})` : ""}</summary>
+                    <div className="workflow-choices mail-tags" role="group" aria-label={m.addTags}>
+                      {tags.map((tag) => <label className="agent-scope-choice" key={tag.id}><input type="checkbox" checked={draft.add_tag_ids.includes(tag.id)} onChange={() => toggleIn("add_tag_ids", tag.id)} />{tag.name}</label>)}
                     </div>
-                  </div>
+                  </details>
                 )}
                 {tags.length > 0 && (
                   <details className="workflow-remove">
@@ -412,10 +362,11 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                     </select>
                   </label>
                 )}
-                <label>{m.setTitle} <small id="workflow-title-hint">{m.titleHint(TITLE_PLACEHOLDERS.join(" "))}</small>
+                <label>{m.setTitle}
                   <input value={draft.title_template} onChange={(event) => set("title_template", event.target.value)} maxLength={200}
                     placeholder={m.titlePlaceholder} aria-describedby="workflow-title-hint" autoCapitalize="none" spellCheck={false} />
                 </label>
+                <details className="workflow-title-help"><summary>{m.titlePatternHelp}</summary><small id="workflow-title-hint">{m.titleHint(TITLE_PLACEHOLDERS.join(" "))}</small></details>
                 {fields.length > 0 && (
                   <details className="workflow-remove" open={draft.set_custom_fields.length > 0}>
                     <summary>{m.setFields}{draft.set_custom_fields.length ? ` (${draft.set_custom_fields.length})` : ""}</summary>
@@ -485,11 +436,67 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                 )}
               </fieldset>
               <label>{m.order} <small>{m.orderHint}</small><input type="number" min={0} max={10000} value={draft.order} onChange={(event) => set("order", Number(event.target.value))} /></label>
-              <Button disabled={busy}><Plus size={17} aria-hidden="true" /> {editing ? m.saveWorkflow : m.createWorkflow}</Button>
-              {editing && <Button type="button" variant="secondary" onClick={() => { setEditing(null); setDraft(empty); }}>{m.cancel}</Button>}
+              <div className="workflow-save-row"><Button disabled={busy}><Plus size={17} aria-hidden="true" /> {editing ? m.saveWorkflow : m.createWorkflow}</Button>
+              <Button type="button" variant="secondary" onClick={() => { setEditing(null); setDraft(empty); setShowEditor(false); }}>{m.cancel}</Button></div>
             </form>
-          </section>
+          </section>}
         </div>
+          {!showEditor && <section className="agent-main workflow-main">
+          <div className="section-heading"><div><h2>{m.yourWorkflows}</h2><p>{m.yourWorkflowsIntro}</p></div></div>
+          {flows.length ? (
+            <div className="agent-list">
+              {flows.map((flow) => (
+                <article className="agent-card mail-card" key={flow.id}>
+                  <span className="agent-avatar"><WorkflowIcon size={21} aria-hidden="true" /></span>
+                  <div className="agent-card-body">
+                    <strong>{flow.name}{!flow.enabled && m.paused}</strong>
+                    <span>{describe(flow, names, m)}</span>
+                  </div>
+                  <div className="mail-actions">
+                    {confirming === flow.id ? (
+                      <>
+                        <span>{m.confirmRemove}</span>
+                        <Button variant="danger" disabled={busy} onClick={() => remove(flow)}>{m.remove}</Button>
+                        <Button variant="secondary" autoFocus onClick={() => setConfirming(null)}>{m.keep}</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button variant="secondary" disabled={busy} onClick={() => toggle(flow)}>{flow.enabled ? m.pause : m.resume}</Button>
+                        <Button variant="secondary" onClick={() => edit(flow)}>{m.edit}</Button>
+                        <Button variant="secondary" aria-label={m.removeLabel(flow.name)} onClick={() => setConfirming(flow.id)}>{m.remove}</Button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="tag-empty">
+              <WorkflowIcon size={27} aria-hidden="true" />
+              <strong>{m.emptyTitle}</strong>
+              <p>{m.emptyText}</p>
+            </div>
+          )}
+          <div className="section-heading agent-activity-heading"><div><h2>{m.recentRuns}</h2><p>{m.recentRunsIntro}</p></div></div>
+          {runs.length ? (
+            // A real list with its own row layout (round-7 judge 3 M1): workflow and outcome, then the document,
+            // then what was done; the time sits on the right on wide screens and under the detail on a phone.
+            <ul className="workflow-runs" aria-label={m.recentRuns}>
+              {runs.map((item) => (
+                <li key={item.id}>
+                  <span className="workflow-run-head">
+                    <span className="workflow-run-name">{item.workflow}</span>
+                    <span className={`workflow-run-status${item.status === "failed" ? " workflow-run-failed" : item.status === "skipped" ? " workflow-run-skipped" : ""}`}>{item.status === "failed" ? m.problem : item.status === "skipped" ? m.skipped : m.applied}</span>
+                  </span>
+                  <time className="workflow-run-time" dateTime={item.created_at}>{formatDateTime(item.created_at)}</time>
+                  <button type="button" className="text-action workflow-run-document" onClick={() => onOpenDocument(item.document.id)}>{item.document.title}</button>
+                  {item.detail && <span className="workflow-run-detail">{item.detail}</span>}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="agent-empty-activity">{m.noRuns}</p>}
+        </section>}
+
       </div>
     </>
   );

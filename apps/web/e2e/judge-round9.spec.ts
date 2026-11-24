@@ -355,6 +355,7 @@ test("with no tags yet the document dialog offers one way to create a tag, inlin
   await page.route((url) => url.pathname === "/api/tags", (route: Route) => route.request().method() === "GET" ? route.fulfill({ json: { tags: [] } }) : route.fallback());
   await page.goto(`/?document=${id}`);
   const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "More filing options" }).click();
   await expect(dialog.getByText("No tags yet.")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Create your first tag" })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Create a tag" }).click();

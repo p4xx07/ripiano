@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ClipboardList, FileText, RotateCcw } from "lucide-react";
+import { CalendarPlus, Check, ClipboardList, FileText, RotateCcw } from "lucide-react";
 import { Document, formatDate, request } from "./api";
+import { downloadCalendarEvent } from "./calendarFile";
 import { Button } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/ActionPanel";
@@ -85,6 +86,7 @@ export default function ActionPanel({ refreshKey, onOpenDocument }: {
         <div className="document-info">
           <h3><button className="document-title-button" onClick={() => onOpenDocument(document)}>{document.title}</button></h3>
           <div className="document-meta">{document.action_due_date ? m.due(formatDate(`${document.action_due_date}T00:00:00`)) : m.noDueDate}</div>
+          {document.action_due_date && <button type="button" className="text-action" onClick={() => downloadCalendarEvent(document.title, document.action_due_date!, document.id)}><CalendarPlus size={15} /> {m.addToCalendar}</button>}
           {document.action_note && <p title={document.action_note}>{document.action_note}</p>}
         </div>
         <Button type="button" variant="secondary" className="action-done" disabled={busyId === document.id} onClick={() => void markDone(document)}>

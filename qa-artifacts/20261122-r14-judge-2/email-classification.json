@@ -1,0 +1,65 @@
+{
+  "fixture": "apps/web/e2e/fixtures/email-notice.eml",
+  "fixture_sha256": "921d4537b141dddd4c0f20c246deada56317b3ca97db9da9345270fbebe95a95",
+  "derived_inputs": [
+    "/private/tmp/ripiano-round14/j2/j2-meeting-example.eml",
+    "/private/tmp/ripiano-round14/j2/j2-meeting-related.eml"
+  ],
+  "ids": {
+    "source": "95ef7240-498a-4c59-a196-5e3da740cc24",
+    "unrelated": "118b77f8-8aa6-49cd-a324-a2fb73bbe124",
+    "related": "6360f0d5-74f7-472e-89b2-a40758d3679c"
+  },
+  "names": {
+    "tag": "J2 Condo 209d41",
+    "sender": "J2 Condominio Via Roma",
+    "type": "J2 Meeting notice"
+  },
+  "statuses": {
+    "source": "ready",
+    "unrelated": "ready",
+    "related": "ready"
+  },
+  "suggestions": {
+    "unrelated": {
+      "tags": [],
+      "correspondents": [],
+      "document_types": []
+    },
+    "related": {
+      "tags": [
+        {
+          "name": "J2 Condo 209d41",
+          "shared_terms": [
+            "condominio",
+            "assemblea",
+            "riunione",
+            "roma"
+          ]
+        }
+      ],
+      "correspondents": [
+        {
+          "name": "J2 Condominio Via Roma",
+          "shared_terms": [
+            "condominio",
+            "assemblea",
+            "riunione",
+            "roma"
+          ]
+        }
+      ],
+      "document_types": [
+        {
+          "name": "J2 Meeting notice",
+          "shared_terms": [
+            "condominio",
+            "assemblea",
+            "riunione",
+            "roma"
+          ]
+        }
+      ]
+    }
+  }
+}

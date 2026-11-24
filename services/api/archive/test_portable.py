@@ -14,7 +14,7 @@ from django.utils import timezone
 from pypdf import PdfWriter
 
 from archive.ingestion import ingest_document
-from archive.models import (Correspondent, Document, DocumentNote, DocumentTag, DocumentVersion, Location, PhysicalCopy, Tag,
+from archive.models import (Correspondent, Document, DocumentNote, DocumentTag, DocumentVersion, Location, PaperCategory, PaperStickerAlias, PhysicalCopy, Tag,
                             Workflow)
 from archive.portable import PortableError, export_archive, import_archive
 
@@ -50,7 +50,9 @@ def build_archive(media):
     DocumentNote.objects.create(document=first, author=owner, body="Paid")
     shelf = Location.objects.create(owner=owner, name="Shelf")
     box = Location.objects.create(owner=owner, name="Box", parent=shelf)
-    PhysicalCopy.objects.create(document=first, sticker_code="R-TESTCOPY", location=box)
+    category = PaperCategory.objects.create(owner=owner, prefix="MED", name="Medical", next_number=2)
+    paper = PhysicalCopy.objects.create(document=first, sticker_code="MED-00001", paper_category=category, paper_number=1, location=box)
+    PaperStickerAlias.objects.create(owner=owner, physical_copy=paper, code="R-TESTCOPY")
     flow = Workflow.objects.create(owner=owner, name="Tag", trigger=Workflow.Trigger.ADDED)
     flow.add_tags.add(child)
     family = Group.objects.create(name="Family")
@@ -92,6 +94,10 @@ def test_export_then_import_restores_records_and_byte_identical_files(tmp_path):
     assert list(restored.events.values_list("action", "actor_user__username", "changes")) == [
         ("created", "owner", [{"field": "source", "from": None, "to": "web"}])]
     assert PhysicalCopy.objects.get(document=restored).location.parent.name == "Shelf"
+    restored_copy = PhysicalCopy.objects.get(document=restored)
+    assert (restored_copy.sticker_code, restored_copy.paper_number, restored_copy.paper_category.name) == ("MED-00001", 1, "Medical")
+    assert restored_copy.paper_category.next_number == 2
+    assert PaperStickerAlias.objects.get(owner=restored.owner, physical_copy=restored_copy).code == "R-TESTCOPY"
     assert list(Workflow.objects.get(name="Tag").add_tags.values_list("name", flat=True)) == ["Bills"]
     assert get_user_model().objects.get(username="owner").check_password("secure-password-1")
     assert list(get_user_model().objects.get(username="reader").groups.values_list("name", flat=True)) == ["Family"]

@@ -80,6 +80,7 @@ test("Enter creates a sender and type inside the document without closing it", a
   await expect(page.getByRole("button", { name, exact: true })).toBeVisible({ timeout: 60000 });
   await page.getByRole("button", { name, exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
+  await dialog.getByRole("button", { name: "More filing options" }).click();
   await dialog.getByRole("button", { name: "Add a sender" }).click();
   await dialog.getByRole("textbox", { name: "New sender name" }).fill(`Sender ${suffix}`);
   await page.keyboard.press("Enter");
@@ -93,6 +94,7 @@ test("Enter creates a sender and type inside the document without closing it", a
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await expect(dialog).toBeHidden();
   await page.getByRole("button", { name, exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "More filing options" }).click();
   await expect(page.getByRole("dialog").getByLabel("From")).toContainText(`Sender ${suffix}`);
   await expect(page.getByRole("dialog").locator("#detail-document-type")).toContainText(`Type ${suffix}`);
 });

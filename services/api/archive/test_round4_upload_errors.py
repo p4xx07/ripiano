@@ -1,5 +1,8 @@
 """Round-4 judge fixes: clear upload errors for damaged files and oversized images."""
 
+import errno
+import os
+import stat
 import struct
 import zlib
 from io import BytesIO
@@ -58,6 +61,59 @@ def test_huge_images_are_refused_with_a_clear_message_instead_of_a_server_error(
     assert str(error.value) == TOO_LARGE_IMAGE
     assert "50 megapixels" in TOO_LARGE_IMAGE and MAX_IMAGE_PIXELS == 50_000_000
     assert not any((tmp_path / "originals").rglob("*.png"))
+
+
+def test_directory_sync_unsupported_does_not_discard_a_saved_original(tmp_path, monkeypatch):
+    """Docker Desktop mounts can report EBADF for a directory even after the file sync succeeds."""
+    real_fsync = os.fsync
+    calls = {"directory": 0}
+
+    def fsync(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            calls["directory"] += 1
+            raise OSError(errno.EBADF, "directory sync unsupported")
+        return real_fsync(fd)
+
+    with override_settings(MEDIA_ROOT=tmp_path), monkeypatch.context() as patcher:
+        patcher.setattr("archive.storage.os.fsync", fsync)
+        relative, mime, _, size = save_original(SimpleUploadedFile("scan.png", small_png()))
+    assert calls["directory"] >= 1
+    assert mime == "image/png" and size > 0
+    assert (tmp_path / relative).is_file()
+
+
+def test_transient_directory_sync_error_is_retried(tmp_path, monkeypatch, caplog):
+    real_fsync = os.fsync
+    calls = {"directory": 0}
+
+    def fsync(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            calls["directory"] += 1
+            if calls["directory"] == 1:
+                raise OSError(errno.EBADF, "temporary directory sync failure")
+        return real_fsync(fd)
+
+    with override_settings(MEDIA_ROOT=tmp_path), monkeypatch.context() as patcher:
+        patcher.setattr("archive.storage.os.fsync", fsync)
+        relative, _, _, _ = save_original(SimpleUploadedFile("scan.png", small_png()))
+    assert calls["directory"] == 2
+    assert (tmp_path / relative).is_file()
+    assert not caplog.records
+
+
+def test_directory_sync_io_error_is_not_ignored(tmp_path, monkeypatch):
+    real_fsync = os.fsync
+
+    def fsync(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise OSError(errno.EIO, "media device failure")
+        return real_fsync(fd)
+
+    with override_settings(MEDIA_ROOT=tmp_path), monkeypatch.context() as patcher:
+        patcher.setattr("archive.storage.os.fsync", fsync)
+        with pytest.raises(OSError) as error:
+            save_original(SimpleUploadedFile("scan.png", small_png()))
+    assert error.value.errno == errno.EIO
 
 
 @pytest.mark.django_db

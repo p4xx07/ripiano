@@ -9,7 +9,7 @@ admin.site.login = never_cache(lambda request, extra_context=None: redirect("/")
 admin.site.has_permission = admin_has_permission
 from django.urls import path
 
-from archive import object_access_views, source_views, semantic_views, agent_views, learning_views, people_views, storage_path_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
+from archive import object_access_views, source_views, semantic_views, agent_views, learning_views, people_views, storage_path_views, similar_views, stats_views, api_tokens, attention_views, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
 
 urlpatterns = [
     path("healthz", views.health),
@@ -53,6 +53,7 @@ urlpatterns = [
     path("api/documents/merge", version_views.documents_merge),
     path("api/documents/<uuid:document_id>", views.document_detail),
     path("api/documents/<uuid:document_id>/filing-suggestions", views.document_filing_suggestions),
+    path("api/documents/<uuid:document_id>/attention-suggestion", attention_views.document_attention_suggestion),
     path("api/documents/<uuid:document_id>/filing-suggestions/dismiss", views.dismiss_filing_suggestion),
     path("api/documents/<uuid:document_id>/similar", similar_views.document_similar),
     path("api/documents/<uuid:document_id>/original", views.download_original),
@@ -130,6 +131,8 @@ urlpatterns = [
     path("api/filing-rules/<uuid:rule_id>", metadata_views.filing_rule_detail),
     path("api/rules", metadata_views.rules),
     path("api/rules/<uuid:rule_id>", metadata_views.rule_detail),
+    path("api/paper-categories", physical_views.paper_categories),
+    path("api/paper-categories/<uuid:category_id>", physical_views.paper_category_detail),
     path("api/locations", physical_views.locations),
     path("api/locations/lookup/<str:sticker_code>", physical_views.location_lookup),
     path("api/locations/<uuid:location_id>", physical_views.location_detail),
@@ -138,6 +141,7 @@ urlpatterns = [
     path("api/copies/<uuid:copy_id>", physical_views.copy_detail),
     path("api/copies/<uuid:copy_id>/status", physical_views.copy_status),
     path("api/copies/<uuid:copy_id>/history", physical_views.copy_history),
+    path("api/copies/<uuid:copy_id>/replace-label", physical_views.replace_copy_label),
     path("api/copies/<uuid:copy_id>/label", physical_views.printable_label),
     path("api/stickers/<str:sticker_code>", physical_views.sticker_lookup),
     path("api/agents", agent_views.grants),

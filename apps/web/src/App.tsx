@@ -61,6 +61,7 @@ import SharedPanel from "./SharedPanel";
 import SharedDocumentPanel from "./SharedDocumentPanel";
 import BundlePanel from "./BundlePanel";
 import OverviewPanel from "./OverviewPanel";
+import { ProcessingProblem, type ProcessingHealth } from "./JobsPanel";
 import SourcesPanel from "./SourcesPanel";
 import KeyboardHelp from "./KeyboardHelp";
 import SemanticPanel from "./SemanticPanel";
@@ -846,6 +847,7 @@ function App() {
   });
   const [view, setView] = useState<View>(() =>
     initialSticker || initialLocation ? "physical" : initialMailNotice ? "integrations" : initialSourceNotice ? "sources"
+      : window.location.pathname === "/" && !window.location.search ? (() => { try { return localStorage.getItem("ripiano.dashboardHome") === "1" ? "overview" : "documents"; } catch { return "documents"; } })()
       : viewFromPath(window.location.pathname) ?? "documents");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null,
@@ -1454,6 +1456,7 @@ function App() {
   const [suggestion, setSuggestion] = useState(""); // "Did you mean …?" when a search found nothing
   const lastLoadedView = useRef(""); // search + filters + sort of the list on screen
   const [stalled, setStalled] = useState<Record<string, { canRetry: boolean; canCancel: boolean }>>({});
+  const [processingHealth, setProcessingHealth] = useState<ProcessingHealth | null>(null);
   const [stalledBusy, setStalledBusy] = useState(false);
   const [stalledNotice, setStalledNotice] = useState("");
   const loadDocuments = useCallback(async (search: string, cursor: string | null = null) => {
@@ -1772,11 +1775,12 @@ function App() {
     return () => window.clearInterval(timer);
   }, [session?.authenticated, documents, query, loadDocuments]);
 
-  // Documents whose processing was interrupted (the worker stopped): the server flags them after a couple of minutes
-  // and puts them back in the queue by itself. The Library says so calmly and offers Retry and Cancel (round-9 judge 3 M1).
+  // While a visible document waits, read worker/queue health and interrupted jobs from the same endpoint.
+  // The server flags interrupted processing after a couple of minutes and requeues it by itself.
   const loadStalled = useCallback(async () => {
     try {
-      const jobs = await request<{ documents_waiting: { items: { id: string; stalled?: boolean; can_retry?: boolean; can_cancel?: boolean }[] } }>("/api/jobs");
+      const jobs = await request<{ processing?: ProcessingHealth; documents_waiting: { items: { id: string; stalled?: boolean; can_retry?: boolean; can_cancel?: boolean }[] } }>("/api/jobs");
+      setProcessingHealth(jobs.processing ?? null);
       const next: Record<string, { canRetry: boolean; canCancel: boolean }> = {};
       for (const item of jobs.documents_waiting.items) {
         if (item.stalled) next[item.id] = { canRetry: Boolean(item.can_retry), canCancel: Boolean(item.can_cancel) };
@@ -1786,10 +1790,11 @@ function App() {
       // Passing (offline, restarting): the next check tries again; the rows simply stay "Processing".
     }
   }, []);
-  const hasProcessing = Boolean(session?.authenticated) && documents.some((doc) => doc.status === "processing");
+  const hasProcessing = Boolean(session?.authenticated) && documents.some((doc) => doc.status === "pending" || doc.status === "processing");
   useEffect(() => {
     if (!hasProcessing) {
       setStalled((current) => Object.keys(current).length ? {} : current);
+      setProcessingHealth(null);
       return;
     }
     void loadStalled();
@@ -2403,6 +2408,7 @@ function App() {
             </>
           ) : view === "overview" ? (
             <OverviewPanel isOwner={Boolean(session.owner)} onNavigate={(target) => setView(target)}
+              onOpenCollection={(savedQuery, savedFilters) => { setQuery(savedQuery); setFilters(savedFilters); setNextCursor(null); setShowFilters(Object.values(savedFilters).some(Boolean)); setView("documents"); }}
               onOpenDocument={(id) => void request<Document>(`/api/documents/${id}`).then(setSelectedDocument).catch((cause) => setError(cause.message))}
               onOpenUntagged={() => {
               setQuery("is:untagged");
@@ -2446,6 +2452,7 @@ function App() {
                     <span className="heading-period">.</span>
                   </h1>
                   <p>{l.intro}</p>
+                  <button type="button" className="text-action library-dashboard-link" onClick={() => setView("overview")}>{l.openDashboard}</button>
                 </div>
                 <Button
                   className="desktop-add"
@@ -2594,6 +2601,7 @@ function App() {
                     <button type="button" className="text-action" onClick={() => void loadDocuments(query)}>{l.retry}</button>
                   </div>
                 )}
+                <ProcessingProblem health={processingHealth} isOwner={session.owner} />
               </div>
               <div className="notice-region" aria-live="polite">
                 {waitingUploads > 0 && (
@@ -3011,6 +3019,7 @@ function App() {
         <DocumentPanel
           key={selectedDocument.id}
           initial={selectedDocument}
+          isOwner={session.owner}
           restoredDraft={restoredDraft?.documentId === selectedDocument.id ? restoredDraft : null}
           onClose={() => setSelectedDocument(null)}
           onSaved={(saved, closing) => {

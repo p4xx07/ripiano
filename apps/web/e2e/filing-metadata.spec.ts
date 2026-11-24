@@ -95,6 +95,7 @@ test("sender and document type can be managed, assigned, and found", async ({ pa
   await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   await page.getByRole("button", { name, exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
+  await dialog.getByRole("button", { name: "More filing options" }).click();
   await dialog.getByLabel("From").selectOption({ label: renamedSender });
   await dialog.getByLabel("Document type").selectOption({ label: typeName });
   await dialog.getByLabel("Document date").fill("2026-04-15");
@@ -177,6 +178,7 @@ test("sender and document type can be managed, assigned, and found", async ({ pa
   const inlineSender = `Library sender ${suffix}`;
   await page.getByRole("button", { name, exact: true }).click();
   const reopened = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
+  await reopened.getByRole("button", { name: "More filing options" }).click();
   await reopened.getByRole("button", { name: "Add a sender" }).click();
   await reopened.getByRole("textbox", { name: "New sender name" }).fill(inlineSender);
   await reopened.getByRole("button", { name: "Add sender", exact: true }).click();

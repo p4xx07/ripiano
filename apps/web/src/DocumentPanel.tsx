@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowDownToLine,
   Building2,
+  CalendarPlus,
   Copy,
   Eye,
   FileText,
@@ -20,9 +21,13 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { ApiError, asSentence, byLocationPath, Document, DocumentNote, hasOpenWarning, FilingItem, FilingSuggestion, FilingSuggestions, formatDateTime, Location, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
+import { ApiError, asSentence, byLocationPath, Document, DocumentNote, hasOpenWarning, FilingItem, FilingSuggestion, FilingSuggestions, formatDate, formatDateTime, Location, PaperCategory, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
+import { suggestPaperCategory } from "./paperCategorySuggestion";
+import { downloadCalendarEvent } from "./calendarFile";
+
+type AttentionSuggestion = { kind: "payment" | "event"; date: string };
 
 /**
  * Set while a document dialog is open. Browser/Android Back calls it before leaving the document: it returns true
@@ -128,11 +133,13 @@ import PagesPanel from "./PagesPanel";
 import SimilarPanel from "./SimilarPanel";
 import EmailDocumentPanel from "./EmailDocumentPanel";
 import DocumentPreview from "./DocumentPreview";
+import { ProcessingProblem, type ProcessingHealth } from "./JobsPanel";
 import { useMessages } from "./i18n";
 import messages from "./locales/DocumentPanel";
 
 export default function DocumentPanel({
   initial,
+  isOwner,
   onClose,
   onSaved,
   onOpenLocations,
@@ -141,6 +148,7 @@ export default function DocumentPanel({
   restoredDraft,
 }: {
   initial: Document;
+  isOwner: boolean;
   /** Edits not saved before the session ended: shown again in the form, not saved until the person presses Save. */
   restoredDraft?: DocumentDraft | null;
   onClose: () => void;
@@ -178,11 +186,16 @@ export default function DocumentPanel({
   const [actionStatus, setActionStatus] = useState(start.actionStatus as Document["action_status"]);
   const [actionDueDate, setActionDueDate] = useState(start.actionDueDate);
   const [actionNote, setActionNote] = useState(start.actionNote);
+  const [showTaskEditor, setShowTaskEditor] = useState(Boolean(restoredDraft));
+  const [showAdvanced, setShowAdvanced] = useState(Boolean(restoredDraft));
+  const paperSectionRef = useRef<HTMLDivElement>(null);
+  const newCopySelectRef = useRef<HTMLSelectElement>(null);
   const [selected, setSelected] = useState<string[]>(
     restored?.tags ?? initial.tags.map((tag) => tag.id),
   );
   const [available, setAvailable] = useState<Tag[]>([]);
   const [suggestions, setSuggestions] = useState<FilingSuggestions | null>(null);
+  const [attentionSuggestion, setAttentionSuggestion] = useState<AttentionSuggestion | null>(null);
   const [suggestionStatus, setSuggestionStatus] = useState("");
   const availableById = new Map(available.map((tag) => [tag.id, tag]));
   const sortedAvailable = [...available].sort((a, b) =>
@@ -190,6 +203,15 @@ export default function DocumentPanel({
   const [locations, setLocations] = useState<Location[]>([]);
   const [copies, setCopies] = useState<PhysicalCopy[]>(initial.physical_copies);
   const [newLocation, setNewLocation] = useState("");
+  const [paperCategories, setPaperCategories] = useState<PaperCategory[]>([]);
+  const [newCategory, setNewCategory] = useState("VAR");
+  const [categoryTouched, setCategoryTouched] = useState(false);
+  const paperSuggestion = useMemo(() => suggestPaperCategory(current.tags, copies, paperCategories, available), [current.tags, copies, paperCategories, available]);
+  useEffect(() => {
+    if (!categoryTouched && paperCategories.length) setNewCategory(paperSuggestion.prefix);
+  }, [categoryTouched, paperCategories.length, paperSuggestion.prefix]);
+  const [replacementCategories, setReplacementCategories] = useState<Record<string, string>>({});
+  const newCategorySelectRef = useRef<HTMLSelectElement>(null);
   const [moveChoices, setMoveChoices] = useState<Record<string, string>>({});
   const [histories, setHistories] = useState<
     Record<string, { from: string[]; to: string[]; note: string; at: string; by?: string }[]>
@@ -301,6 +323,20 @@ export default function DocumentPanel({
     return () => { active = false; };
   }, [current.id, current.status]);
   useEffect(() => {
+    setAttentionSuggestion(null);
+    if (current.status !== "ready") return;
+    let active = true;
+    request<{ suggestion: AttentionSuggestion | null }>(`/api/documents/${current.id}/attention-suggestion`)
+      .then((result) => { if (active) setAttentionSuggestion(result.suggestion); })
+      .catch(() => { if (active) setAttentionSuggestion(null); });
+    return () => { active = false; };
+  }, [current.id, current.status]);
+  useEffect(() => {
+    request<{ categories: PaperCategory[] }>("/api/paper-categories")
+      .then((result) => setPaperCategories(result.categories))
+      .catch((cause) => setError(cause instanceof Error ? cause.message : m.loadFilingError));
+  }, []);
+  useEffect(() => {
     request<{ locations: Location[] }>("/api/locations")
       .then((result) => setLocations(byLocationPath(result.locations)))
       .catch((cause) => setError(cause.message));
@@ -334,17 +370,22 @@ export default function DocumentPanel({
     return () => { active = false; window.clearInterval(timer); };
   }, [current.id, current.status]);
 
-  // "Processing" whose worker stopped (flagged by /api/jobs after a couple of minutes): Retry OCR works again, and the
-  // dialog says calmly what is going on instead of "being prepared" (round-9 judge 1 H1).
+  // Pending and processing documents use /api/jobs to explain worker/queue trouble; interrupted
+  // processing also enables Retry OCR (round-9 judge 1 H1).
   const [stalled, setStalled] = useState(false);
+  const [processingHealth, setProcessingHealth] = useState<ProcessingHealth | null>(null);
   useEffect(() => {
     setStalled(false);
-    if (current.status !== "processing") return;
+    setProcessingHealth(null);
+    if (current.status !== "pending" && current.status !== "processing") return;
     let active = true;
     const check = () => {
       if (window.document.hidden) return; // nobody is looking; the next visible tick asks again
-      void request<{ documents_waiting: { items: { id: string; stalled?: boolean; can_retry?: boolean }[] } }>("/api/jobs").then((jobs) => {
-        if (active) setStalled(jobs.documents_waiting.items.some((item) => item.id === current.id && item.stalled && item.can_retry));
+      void request<{ processing?: ProcessingHealth; documents_waiting: { items: { id: string; stalled?: boolean; can_retry?: boolean }[] } }>("/api/jobs").then((jobs) => {
+        if (active) {
+          setProcessingHealth(jobs.processing ?? null);
+          setStalled(jobs.documents_waiting.items.some((item) => item.id === current.id && item.stalled && item.can_retry));
+        }
       }).catch(() => {});
     };
     check();
@@ -575,6 +616,8 @@ export default function DocumentPanel({
     onSaved(server);
     setConflicts(merged.conflicts);
     setSaveConflict(true);
+    setShowTaskEditor(true);
+    setShowAdvanced(true);
     setConflictStatus("");
     setConflictFocus((count) => count + 1);
   }
@@ -722,7 +765,7 @@ export default function DocumentPanel({
     try {
       const created = await request<PhysicalCopy>(`/api/documents/${current.id}/copies`, {
         method: "POST",
-        body: JSON.stringify({ location_id: newLocation || null }),
+        body: JSON.stringify({ location_id: newLocation || null, category_prefix: newCategory }),
       });
       await refreshCopies();
       setNewLocation("");
@@ -732,6 +775,26 @@ export default function DocumentPanel({
       setError(
         cause instanceof Error ? cause.message : m.createStickerError,
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function replaceCopyLabel(copy: PhysicalCopy) {
+    if (busy) return;
+    const prefix = replacementCategories[copy.id] ?? copy.category_prefix ?? "VAR";
+    if (!window.confirm(m.confirmReplaceLabel(copy.sticker_code, prefix))) return;
+    setBusy(true);
+    setError("");
+    setCopyNotice("");
+    try {
+      const result = await request<{ copy: PhysicalCopy; previous_code: string }>(`/api/copies/${copy.id}/replace-label`, {
+        method: "POST", body: JSON.stringify({ category_prefix: prefix }),
+      });
+      await refreshCopies();
+      setCopyNotice(m.labelReplaced(result.previous_code, result.copy.sticker_code));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.replaceLabelError);
     } finally {
       setBusy(false);
     }
@@ -830,7 +893,7 @@ export default function DocumentPanel({
       return;
     }
     // Keep focus in the suggestions (or on the field below once the last one is gone).
-    requestAnimationFrame(() => (document.querySelector<HTMLElement>(".filing-suggestions .suggestion-accept") ?? document.getElementById(kind === "tag" ? "detail-add-tag" : kind === "sender" ? "detail-correspondent" : "detail-document-type"))?.focus());
+    requestAnimationFrame(() => (document.querySelector<HTMLElement>(".filing-suggestions .suggestion-accept") ?? document.querySelector<HTMLElement>(".detail-advanced-toggle"))?.focus());
   }
   async function acceptSuggestion(kind: "tag" | "sender" | "type", item: FilingSuggestion) {
     if (busy) return;
@@ -848,7 +911,8 @@ export default function DocumentPanel({
       if (kind === "type") setDocumentTypeId(updated.document_type?.id ?? "");
       onSaved(updated);
       setSuggestionStatus(m.suggestionSaved(kind, item.name));
-      requestAnimationFrame(() => document.getElementById(fieldId)?.focus());
+      setShowAdvanced(true);
+      focusSoon(fieldId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : m.saveSuggestionError);
     } finally {
@@ -1117,12 +1181,6 @@ export default function DocumentPanel({
               required
             />
           </Field>
-          {/* The long hint is a description, not part of the field's name (round-4 judge L6). */}
-          <label className="detail-label">
-            <span id="detail-asn-label">{m.asn}</span><small id="detail-asn-hint">{m.asnHint}</small>
-            <input inputMode="numeric" pattern="[0-9]*" maxLength={9} value={asn} onChange={(event) => setAsn(event.target.value)}
-              aria-labelledby="detail-asn-label" aria-describedby="detail-asn-hint" />
-          </label>
           <Field label={m.documentDate} hint={m.optional} className="detail-label">
             <input
               type="date"
@@ -1130,6 +1188,40 @@ export default function DocumentPanel({
               onChange={(event) => setDate(event.target.value)}
             />
           </Field>
+          <p className="detail-filing-summary"><strong>{m.filingSummary}</strong> {[
+            correspondentId && (correspondents.find((item) => item.id === correspondentId)?.name ?? current.correspondent?.name),
+            documentTypeId && (documentTypes.find((item) => item.id === documentTypeId)?.name ?? current.document_type?.name),
+            ...selected.map((id) => availableById.get(id)?.name ?? current.tags.find((item) => item.id === id)?.name ?? ""),
+          ].filter(Boolean).join(" · ") || (current.status === "ready" ? m.noFilingDetails : current.status === "failed" ? m.filingNeedsAttention : m.filingPending)}</p>
+          <div className="detail-quick-actions">
+            <button type="button" className="text-action" onClick={() => {
+              if (actionStatus === "none") setActionStatus("open");
+              setShowTaskEditor(true);
+              focusSoon("detail-action-status");
+            }}>{actionStatus === "none" ? m.addTask : m.editTask}</button>
+            <span>{actionStatus === "open" ? m.taskSummary(actionNote, actionDueDate) : actionStatus === "done" ? m.taskDone : ""}</span>
+            <button type="button" className="text-action" onClick={() => {
+              paperSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+              requestAnimationFrame(() => (copies.length ? paperSectionRef.current : newCategorySelectRef.current)?.focus({ preventScroll: true }));
+            }}>{copies.length ? m.viewPaperCopy : m.keepPaperCopy}</button>
+            <span>{copies.length ? m.paperSummary(copies[0].sticker_code, copies[0].location_path.join(" / "), copies.length) : m.digitalOnlyBrief}</span>
+          </div>
+          {attentionSuggestion?.kind === "payment" && actionStatus === "none" && <div className="attention-suggestion">
+            <strong>{m.possiblePaymentDue(formatDate(`${attentionSuggestion.date}T00:00:00`))}</strong>
+            <span>{m.paymentSuggestionHint}</span>
+            <Button type="button" variant="secondary" onClick={() => {
+              setActionStatus("open");
+              setActionDueDate(attentionSuggestion.date);
+              setActionNote(m.payDocumentTask);
+              setShowTaskEditor(true);
+              focusSoon("detail-action-status");
+            }}>{m.preparePaymentTask}</Button>
+          </div>}
+          {attentionSuggestion?.kind === "event" && <div className="attention-suggestion">
+            <strong>{m.possibleEventDate(formatDate(`${attentionSuggestion.date}T00:00:00`))}</strong>
+            <span>{m.eventSuggestionHint}</span>
+            <Button type="button" variant="secondary" onClick={() => downloadCalendarEvent(current.title, attentionSuggestion.date, current.id)}><CalendarPlus size={16} /> {m.addToCalendar}</Button>
+          </div>}
           {visibleSuggestions && (
             <section id="filing-suggestions" tabIndex={-1} className="filing-suggestions" aria-labelledby="filing-suggestions-heading">
               <h3 id="filing-suggestions-heading">{m.suggestionsHeading}</h3>
@@ -1175,6 +1267,32 @@ export default function DocumentPanel({
             <p className="filing-suggestions-hint">{m.suggestionsLater}</p>
           )}
           {suggestionStatus && <p className="visually-hidden" role="status">{suggestionStatus}</p>}
+          {showTaskEditor && <div className="detail-task-editor">
+          <Field label={m.followUp} hint={m.optional} className="detail-label">
+            <select id="detail-action-status" value={actionStatus} onChange={(event) => setActionStatus(event.target.value as Document["action_status"])}>
+              <option value="none">{m.nothingToDo}</option>
+              <option value="open">{m.needsAction}</option>
+              <option value="done">{m.completed}</option>
+            </select>
+          </Field>
+          {actionStatus === "open" && <>
+            <Field label={m.dueDate} hint={m.optional} className="detail-label">
+              <input type="date" value={actionDueDate} onChange={(event) => setActionDueDate(event.target.value)} />
+            </Field>
+            {actionDueDate && <button type="button" className="text-action" onClick={() => downloadCalendarEvent(current.title, actionDueDate, current.id)}><CalendarPlus size={16} /> {m.addToCalendar}</button>}
+            <Field label={m.whatNeedsDoing} hint={m.optional} className="detail-label">
+              <input value={actionNote} onChange={(event) => setActionNote(event.target.value)} maxLength={500} placeholder={m.actionPlaceholder} />
+            </Field>
+          </>}
+          </div>}
+          <button type="button" className="detail-advanced-toggle" aria-expanded={showAdvanced} aria-controls="detail-advanced-fields" onClick={() => setShowAdvanced((value) => !value)}>{m.moreOptions}</button>
+          {showAdvanced && <div id="detail-advanced-fields" className="detail-advanced-fields">
+          {/* The long hint is a description, not part of the field's name (round-4 judge L6). */}
+          <label className="detail-label">
+            <span id="detail-asn-label">{m.asn}</span><small id="detail-asn-hint">{m.asnHint}</small>
+            <input inputMode="numeric" pattern="[0-9]*" maxLength={9} value={asn} onChange={(event) => setAsn(event.target.value)}
+              aria-labelledby="detail-asn-label" aria-describedby="detail-asn-hint" />
+          </label>
           <Field label={m.from} hint={current.correspondent_origin === "rule" ? m.originRule : current.correspondent_origin === "source" ? m.originSource : current.correspondent_origin === "model" ? m.originModel : current.correspondent_origin === "learned" ? m.originLearned : m.senderHint} className="detail-label">
             <select id="detail-correspondent" value={correspondentId} onChange={(event) => setCorrespondentId(event.target.value)}>
               <option value="">{m.noSender}</option>
@@ -1209,21 +1327,6 @@ export default function DocumentPanel({
               </select>
             </Field>
           )}
-          <Field label={m.followUp} hint={m.optional} className="detail-label">
-            <select value={actionStatus} onChange={(event) => setActionStatus(event.target.value as Document["action_status"])}>
-              <option value="none">{m.nothingToDo}</option>
-              <option value="open">{m.needsAction}</option>
-              <option value="done">{m.completed}</option>
-            </select>
-          </Field>
-          {actionStatus === "open" && <>
-            <Field label={m.dueDate} hint={m.optional} className="detail-label">
-              <input type="date" value={actionDueDate} onChange={(event) => setActionDueDate(event.target.value)} />
-            </Field>
-            <Field label={m.whatNeedsDoing} hint={m.optional} className="detail-label">
-              <input value={actionNote} onChange={(event) => setActionNote(event.target.value)} maxLength={500} placeholder={m.actionPlaceholder} />
-            </Field>
-          </>}
           <div className="detail-label">
             {m.tags} <small>{current.tags.some((tag) => tag.origin === "learned") ? m.tagsLearned : m.tagsHint}</small>
           </div>
@@ -1269,9 +1372,10 @@ export default function DocumentPanel({
               <button type="button" aria-label={m.cancelNewTag} onClick={() => { setCreatingTag(false); focusSoon("detail-add-tag"); }}><X size={16} /></button>
             </div>
           ) : <button type="button" id="detail-add-tag" className="text-action" onClick={() => setCreatingTag(true)}><Plus size={15} /> {m.addATag}</button>}
-          <Button ref={saveButtonRef} className="detail-save" pending={busy}>
+          </div>}
+          {(dirty || busy) && <Button ref={saveButtonRef} className="detail-save" pending={busy}>
             <Save size={17} /> {busy ? m.saving : m.saveChanges}
-          </Button>
+          </Button>}
         </form>
         <CustomFieldsPanel documentId={current.id} onChanged={() => { onSaved(current); setCurrent((value) => ({ ...value })); }} />
         <section className="detail-notes" aria-labelledby="document-notes-heading">
@@ -1307,12 +1411,16 @@ export default function DocumentPanel({
             <FileText size={17} /> {m.files}
           </h3>
           {reprocessNotice && <p className="bulk-notice" role="status">{reprocessNotice}</p>}
-          <a href={`/api/documents/${current.id}/original`}>
-            <ArrowDownToLine size={17} /> {m.downloadOriginal}
-          </a>
-          <a href={`/api/documents/${current.id}/export`}>
-            <ArrowDownToLine size={17} /> {m.exportZip}
-          </a>
+          <details className="detail-file-options">
+            <summary>{m.originalAndExport}</summary>
+            <p>{m.originalAndExportHint}</p>
+            <a href={`/api/documents/${current.id}/original`}>
+              <ArrowDownToLine size={17} /> {m.downloadOriginal}
+            </a>
+            <a href={`/api/documents/${current.id}/export`}>
+              <ArrowDownToLine size={17} /> {m.exportZip}
+            </a>
+          </details>
           {current.archive_available && (
             <a
               href={`/api/documents/${current.id}/archive`}
@@ -1329,6 +1437,7 @@ export default function DocumentPanel({
             <RotateCw size={16} /> {current.status === "failed" ? m.retryOcr : m.runOcrAgain}
           </Button>
           {(current.status === "pending" || current.status === "processing") && <p id="detail-ocr-preparing" className="detail-processing" aria-live="polite">{stalled ? m.ocrStalled : m.ocrPreparing}</p>}
+          <ProcessingProblem health={processingHealth} isOwner={isOwner} />
           {current.status === "failed" && current.error && <p className="inline-error">{current.error}</p>}
         </div>
         {!current.is_split_source && (
@@ -1346,7 +1455,7 @@ export default function DocumentPanel({
         <DocumentAccessPanel documentId={current.id} />
         <ShareLinksPanel documentId={current.id} />
         <EmailDocumentPanel documentId={current.id} searchableReady={current.archive_available} />
-        <div className="detail-files physical-copies">
+        <div ref={paperSectionRef} tabIndex={-1} className="detail-files physical-copies">
           <h3>
             <MapPin size={17} /> {m.paperCopies}
           </h3>
@@ -1408,6 +1517,17 @@ export default function DocumentPanel({
                 </Button>
               </div>
               {copy.missing_at && <p className="copy-missing-hint">{m.markFoundFirst}</p>}
+              <details className="replace-paper-label">
+                <summary>{m.replaceLabelAdvanced}</summary>
+                <p>{m.replaceLabelHint}</p>
+                <label className="detail-label">{m.paperCategory}
+                  <select aria-label={m.replacementCategoryFor(copy.sticker_code)} value={replacementCategories[copy.id] ?? copy.category_prefix ?? "VAR"}
+                    onChange={(event) => setReplacementCategories((current) => ({ ...current, [copy.id]: event.target.value }))}>
+                    {paperCategories.map((category) => <option key={category.id} value={category.prefix}>{category.prefix} · {category.name}</option>)}
+                  </select>
+                </label>
+                <Button type="button" variant="secondary" pending={busy} disabled={!paperCategories.length} onClick={() => void replaceCopyLabel(copy)}>{m.replaceLabel}</Button>
+              </details>
               {histories[copy.id] && (
                 <ol className="copy-history" aria-label={m.historyOf(copy.sticker_code)}>
                   {histories[copy.id].map((move, index) => (
@@ -1422,9 +1542,19 @@ export default function DocumentPanel({
               )}
             </div>
           ))}
-          <div className="new-copy">
-            <select
+          <details className="additional-paper-copy" open={copies.length === 0 || undefined}>
+            {copies.length > 0 && <summary>{m.addAnotherCopy}</summary>}
+            <div className="new-copy">
+              <label className="detail-label">{m.paperCategory} <small>{m.paperCategoryHint}</small>
+                <select ref={newCategorySelectRef} value={newCategory} onChange={(event) => { setNewCategory(event.target.value); setCategoryTouched(true); }}>
+                  {paperCategories.map((category) => <option key={category.id} value={category.prefix}>{category.prefix} · {category.name}</option>)}
+                </select>
+                {paperSuggestion.tag && !categoryTouched && <small>{m.paperCategorySuggested(paperSuggestion.tag)}</small>}
+              </label>
+              <label className="detail-label">{m.paperLocation}
+              <select
               aria-label={m.newCopyLocation}
+              ref={newCopySelectRef}
               value={newLocation}
               onChange={(event) => setNewLocation(event.target.value)}
             >
@@ -1434,16 +1564,19 @@ export default function DocumentPanel({
                   {location.path.join(" / ")}
                 </option>
               ))}
-            </select>
+              </select>
+              </label>
             <Button
               type="button"
               variant="secondary"
               pending={busy}
+              disabled={!paperCategories.length}
               onClick={() => void createCopy()}
             >
               <Plus size={16} /> {m.createSticker}
             </Button>
-          </div>
+            </div>
+          </details>
           {!locations.length && (
             <button className="text-action" onClick={() => leave(onOpenLocations)}>
               {m.createLocationFirst} <Plus size={15} />

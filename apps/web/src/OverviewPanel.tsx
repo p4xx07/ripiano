@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, X } from "lucide-react";
 import { formatDateTime, request } from "./api";
 import JobsPanel, { ProcessingProblem, type ProcessingHealth } from "./JobsPanel";
+import DashboardCollections from "./DashboardCollections";
+import type { LibraryFilters } from "./api";
 import { useMessages } from "./i18n";
 import messages from "./locales/OverviewPanel";
 
@@ -53,12 +55,13 @@ function Ranked({ title, rows }: { title: string; rows: { name: string; count: n
   );
 }
 
-export default function OverviewPanel({ onNavigate, onOpenUntagged, onOpenDocument, isOwner = false }: {
+export default function OverviewPanel({ onNavigate, onOpenUntagged, onOpenDocument, onOpenCollection, isOwner = false }: {
   /** The archive owner sees backup health; other people are told backups are the owner's (round-11 judge 2 L2). */
   isOwner?: boolean;
   onNavigate: (view: "inbox" | "actions" | "documents" | "backups" | "integrations" | "workflows") => void;
   onOpenUntagged: () => void;
   onOpenDocument: (id: string) => void;
+  onOpenCollection: (query: string, filters: LibraryFilters) => void;
 }) {
   const m = useMessages(messages);
   const sources: Record<string, string> = { web: "Web", android: "Android", telegram: "Telegram", folder: m.sourceFolder, email: m.sourceEmail, s3: m.sourceS3,
@@ -99,6 +102,7 @@ export default function OverviewPanel({ onNavigate, onOpenUntagged, onOpenDocume
           <p>{m.intro}</p>
         </div>
       </div>
+      <DashboardCollections onOpen={onOpenCollection} onOpenDocument={onOpenDocument} />
       {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={m.dismissError}><X size={16} /></button></div>}
       {docs && data && (
         <>

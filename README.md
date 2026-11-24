@@ -24,7 +24,7 @@
 - **Family accounts**: everyone gets a private archive, and you can share single documents or send a link that expires. Optional document email shows the server's sending address before you send.
 - **Automatic imports**: optionally pull in files from email, a NAS folder, cloud storage, or a Telegram bot.
 - **Readable workflows**: choose a recipe, then configure it in a full-width editor with a live plain-language summary; optional conditions and specialist actions remain available.
-- **Private and backed up**: everything stays on your server, with two-step sign-in and scheduled, checked backups. Optional folder templates shape the readable NAS copy without moving originals.
+- **Private and backed up**: everything stays on your server, with two-step sign-in and scheduled, checked backups. Security has separate, clearly labelled fields for changing your password; a change signs out other devices and revokes tokens, agents, and sharing links. Optional folder templates shape the readable NAS copy without moving originals.
 - **AI if you want it**: give an AI assistant limited, revocable access; Ripiano never sends your files to a paid AI service.
 
 Original file bytes are synced before an upload completes. If a mounted filesystem rejects directory sync, Ripiano retries, completes the upload, and records a durability warning in server logs. Other storage I/O errors still fail the upload.

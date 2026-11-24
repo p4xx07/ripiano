@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img src="qa-artifacts/20261119-readme/desktop-document.png" alt="An electricity bill open in Ripiano: first-page preview beside its title, date, sender, and type" width="620">
+  <img src="qa-artifacts/20261119-readme/desktop-document.png" alt="An electricity bill open in Ripiano: first-page preview beside its title, date, a one-line filing summary, and task and paper-copy actions" width="620">
   &nbsp;
   <img src="qa-artifacts/20261119-readme/mobile-library.png" alt="The Ripiano Library on a phone" width="200">
 </p>

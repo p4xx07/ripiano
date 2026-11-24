@@ -246,7 +246,7 @@ def document_email(request, document_id):
         DocumentEmailSend.objects.filter(document=document, status=DocumentEmailSend.Status.QUEUED,
                                          created_at__lt=timezone.now() - timedelta(minutes=STALE_EMAIL_MINUTES)).update(
             status=DocumentEmailSend.Status.FAILED, detail="Sending did not finish. Try again.")
-        return JsonResponse({"configured": enabled, "sends": [_email_json(item) for item in DocumentEmailSend.objects.filter(document=document)[:20]]})
+        return JsonResponse({"configured": enabled, "from_email": settings.DEFAULT_FROM_EMAIL, "sends": [_email_json(item) for item in DocumentEmailSend.objects.filter(document=document)[:20]]})
     if not enabled:
         return JsonResponse({"error": "Emailing documents is not turned on for this server."}, status=409)
     body = _body(request)

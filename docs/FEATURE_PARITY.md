@@ -33,7 +33,7 @@ Milestones: **R1** = safe daily archive; **R2** = full daily workflow and physic
 
 ## Additional Ripiano capabilities
 
-These are not substitutes for parity rows: physical-copy hierarchy, printable document/container stickers (Find a sticker reads the QR with the camera where the browser has a QR reader, `StickerCamera.tsx`; elsewhere it says to open the QR with the phone's camera app), movement history, location contents that separate present copies from those reported missing, exception-only Inbox, first-class Needs action/reminders (with conservative payment/event date suggestions and local `.ics` calendar export), installable iOS/Android PWA, Android native scanner, named per-agent MCP grants, optional daily local-PC worker, and scheduled backups visible in the app.
+These are not substitutes for parity rows: physical-copy hierarchy, printable document/container stickers (Find a sticker reads the QR with the camera where the browser has a QR reader, `StickerCamera.tsx`; elsewhere it says to open the QR with the phone's camera app), movement history, location contents that separate present copies from those reported missing, exception-only Inbox, first-class Needs action/reminders (with conservative payment/event date suggestions and local `.ics` calendar export), installable iOS/Android PWA, Android native scanner, named per-agent MCP grants, optional daily local-PC worker, and scheduled backups visible in the app. Document email displays the configured SMTP From address before sending; an account address, when present, is used for Reply-To.
 
 ## Evidence required at R4
 

@@ -1,6 +1,6 @@
-# README screenshots (2026-11-19)
+# README screenshots (first captured 2026-11-19, refreshed 2026-11-24)
 
-Captured from the local development stack (`http://localhost:18080`, branch `codex/initial-implementation` after 063074a)
+Refreshed on 2026-11-24 from a throwaway stack built from `main` at c3d285e (first captured from the local development stack after 063074a),
 in a separate demo account with 13 fictional household documents. Every company, person, and address is invented.
 
 - `make_docs.py` writes the sample text PDFs (Python standard library only).

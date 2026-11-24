@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowDownToLine,
   Building2,
+  CalendarPlus,
   Copy,
   Eye,
   FileText,
@@ -20,10 +21,13 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { ApiError, asSentence, byLocationPath, Document, DocumentNote, hasOpenWarning, FilingItem, FilingSuggestion, FilingSuggestions, formatDateTime, Location, PaperCategory, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
+import { ApiError, asSentence, byLocationPath, Document, DocumentNote, hasOpenWarning, FilingItem, FilingSuggestion, FilingSuggestions, formatDate, formatDateTime, Location, PaperCategory, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
 import { Button, Field, Modal } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 import { suggestPaperCategory } from "./paperCategorySuggestion";
+import { downloadCalendarEvent } from "./calendarFile";
+
+type AttentionSuggestion = { kind: "payment" | "event"; date: string };
 
 /**
  * Set while a document dialog is open. Browser/Android Back calls it before leaving the document: it returns true
@@ -191,6 +195,7 @@ export default function DocumentPanel({
   );
   const [available, setAvailable] = useState<Tag[]>([]);
   const [suggestions, setSuggestions] = useState<FilingSuggestions | null>(null);
+  const [attentionSuggestion, setAttentionSuggestion] = useState<AttentionSuggestion | null>(null);
   const [suggestionStatus, setSuggestionStatus] = useState("");
   const availableById = new Map(available.map((tag) => [tag.id, tag]));
   const sortedAvailable = [...available].sort((a, b) =>
@@ -315,6 +320,15 @@ export default function DocumentPanel({
     request<FilingSuggestions>(`/api/documents/${current.id}/filing-suggestions`)
       .then((result) => { if (active) setSuggestions(result); })
       .catch(() => { if (active) setSuggestions(null); });
+    return () => { active = false; };
+  }, [current.id, current.status]);
+  useEffect(() => {
+    setAttentionSuggestion(null);
+    if (current.status !== "ready") return;
+    let active = true;
+    request<{ suggestion: AttentionSuggestion | null }>(`/api/documents/${current.id}/attention-suggestion`)
+      .then((result) => { if (active) setAttentionSuggestion(result.suggestion); })
+      .catch(() => { if (active) setAttentionSuggestion(null); });
     return () => { active = false; };
   }, [current.id, current.status]);
   useEffect(() => {
@@ -1192,6 +1206,22 @@ export default function DocumentPanel({
             }}>{copies.length ? m.viewPaperCopy : m.keepPaperCopy}</button>
             <span>{copies.length ? m.paperSummary(copies[0].sticker_code, copies[0].location_path.join(" / "), copies.length) : m.digitalOnlyBrief}</span>
           </div>
+          {attentionSuggestion?.kind === "payment" && actionStatus === "none" && <div className="attention-suggestion">
+            <strong>{m.possiblePaymentDue(formatDate(`${attentionSuggestion.date}T00:00:00`))}</strong>
+            <span>{m.paymentSuggestionHint}</span>
+            <Button type="button" variant="secondary" onClick={() => {
+              setActionStatus("open");
+              setActionDueDate(attentionSuggestion.date);
+              setActionNote(m.payDocumentTask);
+              setShowTaskEditor(true);
+              focusSoon("detail-action-status");
+            }}>{m.preparePaymentTask}</Button>
+          </div>}
+          {attentionSuggestion?.kind === "event" && <div className="attention-suggestion">
+            <strong>{m.possibleEventDate(formatDate(`${attentionSuggestion.date}T00:00:00`))}</strong>
+            <span>{m.eventSuggestionHint}</span>
+            <Button type="button" variant="secondary" onClick={() => downloadCalendarEvent(current.title, attentionSuggestion.date, current.id)}><CalendarPlus size={16} /> {m.addToCalendar}</Button>
+          </div>}
           {visibleSuggestions && (
             <section id="filing-suggestions" tabIndex={-1} className="filing-suggestions" aria-labelledby="filing-suggestions-heading">
               <h3 id="filing-suggestions-heading">{m.suggestionsHeading}</h3>
@@ -1249,6 +1279,7 @@ export default function DocumentPanel({
             <Field label={m.dueDate} hint={m.optional} className="detail-label">
               <input type="date" value={actionDueDate} onChange={(event) => setActionDueDate(event.target.value)} />
             </Field>
+            {actionDueDate && <button type="button" className="text-action" onClick={() => downloadCalendarEvent(current.title, actionDueDate, current.id)}><CalendarPlus size={16} /> {m.addToCalendar}</button>}
             <Field label={m.whatNeedsDoing} hint={m.optional} className="detail-label">
               <input value={actionNote} onChange={(event) => setActionNote(event.target.value)} maxLength={500} placeholder={m.actionPlaceholder} />
             </Field>

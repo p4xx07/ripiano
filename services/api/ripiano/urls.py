@@ -9,7 +9,7 @@ admin.site.login = never_cache(lambda request, extra_context=None: redirect("/")
 admin.site.has_permission = admin_has_permission
 from django.urls import path
 
-from archive import object_access_views, source_views, semantic_views, agent_views, learning_views, people_views, storage_path_views, similar_views, stats_views, api_tokens, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
+from archive import object_access_views, source_views, semantic_views, agent_views, learning_views, people_views, storage_path_views, similar_views, stats_views, api_tokens, attention_views, bundle_views, mail_views, security_views, version_views, workflow_views, browse_views, custom_field_views, export_views, job_views, link_views, metadata_views, physical_views, purge_views, share_views, views
 
 urlpatterns = [
     path("healthz", views.health),
@@ -53,6 +53,7 @@ urlpatterns = [
     path("api/documents/merge", version_views.documents_merge),
     path("api/documents/<uuid:document_id>", views.document_detail),
     path("api/documents/<uuid:document_id>/filing-suggestions", views.document_filing_suggestions),
+    path("api/documents/<uuid:document_id>/attention-suggestion", attention_views.document_attention_suggestion),
     path("api/documents/<uuid:document_id>/filing-suggestions/dismiss", views.dismiss_filing_suggestion),
     path("api/documents/<uuid:document_id>/similar", similar_views.document_similar),
     path("api/documents/<uuid:document_id>/original", views.download_original),

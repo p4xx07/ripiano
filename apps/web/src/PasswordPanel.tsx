@@ -48,9 +48,9 @@ export default function PasswordPanel() {
     {error && <p className="inline-error" role="alert" id="password-error">{error}</p>}
     {notice && <p className="bulk-notice" role="status">{notice}</p>}
     <p className="password-warning" id="password-warning">{m.warning}</p>
-    <Field label={m.current}><input type="password" autoComplete="current-password" required {...invalid.props("current")} value={current} onChange={(event) => setCurrent(event.target.value)} /></Field>
-    <Field label={m.next} hint={m.nextHint}><input type="password" autoComplete="new-password" minLength={12} required {...tooShortMessage(m.tooShort)} {...invalid.props("next")} value={next} onChange={(event) => setNext(event.target.value)} /></Field>
-    <Field label={m.repeat}><input type="password" autoComplete="new-password" minLength={12} required {...tooShortMessage(m.tooShort)} {...invalid.props("repeat")} value={repeat} onChange={(event) => setRepeat(event.target.value)} /></Field>
+    <Field label={m.current} className="detail-label"><input type="password" autoComplete="current-password" required {...invalid.props("current")} value={current} onChange={(event) => setCurrent(event.target.value)} /></Field>
+    <Field label={m.next} hint={m.nextHint} className="detail-label"><input type="password" autoComplete="new-password" minLength={12} required {...tooShortMessage(m.tooShort)} {...invalid.props("next")} value={next} onChange={(event) => setNext(event.target.value)} /></Field>
+    <Field label={m.repeat} className="detail-label"><input type="password" autoComplete="new-password" minLength={12} required {...tooShortMessage(m.tooShort)} {...invalid.props("repeat")} value={repeat} onChange={(event) => setRepeat(event.target.value)} /></Field>
     <Button aria-describedby="password-warning" pending={busy || !current || next.length < 12 || !repeat}>{busy ? m.changing : m.change}</Button>
   </form>;
 }

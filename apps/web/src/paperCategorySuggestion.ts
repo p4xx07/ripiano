@@ -3,10 +3,10 @@ import type { Document, PaperCategory, PhysicalCopy, Tag } from "./api";
 const TOPIC_ALIASES: Record<string, string> = {
   health: "MED", salute: "MED", medicina: "MED", medico: "MED", referti: "MED",
   house: "HOM", casa: "HOM", abitazione: "HOM",
-  finances: "FIN", taxes: "FIN", finanza: "FIN", finanze: "FIN", tasse: "FIN", fisco: "FIN",
-  vehicle: "AUT", car: "AUT", veicoli: "AUT", automobile: "AUT",
+  finances: "FIN", taxes: "FIN", finanza: "FIN", finanze: "FIN", tasse: "FIN", fisco: "FIN", "finanze e tasse": "FIN",
+  vehicle: "AUT", vehicles: "AUT", car: "AUT", veicoli: "AUT", automobile: "AUT",
   identity: "PER", identita: "PER", personale: "PER",
-  events: "EVT", travel: "EVT", eventi: "EVT", viaggi: "EVT", concerts: "EVT", concerti: "EVT",
+  events: "EVT", travel: "EVT", eventi: "EVT", viaggi: "EVT", concerts: "EVT", concerti: "EVT", "eventi e viaggi": "EVT",
 };
 
 function key(value: string) {
@@ -16,7 +16,7 @@ function key(value: string) {
 /** Suggest only when one attached tag (or its parent) names a broad paper topic unambiguously. */
 export function suggestPaperCategory(
   attached: Document["tags"], copies: PhysicalCopy[], categories: PaperCategory[], available: Tag[],
-): { prefix: string; tag: string | null } {
+): { prefix: string; tag: string | null; ambiguous?: boolean } {
   const existing = copies[0]?.category_prefix;
   if (existing && categories.some((category) => category.prefix === existing)) return { prefix: existing, tag: null };
   const byId = new Map(available.map((tag) => [tag.id, tag]));
@@ -39,5 +39,6 @@ export function suggestPaperCategory(
     const [prefix, tag] = [...matches][0];
     return { prefix, tag };
   }
-  return { prefix: "VAR", tag: null };
+  // Tags from two or more paper areas: propose Other and ask the person to choose.
+  return { prefix: "VAR", tag: null, ambiguous: matches.size > 1 };
 }

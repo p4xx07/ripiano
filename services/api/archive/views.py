@@ -403,7 +403,12 @@ def setup_owner(request):
     problem = password_problem(password, get_user_model()(username=username))
     if problem:
         return JsonResponse({"error": problem}, status=400)
-    user = get_user_model().objects.create_superuser(username=username, password=password)
+    from .starter_tags import ensure_starter_tags
+
+    # One transaction: a failure while adding starter tags must not leave a half-set-up owner behind.
+    with transaction.atomic():
+        user = get_user_model().objects.create_superuser(username=username, password=password)
+        ensure_starter_tags(user)
     login(request, user)
     return JsonResponse({"username": user.get_username()}, status=201)
 

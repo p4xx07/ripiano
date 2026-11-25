@@ -28,6 +28,7 @@ export default function TagPanel() {
   const [barcodeDraft, setBarcodeDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const tagById = new Map(tags.map((tag) => [tag.id, tag]));
   const pathCache = new Map<string, string>();
   function tagPath(tag: Tag) {
@@ -66,10 +67,27 @@ export default function TagPanel() {
     void load();
   }, [load]);
 
+  async function addStarterTags() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await request<{ added: number; tags: Tag[] }>("/api/tags/starter", { method: "POST" });
+      setTags(result.tags);
+      setNotice(result.added ? m.starterAdded(result.added) : m.starterAlreadyThere);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : m.starterError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createTag(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       await request("/api/tags", {
         method: "POST",
@@ -103,6 +121,7 @@ export default function TagPanel() {
     if (!newRuleTag) return;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       await request("/api/rules", {
         method: "POST",
@@ -126,6 +145,7 @@ export default function TagPanel() {
 
   async function removeRule(id: string) {
     setError("");
+    setNotice("");
     try {
       await request(`/api/rules/${id}`, { method: "DELETE" });
       await load();
@@ -144,6 +164,7 @@ export default function TagPanel() {
     )
       return;
     setError("");
+    setNotice("");
     try {
       await request(`/api/tags/${tag.id}`, { method: "DELETE" });
       await load();
@@ -155,6 +176,7 @@ export default function TagPanel() {
   async function moveTag(tag: Tag, nextParentId: string) {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       await request(`/api/tags/${tag.id}`, {
         method: "PATCH",
@@ -173,6 +195,7 @@ export default function TagPanel() {
     event.preventDefault();
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       await request(`/api/tags/${tag.id}`, {
         method: "PATCH",
@@ -218,6 +241,13 @@ export default function TagPanel() {
               <p>{m.yourTagsIntro}</p>
             </div>
           </div>
+          <p className="starter-tags">
+            <span>{m.starterIntro}</span>
+            <button type="button" className="text-action" disabled={busy} onClick={() => void addStarterTags()}>
+              <Plus size={15} /> {m.starterAction}
+            </button>
+          </p>
+          <p className={notice ? "bulk-notice" : "visually-hidden"} role="status" aria-live="polite">{notice}</p>
           {tags.length ? (
             <div className="tag-list">
               {sortedTags.map((tag) => (

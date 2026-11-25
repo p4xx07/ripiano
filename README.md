@@ -15,6 +15,7 @@
 ## What it does
 
 - **Scan or upload**: phone camera, photos, PDFs, Office files, and emails; the text is recognised automatically. The document opens with a short filing summary, task and paper actions; manual fields and portable exports stay one tap away. If text recognition is stopped, the Library and document view explain why the file is waiting; people opening a shared waiting document see the same problem and are asked to contact its owner.
+- **Starter tags**: new accounts begin with a short English set (Home, Finance and taxes, Health, Vehicles, Personal, Events and travel, Warranties, with a few nested tags) that lines up with the paper categories. Rename, delete, or add your own at any time.
 - **Find anything fast**: search the words inside every document, or filter by sender, tag, type, or date.
 - **Filing help**: matching rules and optional, locally learned automatic filing can add tags, senders, and document types. The learned automatic mode starts off; OCR search works before you configure any filing. Email suggestions ignore recurring recipient and header noise.
 - **Dates that matter**: Ripiano can point out an explicit future payment deadline or event date in a document. You decide whether to save a task; **Add to calendar** downloads a local calendar file without an account connection.

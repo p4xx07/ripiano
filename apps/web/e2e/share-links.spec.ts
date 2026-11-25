@@ -25,8 +25,8 @@ test("create an expiring original link and revoke anonymous access", async ({ pa
   const dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   const share = dialog.getByRole("region", { name: "Share original" });
   await share.getByText("Manage share links").click();
-  await expect(share.getByRole("combobox", { name: "Link expires after" })).toBeVisible();
-  await share.getByRole("combobox", { name: "Link expires after" }).selectOption("1");
+  await expect(share.getByRole("radiogroup", { name: "Link expires after" })).toBeVisible();
+  await share.getByRole("radiogroup", { name: "Link expires after" }).getByRole("radio", { name: "1 day", exact: true }).check();
   await share.getByRole("button", { name: "Create link" }).click();
   const input = share.getByRole("textbox", { name: "New share link — shown only once" });
   await expect(input).toHaveValue(/\/api\/share-links\/[A-Za-z0-9_-]{43}$/);

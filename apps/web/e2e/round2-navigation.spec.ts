@@ -186,7 +186,7 @@ test("shortcut help uses the menu's screen names, in English and Italian", async
   await expect(help).toContainText("Go to All documents");
   await expect(help).toContainText("Go to Needs action");
   await page.keyboard.press("Escape");
-  await page.getByLabel("Language").selectOption("it");
+  await page.getByRole("radiogroup", { name: "Language" }).getByRole("radio", { name: "Italiano", exact: true }).check();
   await page.getByRole("heading", { level: 1 }).click();
   await page.keyboard.press("?");
   const aiuto = page.getByRole("dialog", { name: "Scorciatoie da tastiera" });
@@ -197,7 +197,7 @@ test("shortcut help uses the menu's screen names, in English and Italian", async
   await expect(aiuto).toContainText("Vai all’“Archivio cartaceo”");
   await expect(aiuto).not.toContainText(/Archivio(?! cartaceo)/);
   await page.keyboard.press("Escape");
-  await page.getByLabel("Lingua").selectOption("en");
+  await page.getByRole("radiogroup", { name: "Lingua" }).getByRole("radio", { name: "English", exact: true }).check();
 });
 
 test("backup runs show readable triggers and errors", async ({ page }) => {

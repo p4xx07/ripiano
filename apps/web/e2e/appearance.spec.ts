@@ -9,11 +9,13 @@ test("appearance follows the device and keeps the selected AMOLED palette", asyn
   await page.goto("/");
   const root = page.locator("html");
   await expect(root).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("combobox", { name: "Appearance" }).waitFor();
+  const appearance = page.getByRole("radiogroup", { name: "Appearance" });
+  await appearance.waitFor();
   await page.emulateMedia({ colorScheme: "light" });
   await expect(root).toHaveAttribute("data-theme", "light");
 
-  await page.getByRole("combobox", { name: "Appearance" }).selectOption("amoled");
+  // One click on the pill, no list to open.
+  await appearance.getByRole("radio", { name: "AMOLED black", exact: true }).check();
   await expect(root).toHaveAttribute("data-theme", "amoled");
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#000000");
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest-amoled.webmanifest");
@@ -31,7 +33,8 @@ test("appearance follows the device and keeps the selected AMOLED palette", asyn
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: /Everything in its place/ })).toBeVisible();
   if (isMobile) await page.getByRole("button", { name: "Toggle menu" }).click();
-  await expect(page.getByRole("combobox", { name: "Appearance" })).toHaveValue("amoled");
+  // The sidebar pills use the short "AMOLED" label.
+  await expect(appearance.getByRole("radio", { name: "AMOLED", exact: true })).toBeChecked();
   if (isMobile) {
     await page.getByRole("button", { name: "Dismiss navigation" }).click();
     await expect(page.locator(".sidebar")).not.toHaveClass(/sidebar-open/);

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowDownToLine, Eye, FileText, MessageSquare, Plus, Save, Users, X } from "lucide-react";
 import { ApiError, asSentence, Document, DocumentNote, formatDate, request } from "./api";
-import { Button, Field, Modal } from "./ui";
+import { Button, Field, Modal, Segmented, type SegmentedOption } from "./ui";
 import { useMessages } from "./i18n";
 import DocumentHistory from "./DocumentHistory";
 import { ProcessingProblem, type ProcessingHealth } from "./JobsPanel";
@@ -335,13 +335,11 @@ export default function SharedDocumentPanel({ initial, username, onClose, onSave
           <Field label={m.documentDate} hint={m.optional} className="detail-label">
             <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
           </Field>
-          <Field label={m.followUp} hint={m.optional} className="detail-label">
-            <select value={actionStatus} onChange={(event) => setActionStatus(event.target.value as Document["action_status"])}>
-              <option value="none">{m.nothingToDo}</option>
-              <option value="open">{m.needsAction}</option>
-              <option value="done">{m.completed}</option>
-            </select>
-          </Field>
+          <Segmented label={m.followUp} hint={m.optional} className="detail-label" value={actionStatus} onChange={setActionStatus} options={[
+            { value: "none", label: m.nothingToDo },
+            { value: "open", label: m.needsAction },
+            { value: "done", label: m.completed },
+          ] satisfies SegmentedOption<Document["action_status"]>[]} />
           {actionStatus === "open" && <>
             <Field label={m.dueDate} hint={m.optional} className="detail-label">
               <input type="date" value={actionDueDate} onChange={(event) => setActionDueDate(event.target.value)} />

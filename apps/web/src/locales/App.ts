@@ -4,11 +4,13 @@ import { defineMessages } from "../i18n";
 export default defineMessages({
   appearance: "Appearance",
   themeSystem: "Use device setting",
+  themeSystemShort: "Auto",
   themeLight: "Light",
   themeDark: "Dark",
   themeAmoled: "AMOLED black",
   language: "Language",
   languageSystem: "Use device language",
+  languageSystemShort: "Auto",
   italian: "Italiano",
   // Sign-in and first setup
   signInError: "Could not sign in",
@@ -89,11 +91,13 @@ export default defineMessages({
 }, {
   appearance: "Aspetto",
   themeSystem: "Come il dispositivo",
+  themeSystemShort: "Auto",
   themeLight: "Chiaro",
   themeDark: "Scuro",
   themeAmoled: "Nero AMOLED",
   language: "Lingua",
   languageSystem: "Lingua del dispositivo",
+  languageSystemShort: "Auto",
   italian: "Italiano",
   signInError: "Impossibile accedere",
   authEyebrow: "ARCHIVIO PRIVATO DI DOCUMENTI",

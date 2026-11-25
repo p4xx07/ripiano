@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Mail } from "lucide-react";
 import { request } from "./api";
-import { Button, Field } from "./ui";
+import { Button, Field, Segmented, type SegmentedOption } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/EmailDocumentPanel";
 
@@ -75,12 +75,10 @@ export default function EmailDocumentPanel({ documentId, searchableReady }: { do
           <Field label={m.message} hint={m.optional} className="detail-label">
             <textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={2000} rows={3} />
           </Field>
-          <Field label={m.attach} className="detail-label">
-            <select value={attachment} onChange={(event) => setAttachment(event.target.value as "original" | "searchable")}>
-              <option value="original">{m.original}</option>
-              <option value="searchable" disabled={!searchableReady}>{m.searchable}{searchableReady ? "" : m.notReadyYet}</option>
-            </select>
-          </Field>
+          <Segmented label={m.attach} className="detail-label" value={attachment} onChange={setAttachment} options={[
+            { value: "original", label: m.original },
+            { value: "searchable", label: `${m.searchable}${searchableReady ? "" : m.notReadyYet}`, disabled: !searchableReady },
+          ] satisfies SegmentedOption<"original" | "searchable">[]} />
           <p className="email-hint">{m.hint}</p>
           <Button disabled={busy}>{m.send}</Button>
         </form>

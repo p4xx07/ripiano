@@ -1,5 +1,6 @@
-import { Children, ComponentPropsWithRef, ReactElement, ReactNode, cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState } from "react";
+import { Children, ComponentPropsWithRef, Fragment, ReactElement, ReactNode, cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Check } from "lucide-react";
 
 type ButtonProps = ComponentPropsWithRef<"button"> & {
   variant?: "primary" | "secondary" | "danger";
@@ -84,6 +85,126 @@ export function Field({ label, hint, className = "", children }: {
     return cloneElement(element, { "aria-describedby": describedBy });
   }) : children;
   return <label className={className}>{label}{hint && <small id={hintId} aria-hidden="true">{hint}</small>}{content}</label>;
+}
+
+export type SegmentedOption<T extends string | number> = {
+  value: T;
+  label: ReactNode;
+  /** Read after the option's name by screen readers; also shown as a tooltip. */
+  description?: string;
+  disabled?: boolean;
+  /** Shown before the label; with `iconOnly` the label stays as the accessible name and tooltip. */
+  icon?: ReactNode;
+};
+
+/**
+ * A short, fixed choice (two to four options) shown as a row of pills, so changing it takes one click instead of
+ * opening a list. Built on native radio inputs: arrow keys move the selection, the group has the field's name,
+ * and each pill is a real form control. The selected pill is filled and carries a check mark, so the state is not
+ * shown by colour alone. The row wraps onto more lines on narrow screens instead of overflowing.
+ */
+export function Segmented<T extends string | number>({
+  label,
+  labelledBy,
+  hideLabel = false,
+  hint,
+  name,
+  value,
+  options,
+  onChange,
+  disabled = false,
+  size = "default",
+  block = false,
+  tone = "default",
+  className = "",
+  groupClassName = "",
+  checkedId,
+  iconOnly = false,
+}: {
+  /** The group's name. Shown above the pills unless `hideLabel`, in which case it is the aria-label. */
+  label?: string;
+  /** Use an existing visible element as the group's name instead of `label`. */
+  labelledBy?: string;
+  hideLabel?: boolean;
+  hint?: string;
+  name?: string;
+  value: T;
+  options: SegmentedOption<T>[];
+  onChange: (value: T) => void;
+  disabled?: boolean;
+  size?: "default" | "small";
+  /** Stretch across the container; options share the width. */
+  block?: boolean;
+  /** "sidebar" for the dark navigation column. */
+  tone?: "default" | "sidebar";
+  className?: string;
+  groupClassName?: string;
+  /** An id for the selected radio, so code can move focus to the group (the way it focused the old select). */
+  checkedId?: string;
+  /** Show only each option's icon (compact rows such as the sidebar theme); the label remains the accessible name. */
+  iconOnly?: boolean;
+}) {
+  const id = useId();
+  const labelId = `${id}-label`;
+  const hintId = `${id}-hint`;
+  const groupName = name ?? `${id}-choice`;
+  const showLabel = Boolean(label) && !hideLabel;
+  const classes = [
+    "segmented",
+    size === "small" ? "segmented-small" : "",
+    block ? "segmented-block" : "",
+    tone === "sidebar" ? "segmented-sidebar" : "",
+    iconOnly ? "segmented-icons" : "",
+    groupClassName,
+  ].filter(Boolean).join(" ");
+  const group = (
+    <div
+      role="radiogroup"
+      className={classes}
+      aria-labelledby={labelledBy ?? (showLabel ? labelId : undefined)}
+      aria-label={!labelledBy && !showLabel ? label : undefined}
+      aria-describedby={hint ? hintId : undefined}
+    >
+      {options.map((option) => {
+        const checked = option.value === value;
+        const descriptionId = option.description ? `${id}-${String(option.value)}-description` : undefined;
+        return (
+          <Fragment key={String(option.value)}>
+          <label className="segmented-option" title={option.description ?? (iconOnly && typeof option.label === "string" ? option.label : undefined)}>
+            <input
+              type="radio"
+              id={checked ? checkedId : undefined}
+              className="segmented-input"
+              name={groupName}
+              value={String(option.value)}
+              checked={checked}
+              disabled={disabled || option.disabled}
+              aria-describedby={descriptionId}
+              onChange={() => onChange(option.value)}
+              // A select never submitted its form on Enter; keep that for the pills inside forms.
+              onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }}
+            />
+            <span className="segmented-pill">
+              {!iconOnly && <Check className={`segmented-check${checked ? "" : " segmented-check-off"}`} size={size === "small" ? 12 : 14} strokeWidth={3} aria-hidden="true" />}
+              {option.icon && <span className="segmented-icon" aria-hidden="true">{option.icon}</span>}
+              <span className={iconOnly && option.icon ? "visually-hidden" : "segmented-text"}>{option.label}</span>
+            </span>
+          </label>
+          {option.description && <span id={descriptionId} hidden>{option.description}</span>}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+  if (!showLabel && !hint) return className ? <div className={className}>{group}</div> : group;
+  return (
+    <div className={`segmented-field ${className}`.trim()}>
+      {showLabel && <span id={labelId} className="segmented-label">{label}</span>}
+      {/* Read once, through aria-describedby on the group (like Field's hint). */}
+      {hint && <small id={hintId} className="segmented-hint" aria-hidden="true">{hint}</small>}
+      {group}
+    </div>
+  );
 }
 
 type ModalProps = {

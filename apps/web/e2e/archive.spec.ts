@@ -111,11 +111,11 @@ test("capture, find, tag, and locate a paper copy", async ({
 
   await page.getByRole("dialog").filter({ hasText: "Keep it in place." }).getByRole("button", { name: "Close" }).click();
   await page.getByRole("button", { name: /Filters/ }).click();
-  const paperFilter = page.getByRole("combobox", { name: "Paper copy" });
-  await paperFilter.selectOption("paper");
+  const paperFilter = page.getByRole("radiogroup", { name: "Paper copy" });
+  await paperFilter.getByRole("radio", { name: "Has a paper copy", exact: true }).check();
   await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("paper-filter.png"), animations: "disabled" });
-  await paperFilter.selectOption("virtual");
+  await paperFilter.getByRole("radio", { name: "Digital only", exact: true }).check();
   await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
 
   await page.goto(`/?sticker=${code}`);
@@ -141,7 +141,7 @@ test("capture, find, tag, and locate a paper copy", async ({
     response.status() === 200 &&
     new URL(response.url()).searchParams.get("copy_status") === "missing",
   );
-  await page.getByRole("combobox", { name: "Paper copy" }).selectOption("missing");
+  await page.getByRole("radiogroup", { name: "Paper copy" }).getByRole("radio", { name: "Marked missing", exact: true }).check();
   expect((await (await missingFilterResponse).json()).documents.some((document: { id: string }) => document.id === documentId)).toBe(true);
   await expect(missingRow).toBeVisible();
 });

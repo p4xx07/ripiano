@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bell, Clock, KeyRound, PenLine, Plus, Tag as TagIcon, Workflow as WorkflowIcon, X } from "lucide-react";
 import { CustomField, FilingItem, formatDateTime, People, request, Session, Tag } from "./api";
-import { Button } from "./ui";
+import { Button, Segmented } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/WorkflowsPanel";
 
@@ -378,11 +378,8 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                           <div className="workflow-choices" key={field.id}>
                             <label className="agent-scope-choice"><input type="checkbox" checked={Boolean(entry)} onChange={() => toggleField(field)} />{field.name}</label>
                             {entry && (field.kind === "boolean" ? (
-                              <label>{m.fieldValue(field.name)}
-                                <select value={entry.value === true || entry.value === "true" ? "true" : "false"} onChange={(event) => setFieldValue(field.id, event.target.value === "true")}>
-                                  <option value="true">{m.yes}</option><option value="false">{m.no}</option>
-                                </select>
-                              </label>
+                              <Segmented label={m.fieldValue(field.name)} value={entry.value === true || entry.value === "true" ? "true" : "false"} onChange={(value) => setFieldValue(field.id, value === "true")}
+                                options={[{ value: "true", label: m.yes }, { value: "false", label: m.no }]} />
                             ) : (
                               <label>{m.fieldValue(field.name)}
                                 <input type={field.kind === "date" ? "date" : "text"} inputMode={field.kind === "number" ? "decimal" : undefined}
@@ -405,11 +402,8 @@ export default function WorkflowsPanel({ onOpenDocument }: { onOpenDocument: (id
                       <small>{m.shareHint}</small>
                       {[...shareablePeople.map((person) => ({ kind: "person" as const, id: person.id, name: person.name || person.username })),
                         ...directory.groups.map((group) => ({ kind: "group" as const, id: group.id, name: m.groupName(group.name) }))].map((target) => (
-                        <label key={`${target.kind}-${target.id}`}>{target.name}
-                          <select value={shareLevel(target.kind, target.id)} onChange={(event) => setShare(target.kind, target.id, event.target.value)}>
-                            <option value="">{m.dontShare}</option><option value="view">{m.canView}</option><option value="edit">{m.canEdit}</option>
-                          </select>
-                        </label>
+                        <Segmented key={`${target.kind}-${target.id}`} label={target.name} size="small" value={shareLevel(target.kind, target.id)} onChange={(level) => setShare(target.kind, target.id, level)}
+                          options={[{ value: "", label: m.dontShare }, { value: "view", label: m.canView }, { value: "edit", label: m.canEdit }]} />
                       ))}
                     </div>
                   </details>

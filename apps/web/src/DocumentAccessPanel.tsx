@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { UserMinus, Users } from "lucide-react";
 import { People, Session, request } from "./api";
-import { Button, Field } from "./ui";
+import { Button, Field, Segmented, type SegmentedOption } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/DocumentAccessPanel";
 
@@ -28,6 +28,7 @@ export default function DocumentAccessPanel({ documentId, endpoint, wording: cus
   const wording = customWording ?? documentWording(m);
   const base = endpoint ?? `/api/documents/${documentId}/access`;
   const levelLabel = { view: m.canView, edit: wording.editLabel };
+  const levelOptions: SegmentedOption<Grant["level"]>[] = [{ value: "view", label: m.canView }, { value: "edit", label: wording.editLabel }];
   const [opened, setOpened] = useState(startOpen);
   const [loaded, setLoaded] = useState(false);
   const [grants, setGrants] = useState<Grant[]>([]);
@@ -132,12 +133,7 @@ export default function DocumentAccessPanel({ documentId, endpoint, wording: cus
                 </optgroup>}
               </select>
             </Field>
-            <Field label={m.access}>
-              <select value={level} onChange={(event) => setLevel(event.target.value as Grant["level"])}>
-                <option value="view">{m.canView}</option>
-                <option value="edit">{wording.editLabel}</option>
-              </select>
-            </Field>
+            <Segmented label={m.access} value={level} onChange={setLevel} options={levelOptions} />
             <Button type="button" pending={busy} disabled={!busy && !target} onClick={add}>{m.share}</Button>
           </div>}
           {!grants.length && <p>{wording.empty}</p>}
@@ -147,13 +143,9 @@ export default function DocumentAccessPanel({ documentId, endpoint, wording: cus
                 <strong>{grant.target.name}</strong>{grant.target.kind === "group" ? m.groupSuffix : ""}{!grant.target.active ? m.accountOff : ""}
               </span>
               <span className="access-actions">
-                <select aria-label={m.accessFor(grant.target.name)} value={grant.level} onChange={(event) => {
-                  const next = event.target.value as Grant["level"];
+                <Segmented label={m.accessFor(grant.target.name)} hideLabel size="small" value={grant.level} options={levelOptions} onChange={(next) => {
                   void run(() => request(`${base}/${grant.id}`, { method: "PATCH", body: JSON.stringify({ level: next }) }), `${grant.target.name}: ${levelLabel[next]}.`);
-                }}>
-                  <option value="view">{m.canView}</option>
-                  <option value="edit">{wording.editLabel}</option>
-                </select>
+                }} />
                 <button type="button" aria-disabled={busy || undefined} aria-label={m.removeAccessFor(grant.target.name)} onClick={() => void run(() => request(`${base}/${grant.id}`, { method: "DELETE" }), `${grant.target.name} ${wording.removed}`).then((ok) => { if (ok) focusChooser(); })}>
                   <UserMinus size={15} /> {m.remove}
                 </button>

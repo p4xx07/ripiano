@@ -98,7 +98,7 @@ English is the default interface language on every device. The sign-in screen an
 
 ### Appearance
 
-The Appearance menu offers device setting, Light, Dark, and AMOLED black. The preference stays on the device; AMOLED uses a true black canvas and sidebar.
+Appearance is a row of one-click choices: device setting (shown as **Auto** in the sidebar), Light, Dark, and AMOLED black. Language works the same way. Other short, fixed choices (such as the Library paper-copy filter, follow-up status, access level, and link expiry) are also shown as pills rather than drop-down lists. The preference stays on the device; AMOLED uses a true black canvas and sidebar.
 
 ## Install and run
 

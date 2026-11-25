@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { ApiError, asSentence, byLocationPath, Document, DocumentNote, hasOpenWarning, FilingItem, FilingSuggestion, FilingSuggestions, formatDate, formatDateTime, Location, PaperCategory, PhysicalCopy, request, suggestionBasis, Tag, tagPathLabel } from "./api";
-import { Button, Field, Modal } from "./ui";
+import { Button, Field, Modal, Segmented, type SegmentedOption } from "./ui";
 import DocumentLinks from "./DocumentLinks";
 import { suggestPaperCategory } from "./paperCategorySuggestion";
 import { downloadCalendarEvent } from "./calendarFile";
@@ -1289,13 +1289,11 @@ export default function DocumentPanel({
           )}
           {suggestionStatus && <p className="visually-hidden" role="status">{suggestionStatus}</p>}
           {showTaskEditor && <div className="detail-task-editor">
-          <Field label={m.followUp} hint={m.optional} className="detail-label">
-            <select id="detail-action-status" value={actionStatus} onChange={(event) => setActionStatus(event.target.value as Document["action_status"])}>
-              <option value="none">{m.nothingToDo}</option>
-              <option value="open">{m.needsAction}</option>
-              <option value="done">{m.completed}</option>
-            </select>
-          </Field>
+          <Segmented label={m.followUp} hint={m.optional} className="detail-label" checkedId="detail-action-status" value={actionStatus} onChange={setActionStatus} options={[
+            { value: "none", label: m.nothingToDo },
+            { value: "open", label: m.needsAction },
+            { value: "done", label: m.completed },
+          ] satisfies SegmentedOption<Document["action_status"]>[]} />
           {actionStatus === "open" && <>
             <Field label={m.dueDate} hint={m.optional} className="detail-label">
               <input type="date" value={actionDueDate} onChange={(event) => setActionDueDate(event.target.value)} />

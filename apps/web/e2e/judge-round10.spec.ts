@@ -270,7 +270,7 @@ test("saving a shared document keeps focus on Save, announces it, and adds the t
   await page.route("**/api/shared-filing", (route: Route) => route.fulfill({ json: { tags: [], correspondents: [], document_types: [] } }));
   const dialog = await openFake(page);
   // The follow-up state has the same name here as in the owner's dialog.
-  await expect(dialog.getByLabel("Da fare").locator("option:checked")).toHaveText("Completato");
+  await expect(dialog.getByRole("radiogroup", { name: "Da fare" }).getByRole("radio", { name: "Completato", exact: true })).toBeChecked();
   await dialog.getByRole("textbox", { name: "Titolo" }).fill("Titolo del secondo membro");
   await dialog.getByLabel("Nuova nota").fill("Nota del secondo membro");
   const save = dialog.getByRole("button", { name: /Salva modifiche|Salvataggio/ });

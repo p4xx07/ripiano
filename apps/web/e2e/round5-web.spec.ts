@@ -88,8 +88,8 @@ for (const size of [{ width: 1440, height: 900 }, { width: 1366, height: 768 }, 
     await page.setViewportSize(size);
     await signIn(page);
     const sidebar = page.locator("#app-sidebar");
-    await expectUncovered(sidebar.getByLabel("Appearance"));
-    await expectUncovered(sidebar.getByLabel("Language"));
+    await expectUncovered(sidebar.getByRole("radiogroup", { name: "Appearance" }));
+    await expectUncovered(sidebar.getByRole("radiogroup", { name: "Language" }));
     await expectUncovered(sidebar.getByRole("button", { name: "Sign out", exact: true }));
     // Every navigation entry is reachable: visible, or the list shows that it scrolls.
     const frame = sidebar.locator(".sidebar-scroll-frame");
@@ -115,7 +115,7 @@ test("a sidebar that scrolls shows a fade at the edge with more entries", async 
   await page.locator("#app-sidebar .sidebar-scroll").evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await expect(frame).toHaveClass(/can-scroll-up/);
   await expect(frame).not.toHaveClass(/can-scroll-down/);
-  await expectUncovered(page.locator("#app-sidebar").getByLabel("Language"));
+  await expectUncovered(page.locator("#app-sidebar").getByRole("radiogroup", { name: "Language" }));
 });
 
 test("a waiting upload is retried within seconds while online, and Send now is offered", async ({ page }, testInfo) => {

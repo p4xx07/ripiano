@@ -53,7 +53,7 @@ test("sign-out and the language picker are reachable on every screen size", asyn
       const signOut = page.getByRole("button", { name: "Sign out", exact: true });
       // The account row is pinned below the scrolling navigation, so it is on screen without scrolling.
       await expect(signOut, `${size.width}x${size.height}`).toBeInViewport({ ratio: 1 });
-      const language = page.getByLabel("Language");
+      const language = page.getByRole("radiogroup", { name: "Language" });
       await language.scrollIntoViewIfNeeded();
       await expect(language, `${size.width}x${size.height}`).toBeInViewport({ ratio: 1 });
       // The note card scrolls with the navigation and, when shown, stays inside the sidebar's own background.
@@ -99,9 +99,9 @@ test("navigation is a landmark, marks the current screen, names the tab, and mov
   await expect(page.getByRole("heading", { level: 1, name: /Everything in its place/ })).toBeFocused();
 
   await openMenuIfNeeded(page);
-  await page.getByLabel("Language").selectOption("it");
+  await page.getByRole("radiogroup", { name: "Language" }).getByRole("radio", { name: "Italiano", exact: true }).check();
   await expect(page).toHaveTitle("Tutti i documenti · Ripiano");
-  await page.getByLabel("Lingua").selectOption("en");
+  await page.getByRole("radiogroup", { name: "Lingua" }).getByRole("radio", { name: "English", exact: true }).check();
 });
 
 test("the Add dialog hides its file inputs from assistive technology", async ({ page }) => {

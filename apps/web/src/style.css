@@ -301,18 +301,10 @@ button:disabled {
   font-size: var(--type-small);
   font-weight: 600;
 }
-.appearance-control select {
-  width: 100%;
-  min-height: 44px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-sidebar-border);
-  border-radius: var(--radius-soft);
-  color: var(--color-sidebar-text);
-  background: var(--color-sidebar);
-}
-.appearance-control select:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
+.appearance-control .segmented-label {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
 }
 .sidebar-spacer {
   flex: 1;
@@ -326,29 +318,8 @@ button:disabled {
   border-top: 1px solid var(--color-sidebar-border);
 }
 .appearance-control.appearance-control-compact {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin: 0 var(--space-half);
-}
-.appearance-control-compact span {
-  flex: 0 0 68px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.appearance-control-compact select {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: auto;
-  min-height: 32px;
-  padding: 0 var(--space-2);
-  font-size: var(--type-small);
-}
-@media (pointer: coarse) {
-  .appearance-control-compact select {
-    min-height: 44px;
-  }
 }
 .sidebar-note {
   border: 1px solid var(--color-sidebar-border);
@@ -1230,11 +1201,6 @@ button:disabled {
   width: min(100%, 430px);
   margin: var(--space-5) 0 0;
   color: var(--color-muted);
-}
-.auth-shell > .appearance-control select {
-  color: var(--color-ink);
-  background: var(--color-surface);
-  border-color: var(--color-border);
 }
 .auth-brand {
   color: var(--color-heading);
@@ -5896,3 +5862,164 @@ button:disabled {
 /* Starter tags: one quiet line under "Your tags". */
 .starter-tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3); color: var(--color-muted); font-size: 0.9rem; }
 .starter-tags .text-action { min-height: 40px; }
+
+/* Segmented choice: a short fixed choice as a row of pills (native radios underneath, see ui.tsx Segmented).
+   The selected pill is filled and carries a check mark; the row wraps instead of overflowing on phones. */
+.segmented-field {
+  display: grid;
+  gap: var(--space-tight);
+  min-width: 0;
+}
+.segmented-label {
+  font-size: var(--type-small);
+  font-weight: 700;
+  color: var(--color-accent-strong);
+}
+.segmented-hint {
+  font-size: var(--type-caption);
+  font-weight: 400;
+  color: var(--color-muted);
+}
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+}
+.segmented-block {
+  width: 100%;
+}
+.segmented .segmented-option {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  gap: 0;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  font-size: var(--type-small);
+  font-weight: 600;
+  color: var(--color-heading);
+}
+/* The radio covers its pill, invisible, so clicks, taps and the keyboard all reach the native control. */
+.segmented .segmented-option input.segmented-input[type="radio"] {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  appearance: none;
+}
+.segmented .segmented-option input.segmented-input[type="radio"]:disabled {
+  cursor: not-allowed;
+}
+.segmented-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-height: 36px;
+  padding: var(--space-half) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  text-align: center;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.segmented-check {
+  flex: 0 0 auto;
+}
+/* Like filter chips: the check appears only on the chosen pill. */
+.segmented-check-off {
+  display: none;
+}
+.segmented-icon {
+  display: inline-flex;
+}
+@media (pointer: coarse) {
+  .segmented-pill { min-height: 44px; }
+}
+.segmented-input:hover:not(:disabled):not(:checked) + .segmented-pill {
+  background: var(--color-surface-tint);
+}
+.segmented-input:checked + .segmented-pill {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 700;
+  box-shadow: 0 1px 2px var(--color-primary-shadow);
+}
+.segmented-input:focus-visible + .segmented-pill {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px var(--color-focus-halo);
+}
+.segmented-input:disabled + .segmented-pill {
+  opacity: 0.55;
+}
+.segmented-small .segmented-option.segmented-option {
+  font-size: var(--type-small);
+}
+.segmented-small .segmented-pill {
+  min-height: 32px;
+  padding: var(--space-half) var(--space-2);
+}
+@media (pointer: coarse) {
+  .segmented-small .segmented-pill {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .segmented-pill { transition: none; }
+}
+/* In the dark sidebar: the selected pill is the sidebar text colour, inverted. */
+.segmented-sidebar {
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--color-sidebar-border);
+  border-radius: 999px;
+}
+.segmented-sidebar .segmented-option.segmented-option {
+  flex: 1 1 0;
+}
+.segmented-sidebar .segmented-pill {
+  min-height: 32px;
+  padding: 0 var(--space-1);
+  border-color: transparent;
+  background: transparent;
+}
+.segmented-sidebar .segmented-check {
+  display: none;
+}
+.segmented-sidebar .segmented-text {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .segmented-sidebar .segmented-pill { min-height: 44px; }
+}
+.segmented-sidebar .segmented-option.segmented-option {
+  color: var(--color-sidebar-text);
+}
+.segmented-sidebar .segmented-input:hover:not(:disabled):not(:checked) + .segmented-pill {
+  background: var(--color-sidebar-active);
+}
+.segmented-sidebar .segmented-input:checked + .segmented-pill {
+  background: var(--color-sidebar-text);
+  color: var(--color-sidebar);
+  box-shadow: none;
+}
+.custom-create form .custom-kind-choice { flex: 1 1 100%; }
+.custom-create .custom-kind-choice .segmented-label { color: var(--color-heading); }

@@ -117,19 +117,17 @@ def people(request):
         return JsonResponse({"error": "Group not found"}, status=400)
     if User.objects.filter(username__iexact=username).exists():
         return JsonResponse({"error": "That username is taken"}, status=409)
-    try:
-        with transaction.atomic():
-            user = User.objects.create_user(username=username, password=body["password"], first_name=str(body.get("name", "")).strip()[:150])
-            user.groups.set(groups)
-            from .starter_tags import ensure_starter_tags
+    from .starter_tags import ensure_starter_tags
 
-            try:
-                ensure_starter_tags(user)
-            except IntegrityError as exc:
-                # Not a username clash: roll back the new account and report it as a server error.
-                raise RuntimeError("Could not add starter tags") from exc
-    except IntegrityError:
-        return JsonResponse({"error": "That username is taken"}, status=409)
+    with transaction.atomic():
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(username=username, password=body["password"], first_name=str(body.get("name", "")).strip()[:150])
+                user.groups.set(groups)
+        except IntegrityError:
+            return JsonResponse({"error": "That username is taken"}, status=409)
+        # Outside the username handler: a failure here rolls the new account back and is a server error, not a clash.
+        ensure_starter_tags(user)
     return JsonResponse(_person_json(user, True), status=201)
 
 

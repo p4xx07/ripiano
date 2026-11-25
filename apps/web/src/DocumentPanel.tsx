@@ -1598,6 +1598,7 @@ export default function DocumentPanel({
                   {paperCategories.map((category) => <option key={category.id} value={category.prefix}>{category.prefix} · {category.name}</option>)}
                 </select>
                 {paperSuggestion.tag && !categoryTouched && <small>{m.paperCategorySuggested(paperSuggestion.tag)}</small>}
+                {paperSuggestion.ambiguous && !categoryTouched && <small>{m.paperCategoryAmbiguous}</small>}
               </label>}
               <label className="detail-label">{m.paperLocation}
               <select

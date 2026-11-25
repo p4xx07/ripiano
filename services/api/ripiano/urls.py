@@ -112,6 +112,7 @@ urlpatterns = [
     path("api/browse-exports", browse_views.browse_exports),
     path("api/browse-exports/<uuid:run_id>/<str:action>", job_views.browse_run_action),
     path("api/tags", metadata_views.tags),
+    path("api/tags/starter", metadata_views.starter_tags),
     path("api/tags/<uuid:tag_id>", metadata_views.tag_detail),
     path("api/tags/<uuid:tag_id>/label", metadata_views.tag_barcode_label),
     path("api/correspondents", metadata_views.correspondents),

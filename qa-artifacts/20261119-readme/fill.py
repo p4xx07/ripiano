@@ -23,7 +23,9 @@ def make(path, name, **extra):
     return response.json()["id"]
 
 
-tags = {name: make("/api/tags", name, color=color) for name, color in (
+# New accounts start with the starter tags; reuse any tag that already exists.
+existing_tags = {tag["name"]: tag["id"] for tag in client.get("/api/tags").json()["tags"]}
+tags = {name: existing_tags.get(name) or make("/api/tags", name, color=color) for name, color in (
     ("Home", "#3b7a57"), ("Utilities", "#c46a2c"), ("Insurance", "#3a6ea5"), ("Car", "#5b6b7a"),
     ("Work", "#7a4fa3"), ("Health", "#b8434d"), ("Warranty", "#8a7a2e"), ("Taxes", "#2e7f86"))}
 senders = {name: make("/api/correspondents", name) for name in (

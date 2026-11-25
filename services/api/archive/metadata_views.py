@@ -412,6 +412,9 @@ def tags(request):
     try:
         with transaction.atomic():
             get_user_model().objects.select_for_update(no_key=True).get(pk=request.user.pk)
+            # Checked again under the account lock: starter tags may have added the same name in another case.
+            if Tag.objects.filter(owner=request.user, name__iexact=name).exists():
+                return JsonResponse({"error": "A tag with that name already exists"}, status=409)
             tag = Tag.objects.create(owner=request.user, name=name, color=color, description=description, barcode_value=barcode_value, parent=parent)
             for keyword in dict.fromkeys(value.strip() for value in keywords):
                 ClassificationRule.objects.create(owner=request.user, tag=tag, pattern=keyword)
@@ -420,6 +423,18 @@ def tags(request):
     if keywords:
         _queue_tag_candidates(request.user.id, tag.id, [{"pattern": keyword, "field": "either"} for keyword in keywords])
     return JsonResponse(_tag_json(tag), status=201)
+
+
+@require_http_methods(["POST"])
+def starter_tags(request):
+    """Add the starter tags this account is missing; existing tags stay as they are."""
+    unauthorized = _unauthorized(request)
+    if unauthorized:
+        return unauthorized
+    from .starter_tags import ensure_starter_tags
+
+    added = ensure_starter_tags(request.user)
+    return JsonResponse({"added": added, "tags": [_tag_json(tag) for tag in Tag.objects.filter(owner=request.user)]}, status=201 if added else 200)
 
 
 @require_http_methods(["PATCH", "DELETE"])

@@ -46,6 +46,10 @@ import {
   Cloud,
   WifiOff,
   X,
+  Monitor,
+  Sun,
+  Moon,
+  MoonStar,
 } from "lucide-react";
 import { ApiError, CustomField, Document, FilingItem, formatDate, formatDateTime, formatTime, hasOpenWarning, isCsrfFailure, LibraryFilters, onSessionEnded, request, Session, Tag, tagPathLabel } from "./api";
 import * as uploadQueue from "./uploadQueue";
@@ -69,7 +73,7 @@ import PhysicalPanel from "./PhysicalPanel";
 import TagPanel from "./TagPanel";
 import SavedSearchBar from "./SavedSearchBar";
 import TrashPanel from "./TrashPanel";
-import { Button, Field, Modal, tooShortMessage } from "./ui";
+import { Button, Field, Modal, Segmented, type SegmentedOption, tooShortMessage } from "./ui";
 import { applyTheme, readThemePreference, saveThemePreference, ThemePreference } from "./theme";
 import { setLanguagePreference, useLanguagePreference, useMessages, type LanguagePreference } from "./i18n";
 import appMessages from "./locales/App";
@@ -79,31 +83,28 @@ import libraryMessages from "./locales/AppLibrary";
 function AppearanceControl({ preference, onChange, compact = false }: {
   preference: ThemePreference;
   onChange: (preference: ThemePreference) => void;
-  /** In the sidebar footer: one short row per setting, label beside the select, always in view. */
+  /** In the sidebar footer: small pills under each label, always in view. */
   compact?: boolean;
 }) {
   const m = useMessages(appMessages);
   const languagePreference = useLanguagePreference();
   const className = compact ? "appearance-control appearance-control-compact" : "appearance-control";
+  const size = compact ? "small" : "default";
+  const tone = compact ? "sidebar" : "default";
   return (
     <>
-    <label className={className}>
-      <span>{m.appearance}</span>
-      <select value={preference} onChange={(event) => onChange(event.target.value as ThemePreference)}>
-        <option value="system">{m.themeSystem}</option>
-        <option value="light">{m.themeLight}</option>
-        <option value="dark">{m.themeDark}</option>
-        <option value="amoled">{m.themeAmoled}</option>
-      </select>
-    </label>
-    <label className={className}>
-      <span>{m.language}</span>
-      <select value={languagePreference} onChange={(event) => setLanguagePreference(event.target.value as LanguagePreference)}>
-        <option value="system">{m.languageSystem}</option>
-        <option value="en">English</option>
-        <option value="it">{m.italian}</option>
-      </select>
-    </label>
+    {/* In the narrow sidebar "Auto" stands in for the device setting; the full wording is its description. */}
+    <Segmented className={className} hideLabel={compact} label={m.appearance} size={size} tone={tone} block iconOnly={compact} value={preference} onChange={onChange} options={[
+      compact ? { value: "system", label: m.themeSystemShort, description: m.themeSystem, icon: <Monitor size={17} /> } : { value: "system", label: m.themeSystem },
+      { value: "light", label: m.themeLight, icon: compact ? <Sun size={17} /> : undefined },
+      { value: "dark", label: m.themeDark, icon: compact ? <Moon size={17} /> : undefined },
+      { value: "amoled", label: compact ? "AMOLED" : m.themeAmoled, description: compact ? m.themeAmoled : undefined, icon: compact ? <MoonStar size={17} /> : undefined },
+    ] satisfies SegmentedOption<ThemePreference>[]} />
+    <Segmented className={className} hideLabel={compact} label={m.language} size={size} tone={tone} block value={languagePreference} onChange={setLanguagePreference} options={[
+      compact ? { value: "system", label: m.languageSystemShort, description: m.languageSystem } : { value: "system", label: m.languageSystem },
+      { value: "en", label: "English" },
+      { value: "it", label: m.italian },
+    ] satisfies SegmentedOption<LanguagePreference>[]} />
     </>
   );
 }
@@ -2547,11 +2548,12 @@ function App() {
               </details>
               {showFilters && <div className="library-filters" id="library-filters">
                 <Field label={l.tag} className="detail-label"><select value={filters.tag_id} onChange={(event) => updateFilter("tag_id", event.target.value)}><option value="">{l.anyTag}</option>{tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tagPathLabel(tag, tagById)}</option>)}</select></Field>
-                <Field label={l.paperCopy} hint={l.paperHint} className="detail-label"><select value={filters.copy_status} onChange={(event) => updateFilter("copy_status", event.target.value)}><option value="">{l.any}</option><option value="paper">{l.hasPaper}</option><option value="virtual">{l.digitalOnly}</option><option value="missing">{l.missing}</option></select></Field>
+                <Segmented label={l.paperCopy} hint={l.paperHint} className="detail-label" block value={filters.copy_status} onChange={(value) => updateFilter("copy_status", value)} options={[{ value: "", label: l.any }, { value: "paper", label: l.hasPaper }, { value: "virtual", label: l.digitalOnly }, { value: "missing", label: l.missing }]} />
                 <Field label={l.from} className="detail-label"><select value={filters.correspondent_id} onChange={(event) => updateFilter("correspondent_id", event.target.value)}><option value="">{l.anySender}</option>{filterOptions.correspondents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
                 <Field label={l.documentType} className="detail-label"><select value={filters.document_type_id} onChange={(event) => updateFilter("document_type_id", event.target.value)}><option value="">{l.anyType}</option>{filterOptions.document_types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
                 <Field label={l.customDetail} className="detail-label custom-filter-field"><select value={filters.custom_field_id} onChange={(event) => updateFilter("custom_field_id", event.target.value)}><option value="">{l.anyCustomDetail}</option>{filterOptions.custom_fields.map((field) => <option key={field.id} value={field.id}>{field.name}</option>)}</select></Field>
-                {selectedCustomField && <Field label={["number", "date"].includes(selectedCustomField.kind) ? l.exactValue : l.namedValue(selectedCustomField.name)} className="detail-label custom-filter-value">{selectedCustomField.kind === "boolean" ? <select value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)}><option value="">{l.anyValue}</option><option value="yes">{l.yes}</option><option value="no">{l.no}</option></select> : <input aria-label={`${selectedCustomField.name} ${["number", "date"].includes(selectedCustomField.kind) ? l.exactly : l.value}`} type={selectedCustomField.kind === "text" ? "text" : selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)} placeholder={selectedCustomField.kind === "text" ? l.contains : undefined} />}</Field>}
+                {selectedCustomField?.kind === "boolean" && <Segmented label={l.namedValue(selectedCustomField.name)} className="detail-label custom-filter-value" value={filters.custom_value} onChange={(value) => updateFilter("custom_value", value)} options={[{ value: "", label: l.anyValue }, { value: "yes", label: l.yes }, { value: "no", label: l.no }]} />}
+                {selectedCustomField && selectedCustomField.kind !== "boolean" && <Field label={["number", "date"].includes(selectedCustomField.kind) ? l.exactValue : l.namedValue(selectedCustomField.name)} className="detail-label custom-filter-value"><input aria-label={`${selectedCustomField.name} ${["number", "date"].includes(selectedCustomField.kind) ? l.exactly : l.value}`} type={selectedCustomField.kind === "text" ? "text" : selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_value} onChange={(event) => updateFilter("custom_value", event.target.value)} placeholder={selectedCustomField.kind === "text" ? l.contains : undefined} /></Field>}
                 {selectedCustomField && (selectedCustomField.kind === "number" || selectedCustomField.kind === "date") && <>
                   <Field label={l.from} className="detail-label custom-filter-value"><input aria-label={`${selectedCustomField.name} ${l.from}`} type={selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_min} max={filters.custom_max || undefined} onChange={(event) => updateFilter("custom_min", event.target.value)} /></Field>
                   <Field label={l.to} className="detail-label custom-filter-value"><input aria-label={`${selectedCustomField.name} ${l.to}`} type={selectedCustomField.kind} step={selectedCustomField.kind === "number" ? "any" : undefined} value={filters.custom_max} min={filters.custom_min || undefined} onChange={(event) => updateFilter("custom_max", event.target.value)} /></Field>

@@ -93,7 +93,7 @@ test("create a typed detail, find it by value, and clear it", async ({ page }, t
   const premiumField = `Premium ${stamp}`;
   await custom.getByText("Add a custom field").click();
   await custom.getByRole("textbox", { name: "Field name" }).fill(premiumField);
-  await custom.getByRole("combobox", { name: "Type", exact: true }).selectOption("number");
+  await custom.getByRole("radiogroup", { name: "Type", exact: true }).getByRole("radio", { name: "Number", exact: true }).check();
   await custom.getByRole("button", { name: "Add field" }).click();
   const premiumRow = custom.locator(".custom-field-row").filter({ hasText: premiumField });
   await premiumRow.getByRole("spinbutton", { name: premiumField }).fill("125.5");

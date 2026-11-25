@@ -9,15 +9,15 @@ test("an Italian device starts in Italian; English can still be chosen and is re
     const page = await context.newPage();
     await page.goto(process.env.RIPIANO_E2E_ORIGIN ?? "http://localhost:8080");
     await expect(page.locator("html")).toHaveAttribute("lang", "it");
-    await expect(page.getByLabel("Lingua")).toHaveValue("system");
+    await expect(page.getByRole("radiogroup", { name: "Lingua" }).getByRole("radio", { name: "Lingua del dispositivo", exact: true })).toBeChecked();
     await expect(page.getByRole("heading", { name: "Ti diamo il bentornato." })).toBeVisible();
-    await expect(page.getByRole("option", { name: "Italiano", exact: true })).toHaveCount(1);
+    await expect(page.getByRole("radio", { name: "Italiano", exact: true })).toHaveCount(1);
     await expect(page.getByText("(preview)")).toHaveCount(0);
-    await page.getByLabel("Lingua").selectOption("en");
+    await page.getByRole("radiogroup", { name: "Lingua" }).getByRole("radio", { name: "English", exact: true }).check();
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
-    await expect(page.getByLabel("Language")).toHaveValue("en");
+    await expect(page.getByRole("radiogroup", { name: "Language" }).getByRole("radio", { name: "English", exact: true })).toBeChecked();
   } finally {
     await context.close();
   }
@@ -38,13 +38,13 @@ test("an English device starts in English", async ({ browser }) => {
 test("the interface switches to Italian and back, and remembers the choice", async ({ page }, testInfo) => {
   test.skip(!username || !password, "Set RIPIANO_E2E_USERNAME and RIPIANO_E2E_PASSWORD");
   await page.goto("/");
-  await page.getByLabel("Language").selectOption("it");
+  await page.getByRole("radiogroup", { name: "Language" }).getByRole("radio", { name: "Italiano", exact: true }).check();
   await expect(page.getByRole("heading", { name: "Ti diamo il bentornato." })).toBeVisible();
   await page.getByLabel("Nome utente").fill(username!);
   await page.getByLabel("Password").fill("wrong-password");
   await page.getByRole("button", { name: "Accedi" }).click();
   await expect(page.getByRole("alert")).toContainText("Credenziali non valide");
-  await page.getByLabel("Lingua").selectOption("en");
+  await page.getByRole("radiogroup", { name: "Lingua" }).getByRole("radio", { name: "English", exact: true }).check();
   await page.getByLabel("Username").fill(username!);
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -53,7 +53,7 @@ test("the interface switches to Italian and back, and remembers the choice", asy
   const menu = page.getByRole("button", { name: /Toggle menu|Apri o chiudi il menu/ });
   const closeNavigation = page.getByRole("button", { name: "Chiudi la navigazione" });
   if (await menu.isVisible()) await menu.click();
-  await page.getByLabel("Language").selectOption("it");
+  await page.getByRole("radiogroup", { name: "Language" }).getByRole("radio", { name: "Italiano", exact: true }).check();
   await expect(page.locator("html")).toHaveAttribute("lang", "it");
   await expect(page.getByRole("button", { name: "Tutti i documenti" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Cestino" })).toBeVisible();
@@ -61,7 +61,7 @@ test("the interface switches to Italian and back, and remembers the choice", asy
   await expect(page.getByRole("heading", { name: "Tutto al suo posto." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "I tuoi documenti" })).toBeVisible();
   await page.getByRole("button", { name: "Filtri" }).click();
-  await page.getByLabel("Copia cartacea").selectOption("virtual");
+  await page.getByRole("radiogroup", { name: "Copia cartacea" }).getByRole("radio", { name: "Solo digitale", exact: true }).check();
   await expect(page.getByRole("button", { name: "Cancella filtri" })).toBeVisible();
   await page.getByRole("button", { name: "Cancella filtri" }).click();
   await page.screenshot({ path: testInfo.outputPath("library-filters-italian.png"), fullPage: true, animations: "disabled" });
@@ -85,7 +85,8 @@ test("the interface switches to Italian and back, and remembers the choice", asy
   await page.screenshot({ path: testInfo.outputPath("italian.png"), animations: "disabled" });
 
   if (await menu.isVisible()) await menu.click();
-  await page.getByLabel("Lingua").selectOption("system");
+  // In the sidebar "Auto" is the device language.
+  await page.getByRole("radiogroup", { name: "Lingua" }).getByRole("radio", { name: "Auto", exact: true }).check();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByRole("heading", { name: /Needs action/ })).toBeVisible();
 });

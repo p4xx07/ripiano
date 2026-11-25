@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ListFilter, Pencil, Plus, Trash2, X } from "lucide-react";
 import { CustomField, request } from "./api";
-import { Button, Modal } from "./ui";
+import { Button, Modal, Segmented, type SegmentedOption } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/CustomFieldsPanel";
 
@@ -167,9 +167,9 @@ export default function CustomFieldsPanel({ documentId, onChanged }: { documentI
     {error && <div className="inline-error" role="alert">{error}</div>}
     {notice && <p className="bulk-notice" role="status">{notice}</p>}
     {visibleFields.length ? visibleFields.map((field) => <div className="custom-field-row" key={field.id}>
-      <label htmlFor={`custom-${field.id}`}>{field.name} <small>{kindLabels[field.kind]}</small></label>
+      <label id={`custom-label-${field.id}`} htmlFor={field.kind === "boolean" ? undefined : `custom-${field.id}`}>{field.name} <small>{kindLabels[field.kind]}</small></label>
       <div className="custom-field-controls">
-        {field.kind === "boolean" ? <select id={`custom-${field.id}`} value={drafts[field.id] ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [field.id]: event.target.value }))}><option value="">{m.notSet}</option><option value="true">{m.yes}</option><option value="false">{m.no}</option></select> :
+        {field.kind === "boolean" ? <Segmented labelledBy={`custom-label-${field.id}`} value={drafts[field.id] ?? ""} onChange={(value) => setDrafts((current) => ({ ...current, [field.id]: value }))} options={[{ value: "", label: m.notSet }, { value: "true", label: m.yes }, { value: "false", label: m.no }]} /> :
           <input id={`custom-${field.id}`} type={field.kind === "text" ? "text" : field.kind} step={field.kind === "number" ? "any" : undefined} maxLength={field.kind === "text" ? 500 : undefined} value={drafts[field.id] ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [field.id]: event.target.value }))} />}
         <Button type="button" variant="secondary" disabled={busy || drafts[field.id] === ""} onClick={() => void save(field)}>{m.save}</Button>
         {field.value !== null && <button type="button" className="text-action" disabled={busy} onClick={() => void save(field, true)}>{m.clear}</button>}
@@ -186,7 +186,7 @@ export default function CustomFieldsPanel({ documentId, onChanged }: { documentI
       <p>{m.addIntro}</p>
       <form onSubmit={(event) => void create(event)}>
         <label>{m.fieldName}<input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} placeholder={m.fieldNamePlaceholder} required /></label>
-        <label>{m.type}<select value={kind} onChange={(event) => setKind(event.target.value as CustomField["kind"])}><option value="text">{m.kindText}</option><option value="number">{m.kindNumber}</option><option value="date">{m.kindDate}</option><option value="boolean">{m.kindBoolean}</option></select></label>
+        <Segmented className="custom-kind-choice" label={m.type} value={kind} onChange={setKind} options={[{ value: "text", label: m.kindText }, { value: "number", label: m.kindNumber }, { value: "date", label: m.kindDate }, { value: "boolean", label: m.kindBoolean }] satisfies SegmentedOption<CustomField["kind"]>[]} />
         <Button disabled={busy || !name.trim()}><Plus size={16} /> {m.addField}</Button>
       </form>
     </details>

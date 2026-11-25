@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Filter, Inbox, Mail, Plus, RefreshCw, X } from "lucide-react";
 import { FilingItem, request, Tag } from "./api";
-import { Button } from "./ui";
+import { Button, Segmented, type SegmentedOption } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/MailPanel";
 
@@ -420,16 +420,13 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
               <label>{m.name}<input value={account.name} onChange={(event) => setAccount({ ...account, name: event.target.value })} placeholder={m.namePlaceholder} maxLength={100} required /></label>
               <label>{m.imapServer}<input value={account.host} onChange={(event) => setAccount({ ...account, host: event.target.value })} placeholder="imap.example.com" maxLength={255} required autoCapitalize="none" spellCheck={false} /></label>
               <div className="mail-row">
-                <label>{m.security}
-                  <select value={account.security} onChange={(event) => {
-                    const security = event.target.value as Account["security"];
-                    setAccount({ ...account, security, port: security === "ssl" ? 993 : 143 });
-                  }}>
-                    <option value="ssl">SSL/TLS</option>
-                    <option value="starttls">STARTTLS</option>
-                    <option value="none">{m.securityNone}</option>
-                  </select>
-                </label>
+                <Segmented label={m.security} value={account.security} onChange={(security) => {
+                  setAccount({ ...account, security, port: security === "ssl" ? 993 : 143 });
+                }} options={[
+                  { value: "ssl", label: "SSL/TLS" },
+                  { value: "starttls", label: "STARTTLS" },
+                  { value: "none", label: m.securityNone },
+                ] satisfies SegmentedOption<Account["security"]>[]} />
                 <label>{m.port}<input type="number" min={1} max={65535} value={account.port} onChange={(event) => setAccount({ ...account, port: Number(event.target.value) })} required /></label>
               </div>
               {account.security === "none" && (
@@ -462,13 +459,11 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
                   <input list="mail-folders" value={rule.folder} onChange={(event) => setRule({ ...rule, folder: event.target.value })} maxLength={200} required autoCapitalize="none" />
                 </label>
                 <datalist id="mail-folders">{ruleFolders.map((folder) => <option key={folder} value={folder} />)}</datalist>
-                <label>{m.whatToImport}
-                  <select value={rule.consume} onChange={(event) => setRule({ ...rule, consume: event.target.value as Rule["consume"] })}>
-                    <option value="attachments">{m.optAttachments}</option>
-                    <option value="message">{m.optMessage}</option>
-                    <option value="both">{m.optBoth}</option>
-                  </select>
-                </label>
+                <Segmented label={m.whatToImport} value={rule.consume} onChange={(consume) => setRule({ ...rule, consume })} options={[
+                  { value: "attachments", label: m.optAttachments },
+                  { value: "message", label: m.optMessage },
+                  { value: "both", label: m.optBoth },
+                ] satisfies SegmentedOption<Rule["consume"]>[]} />
                 <fieldset>
                   <legend>{m.onlyMessages} <small>{m.allOptional}</small></legend>
                   <label>{m.senderContains}<input value={rule.filter_from} onChange={(event) => setRule({ ...rule, filter_from: event.target.value })} placeholder={m.senderPlaceholder} maxLength={200} /></label>
@@ -484,20 +479,15 @@ export default function MailPanel({ notice }: { notice: { kind: "ok" | "error"; 
                 <label>{m.order} <small>{m.orderHint}</small>
                   <input type="number" min={0} max={10000} value={rule.order} onChange={(event) => setRule({ ...rule, order: Number(event.target.value) })} required />
                 </label>
-                <label>{m.afterImporting}
-                  <select value={rule.after} onChange={(event) => setRule({ ...rule, after: event.target.value as Rule["after"] })}>
-                    {Object.entries(afterLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                  </select>
-                </label>
+                <Segmented label={m.afterImporting} value={rule.after} onChange={(after) => setRule({ ...rule, after })}
+                  options={(Object.entries(afterLabels) as [Rule["after"], string][]).map(([value, label]) => ({ value, label }))} />
                 {rule.after === "move" && (
                   <label>{m.moveToFolder}<input list="mail-folders" value={rule.move_to} onChange={(event) => setRule({ ...rule, move_to: event.target.value })} maxLength={200} required /></label>
                 )}
-                <label>{m.documentTitle}
-                  <select value={rule.title_from} onChange={(event) => setRule({ ...rule, title_from: event.target.value as Rule["title_from"] })}>
-                    <option value="subject">{m.emailSubject}</option>
-                    <option value="filename">{m.attachmentName}</option>
-                  </select>
-                </label>
+                <Segmented label={m.documentTitle} value={rule.title_from} onChange={(title_from) => setRule({ ...rule, title_from })} options={[
+                  { value: "subject", label: m.emailSubject },
+                  { value: "filename", label: m.attachmentName },
+                ] satisfies SegmentedOption<Rule["title_from"]>[]} />
                 <label>{m.sender}
                   <select value={rule.correspondent_id} onChange={(event) => setRule({ ...rule, correspondent_id: event.target.value })}>
                     <option value="">{m.dontSet}</option>

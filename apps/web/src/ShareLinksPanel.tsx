@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Copy, Link2, ShieldOff } from "lucide-react";
 import { request } from "./api";
-import { Button, Field } from "./ui";
+import { Button, Field, Segmented } from "./ui";
 import { useMessages } from "./i18n";
 import messages from "./locales/ShareLinksPanel";
 
@@ -87,11 +87,8 @@ export default function ShareLinksPanel({ documentId }: { documentId: string }) 
         {error && <p className="inline-error" role="alert">{error}</p>}
         {notice && <p className="bulk-notice" role="status">{notice}</p>}
         <div className="share-controls">
-          <Field label={m.expiresAfter}>
-            <select value={days} onChange={(event) => setDays(Number(event.target.value))} disabled={busy}>
-              <option value={1}>{m.oneDay}</option><option value={7}>{m.days(7)}</option><option value={30}>{m.days(30)}</option>
-            </select>
-          </Field>
+          <Segmented label={m.expiresAfter} value={days} onChange={setDays} disabled={busy}
+            options={[{ value: 1, label: m.oneDay }, { value: 7, label: m.days(7) }, { value: 30, label: m.days(30) }]} />
           <Button type="button" disabled={busy} onClick={() => void create()}>{m.create}</Button>
         </div>
         {created && <div className="share-created">

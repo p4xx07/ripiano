@@ -36,10 +36,10 @@ test("share one document with another person, who can edit its details but nothi
   let dialog = page.getByRole("dialog").filter({ hasText: "Keep it in place." });
   await dialog.getByText("Manage access").click();
   await dialog.getByLabel("Person or group").selectOption({ label: reader.username! });
-  await dialog.locator(".access-panel .share-controls").getByLabel("Access").selectOption("edit");
+  await dialog.locator(".access-panel .share-controls").getByRole("radiogroup", { name: "Access", exact: true }).getByRole("radio", { name: "Can edit details", exact: true }).check();
   await dialog.getByRole("button", { name: "Share", exact: true }).click();
   await expect(dialog.locator(".access-panel").getByRole("status")).toContainText("can now view and edit details");
-  await expect(dialog.getByLabel(`Access for ${reader.username}`, { exact: true })).toHaveValue("edit");
+  await expect(dialog.getByRole("radiogroup", { name: `Access for ${reader.username}`, exact: true }).getByRole("radio", { name: "Can edit details", exact: true })).toBeChecked();
   await dialog.locator(".access-panel").screenshot({ path: testInfo.outputPath("document-access.png") });
   await dialog.getByRole("button", { name: "Close" }).click();
   await page.locator("button[title=\"Sign out\"]").click();

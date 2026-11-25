@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Cloud, Eye, Plus, RefreshCw, X } from "lucide-react";
 import { FilingItem, request, Tag } from "./api";
-import { Button } from "./ui";
+import { Button, Segmented, type SegmentedOption } from "./ui";
 import { useLanguage, useMessages } from "./i18n";
 import messages from "./locales/SourcesPanel";
 
@@ -345,12 +345,10 @@ export default function SourcesPanel({ owner, notice }: { owner: boolean; notice
                   <label>{m.botToken} <small>{editing?.has_secret ? m.botTokenSaved : m.botTokenHint}</small>
                     <input type="password" value={draft.secret} onChange={(event) => set("secret", event.target.value)} required={!editing?.has_secret} maxLength={100} autoComplete="new-password" placeholder="123456789:AA…" />
                   </label>
-                  <label>{m.replyLanguage}
-                    <select value={draft.reply_language} onChange={(event) => set("reply_language", event.target.value as Draft["reply_language"])}>
-                      <option value="en">English</option>
-                      <option value="it">Italiano</option>
-                    </select>
-                  </label>
+                  <Segmented label={m.replyLanguage} value={draft.reply_language} onChange={(value) => set("reply_language", value)} options={[
+                    { value: "en", label: "English" },
+                    { value: "it", label: "Italiano" },
+                  ] satisfies SegmentedOption<Draft["reply_language"]>[]} />
                   </>
                 ) : isCloud(draft.kind) ? (
                   <p className="source-note">{m.cloudNoteStart} <strong>{m.connectAccount}</strong>{m.cloudNoteEnd(cloudLabels[draft.kind], draft.kind)}</p>

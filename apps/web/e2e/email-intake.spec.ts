@@ -57,7 +57,7 @@ test("a mail rule imports matching attachments and leaves other mail alone", asy
   const accountForm = page.getByRole("form", { name: "Mailbox settings" });
   await accountForm.getByLabel("Name", { exact: true }).fill(`Mail ${suffix}`);
   await accountForm.getByLabel("IMAP server").fill(imapHost);
-  await accountForm.getByLabel("Security").selectOption("none");
+  await accountForm.getByRole("radiogroup", { name: "Security" }).getByRole("radio", { name: "None (local only)", exact: true }).check();
   await accountForm.getByLabel("Port", { exact: true }).fill("3143");
   await accountForm.getByLabel("Username").fill(mailbox);
   await accountForm.getByLabel("Password").fill("local-test");
